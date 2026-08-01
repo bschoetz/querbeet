@@ -4,7 +4,7 @@
    "index.html"
   ],
   "singleFile": true,
-  "bytes": 248086,
+  "bytes": 248579,
   "hazards": {
    "dynamic import": 0,
    "fetch(": 0,

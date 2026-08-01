@@ -1,8 +1,9 @@
 # NFR-7 check: is any Editor interaction pointer-only?
 
 **Date:** 2026-08-01 · **Driver:** `run-keyboard-check.mjs` · **Raw data:** `keyboard-results.json`
-**Result: 7 of 10 interactions are keyboard-reachable. Two NFR-7 gaps, plus one bug the check
-found by accident.**
+
+**As checked: 7 of 10 interactions keyboard-reachable — two NFR-7 gaps, plus one bug the check found
+by accident. After the two small fixes: 9 of 11, and one NFR-7 gap left, connecting two Steps.**
 
 Not an accessibility audit. The PRD targets no WCAG level and requires no accessibility testing;
 NFR-7 states exactly one rule, and states it as a correctness rule: *no interaction may exist only as
@@ -72,48 +73,60 @@ shapes are worth weighing before building one:
 This is a UX decision, not a technical risk, and it belongs to whoever owns the Editor's interaction
 design.
 
-## Gap 2 — Panning and zooming (NFR-7)
+## Gap 2 — Panning and zooming (NFR-7) — **the load-bearing half is fixed**
 
 The viewport was byte-identical after ArrowRight, ArrowDown, `+`, `-` and PageDown in both engines.
-There is no keyboard path to move or scale the canvas.
+There is still no keyboard path to move or scale the canvas deliberately.
 
-It matters more than it looks: focusing a Step does **not** bring it into view, because the canvas is
-transform-based rather than scrolled, so the browser's own focus-scrolling does nothing. A Step
-outside the visible area can be focused, moved and deleted without ever being seen.
+What made it urgent was different, though: focusing a Step did **not** bring it into view, because
+the canvas is transformed rather than scrolled, so the browser's own focus-scrolling does nothing. A
+Step outside the visible area could be focused, moved and deleted without ever being seen.
 
-Two candidate fixes, both small: keyboard handlers on the pane for pan and zoom, or — probably better
-and definitely cheaper — call `setCenter` when focus lands on a Step that is outside the viewport, so
-the canvas follows the focus. The second one is a few lines and fixes the actual problem.
+**Fixed: the focus now pulls the canvas after it.** A `focusin` handler on the canvas compares the
+focused Step's rectangle against the pane's and pans by the shortfall — `panBy`, not `setCenter`,
+because panning preserves the zoom level the user chose. A Step parked at 3400,2200 was measured
+off-screen before focus and fully visible after, with the zoom unchanged, in both engines. It also
+catches Tabbing into a Step's configuration fields, since those are inside the node.
 
-## Found by accident — multi-selection is broken for *both* input modes
+**What remains open** is deliberate pan and zoom — moving the view without moving the focus. It is
+small to add, but it is worth deciding whether it is needed at all now that focus drags the view
+along, rather than adding key bindings nobody asked for.
 
-Selecting a second Step with Control held selects nothing extra: `["q1"]` after the gesture, by
-keyboard **and by pointer**, in both engines. The pointer control test is what tells this apart from
-a keyboard gap — **it is not an NFR-7 gap, it is a design-B consequence.**
+## Found by accident — multi-selection was broken for *both* input modes — **fixed**
+
+Selecting a second Step with Control held selected nothing extra: `["q1"]` after the gesture, by
+keyboard **and by pointer**, in both engines. The pointer control test is what told this apart from a
+keyboard gap — **it was not an NFR-7 gap, it was a design-B consequence.**
 
 `addSelectedNodes` takes a different branch when `multiSelectionActive` is set: it emits selection
-changes and mutates nothing. With `applyDefault: false` nobody applies them, so the second selection
-is silently dropped.
+changes and mutates nothing. With `applyDefault: false` nobody applied them, so the second selection
+was silently dropped.
 
-**Fix: let view-state changes through.** `onNodesChange` currently ignores everything that is not a
-position or a removal. It should pass `select` changes to `applyNodeChanges`, keeping the split
-honest — the model owns graph state, Vue Flow owns view state, and view state still has to be
-applied by someone. Small, but it needs its own measurement, because it is the first place where
-design B hands anything back to the library.
+**Fixed by letting view-state changes through.** `onNodesChange` and `onEdgesChange` now pass
+`select` changes — and only those — to `applyNodeChanges` / `applyEdgeChanges`. This is the one place
+design B hands anything back to the library, and it is deliberately narrow: the model owns graph
+state, Vue Flow owns view state, and view state still has to be applied by someone. Measured after
+the fix: `["q1","q2"]` by keyboard and by pointer in both engines.
+
+Both fixes were re-run against the four spike questions, which still pass in both engines with the
+build gate intact at 248,579 B in one file.
 
 ---
 
-## Effort to close
+## Where it stands
 
-| Item | Size | Blocked on |
-| --- | --- | --- |
-| Multi-selection | a few lines in `onNodesChange`, plus a check case | nothing |
-| Focus follows into view | a few lines, `setCenter` on node focus | nothing |
-| Keyboard connect | ~a dozen lines once the shape is chosen | a UX decision between the three shapes above |
-| Keyboard pan/zoom explicitly | small | worth deciding whether focus-follows-view makes it unnecessary |
+| Interaction | State |
+| --- | --- |
+| Reach canvas, select, multi-select, move, add, designate Result, edit config, delete, focus into view | keyboard-reachable, measured |
+| **Connect two Steps** | **pointer-only — the remaining NFR-7 gap** |
+| Deliberate pan / zoom | no keyboard path; open decision whether it is still needed |
 
-The check itself is reusable: `run-keyboard-check.mjs` is the regression test for NFR-7 and takes
-about a minute across both engines.
+Connecting is ~a dozen lines once the interaction shape is chosen, and the shape is a UX decision —
+see the three candidates above. Nothing about it is a technical risk: `connectOnClick` is already on,
+and the click path already ends in the guarded door.
+
+The check is reusable: `run-keyboard-check.mjs` is the NFR-7 regression test and takes about a minute
+across both engines.
 
 ## Two things the check does not cover
 

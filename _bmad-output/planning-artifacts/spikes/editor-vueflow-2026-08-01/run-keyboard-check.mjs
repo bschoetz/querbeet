@@ -264,6 +264,43 @@ for (const [engine, driver] of [
       pass: (await page.evaluate(() => window.__qb.graph().nodes.length)) === before - 1,
     }
 
+    // -- 8b. Does the focus pull the canvas after it? ---------------------
+    // A Step parked far outside the visible area: focusing it must bring it
+    // into view, because the canvas is transformed rather than scrolled and the
+    // browser's own focus-scrolling does nothing here.
+    await fresh()
+    await page.evaluate(async () => {
+      window.__qb.editor.move('kd', 3400, 2200)
+      await window.__qb.tick()
+    })
+    const offscreen = await page.evaluate(() => {
+      const el = document.querySelector('.qb-node[data-node="kd"]')
+      const pane = document.querySelector('.qb-canvas').getBoundingClientRect()
+      const r = el.getBoundingClientRect()
+      return {
+        visible: r.left >= pane.left && r.right <= pane.right && r.top >= pane.top && r.bottom <= pane.bottom,
+        viewport: window.__qb.viewport(),
+      }
+    })
+    await tabTo((a) => a.node === 'kd', 60)
+    await tick()
+    const onscreen = await page.evaluate(() => {
+      const el = document.querySelector('.qb-node[data-node="kd"]')
+      const pane = document.querySelector('.qb-canvas').getBoundingClientRect()
+      const r = el.getBoundingClientRect()
+      return {
+        visible: r.left >= pane.left && r.right <= pane.right && r.top >= pane.top && r.bottom <= pane.bottom,
+        viewport: window.__qb.viewport(),
+      }
+    })
+    out.interactions.focusIntoView = {
+      question: 'Holt der Fokus einen Step außerhalb des Sichtbereichs ins Bild?',
+      wasOffscreenBefore: !offscreen.visible,
+      visibleAfterFocus: onscreen.visible,
+      zoomUnchanged: offscreen.viewport.zoom === onscreen.viewport.zoom,
+      pass: !offscreen.visible && onscreen.visible && offscreen.viewport.zoom === onscreen.viewport.zoom,
+    }
+
     // -- 9. Pan and zoom --------------------------------------------------
     await fresh()
     const vpBefore = await page.evaluate(() => window.__qb.viewport())
@@ -305,8 +342,12 @@ for (const [engine, r] of Object.entries(results.engines)) {
   console.log(`    erster Step per Tab nach ${i.reachCanvas.firstNodeAfterPresses} Anschlägen; Handles fokussierbar: ${yn(i.reachCanvas.anyHandleFocusable)}`)
   console.log(`    Verschieben: ${i.move.stepPx} px je Pfeiltaste, Shift ${i.move.shiftStepPx} px, Drift sauber ${yn(i.move.drift.ok)}`)
   console.log(`    Verbinden: ${i.connect.handles.total} Handles, davon mit tabindex ${i.connect.handles.withTabindex}, per Tab erreichbar ${yn(i.connect.handleReachableByTab)}, Kanten ${i.connect.edgesBefore}→${i.connect.edgesAfter}`)
-  console.log(`    Mehrfachauswahl: Tastatur ${JSON.stringify(i.multiSelect.selectedByKeyboard)}, Zeiger ${JSON.stringify(i.multiSelect.selectedByPointer)} → reine Tastaturlücke: ${yn(i.multiSelect.keyboardOnlyGap)}`)
+  console.log(
+    `    Mehrfachauswahl: Tastatur ${JSON.stringify(i.multiSelect.selectedByKeyboard)}, Zeiger ${JSON.stringify(i.multiSelect.selectedByPointer)}` +
+      (i.multiSelect.pass ? '' : ` → ${i.multiSelect.keyboardOnlyGap ? 'reine Tastaturlücke' : 'beide Wege betroffen, also keine NFR-7-Lücke'}`),
+  )
   console.log(`    Löschen: ${i.deleteStep.countBefore}→${i.deleteStep.countAfter} Steps, defekt: ${JSON.stringify(i.deleteStep.broken)}`)
+  console.log(`    Fokus ins Bild: vorher außerhalb ${yn(i.focusIntoView.wasOffscreenBefore)}, danach sichtbar ${yn(i.focusIntoView.visibleAfterFocus)}, Zoom unverändert ${yn(i.focusIntoView.zoomUnchanged)}`)
   console.log(`    Fläche: ${JSON.stringify(i.panZoom.before)} → ${JSON.stringify(i.panZoom.after)}`)
 }
 

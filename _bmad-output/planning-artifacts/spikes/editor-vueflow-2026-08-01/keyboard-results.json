@@ -150,13 +150,15 @@
     "multiSelect": {
      "question": "Lassen sich mehrere Steps auswählen?",
      "selectedByKeyboard": [
-      "q1"
+      "q1",
+      "q2"
      ],
      "selectedByPointer": [
-      "q1"
+      "q1",
+      "q2"
      ],
-     "keyboardOnlyGap": false,
-     "pass": false
+     "keyboardOnlyGap": true,
+     "pass": true
     },
     "move": {
      "question": "Lässt sich ein Step per Pfeiltasten verschieben — und kommt das im Modell an?",
@@ -219,6 +221,13 @@
       "ok": true,
       "problems": []
      },
+     "pass": true
+    },
+    "focusIntoView": {
+     "question": "Holt der Fokus einen Step außerhalb des Sichtbereichs ins Bild?",
+     "wasOffscreenBefore": true,
+     "visibleAfterFocus": true,
+     "zoomUnchanged": true,
      "pass": true
     },
     "panZoom": {
@@ -388,13 +397,15 @@
     "multiSelect": {
      "question": "Lassen sich mehrere Steps auswählen?",
      "selectedByKeyboard": [
-      "q1"
+      "q1",
+      "q2"
      ],
      "selectedByPointer": [
-      "q1"
+      "q1",
+      "q2"
      ],
-     "keyboardOnlyGap": false,
-     "pass": false
+     "keyboardOnlyGap": true,
+     "pass": true
     },
     "move": {
      "question": "Lässt sich ein Step per Pfeiltasten verschieben — und kommt das im Modell an?",
@@ -457,6 +468,13 @@
       "ok": true,
       "problems": []
      },
+     "pass": true
+    },
+    "focusIntoView": {
+     "question": "Holt der Fokus einen Step außerhalb des Sichtbereichs ins Bild?",
+     "wasOffscreenBefore": true,
+     "visibleAfterFocus": true,
+     "zoomUnchanged": true,
      "pass": true
     },
     "panZoom": {

@@ -29,7 +29,19 @@ import { installHarness } from './harness.js'
 // Resolved here, in setup, because useVueFlow() reaches the store through
 // inject() — anywhere else it hands back a fresh, empty one.
 const vf = useVueFlow()
-const { setNodes, setEdges, onNodesChange, onEdgesChange, onConnect, onConnectStart, onConnectEnd, fitView } = vf
+const {
+  setNodes,
+  setEdges,
+  onNodesChange,
+  onEdgesChange,
+  onConnect,
+  onConnectStart,
+  onConnectEnd,
+  fitView,
+  applyNodeChanges,
+  applyEdgeChanges,
+  panBy,
+} = vf
 
 // Every change Vue Flow proposes, recorded before it is interpreted. The spike
 // reads this to tell "the library never asked" apart from "the app said no".
@@ -59,9 +71,14 @@ onNodesChange((changes) => {
   for (const c of changes) {
     if (c.type === 'position' && c.position) editor.move(c.id, c.position.x, c.position.y)
     else if (c.type === 'remove') editor.removeNode(c.id)
-    // 'dimensions' and 'select' are Vue Flow's own view state. The model has no
-    // opinion about either, which is the point of the split.
+    // 'dimensions' is measured by Vue Flow and written straight into its store.
   }
+  // Selection is view state, so the model has no opinion about it — but somebody
+  // still has to apply it, and applyDefault: false took away the one who did.
+  // Single selection happens to survive because Vue Flow mutates node.selected
+  // directly; multi-selection is emitted as a change only, and was silently
+  // dropped until this line existed.
+  applyViewState(changes, applyNodeChanges)
 })
 
 onEdgesChange((changes) => {
@@ -73,7 +90,16 @@ onEdgesChange((changes) => {
     const p = parseEdgeId(c.id)
     if (p) editor.disconnect(p.target, p.slot)
   }
+  applyViewState(changes, applyEdgeChanges)
 })
+
+// The one place design B hands anything back to the library, and it is
+// deliberately narrow: selection only. Everything the model owns stays ours.
+const VIEW_STATE_CHANGES = new Set(['select'])
+function applyViewState(changes, apply) {
+  const viewOnly = changes.filter((c) => VIEW_STATE_CHANGES.has(c.type))
+  if (viewOnly.length) apply(viewOnly)
+}
 
 // ---------------------------------------------------------------------------
 // Q2 — the cycle guard in front of the mutation, on both paths.
@@ -93,6 +119,37 @@ onConnect((conn) => {
 onConnectEnd(() => {
   if (lastRefusal.value) refusal.value = { op: 'connect (Zeiger)', reason: lastRefusal.value }
 })
+
+// ---------------------------------------------------------------------------
+// Focus follows into view (NFR-7).
+//
+// The canvas is transformed rather than scrolled, so the browser's own
+// focus-scrolling does nothing: a Step outside the visible area could be
+// focused, moved and deleted without ever being seen. Panning by the shortfall
+// keeps the zoom level the user chose, which centring would not.
+// ---------------------------------------------------------------------------
+const canvas = ref(null)
+const VIEW_MARGIN = 24
+
+function onFocusIn(event) {
+  const nodeEl = event.target?.closest?.('.vue-flow__node')
+  if (!nodeEl || !canvas.value) return
+  const node = nodeEl.getBoundingClientRect()
+  const pane = canvas.value.getBoundingClientRect()
+
+  const shortfall = (lowNode, highNode, lowPane, highPane) => {
+    // A Step taller or wider than the pane cannot be fully shown; align its
+    // start edge rather than oscillating between the two.
+    if (highNode - lowNode > highPane - lowPane) return lowPane + VIEW_MARGIN - lowNode
+    if (lowNode < lowPane + VIEW_MARGIN) return lowPane + VIEW_MARGIN - lowNode
+    if (highNode > highPane - VIEW_MARGIN) return highPane - VIEW_MARGIN - highNode
+    return 0
+  }
+
+  const dx = shortfall(node.left, node.right, pane.left, pane.right)
+  const dy = shortfall(node.top, node.bottom, pane.top, pane.bottom)
+  if (dx || dy) panBy({ x: dx, y: dy })
+}
 
 // ---------------------------------------------------------------------------
 // Toolbar
@@ -169,7 +226,7 @@ onMounted(async () => {
       <strong>Abgelehnt ({{ refusal.op }}):</strong> {{ refusal.reason }}
     </p>
 
-    <div class="qb-canvas">
+    <div class="qb-canvas" ref="canvas" @focusin="onFocusIn">
       <!-- Delete rather than Backspace: useKeyPress ignores presses inside
            inputs, but Backspace in a config field is too easy to mean. -->
       <VueFlow :apply-default="false" delete-key-code="Delete" :min-zoom="0.2">

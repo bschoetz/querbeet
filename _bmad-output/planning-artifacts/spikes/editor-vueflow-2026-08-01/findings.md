@@ -195,17 +195,20 @@ graph is replaced only on success.
 4. **Call `useVueFlow()` only in `setup`.** Anywhere else it resolves through `inject()`, fails
    silently, and hands back a *second, empty* store — and a production build strips the Vue warning
    that would have said so. This cost the spike its first Q3 run, which reported the graph as empty.
-5. **Datasets never enter the graph model.** It is what makes "a Recipe contains no data" structural
+5. **Apply Vue Flow's `select` changes back to it.** `applyDefault: false` disables the applier for
+   *all* changes, including the view state the model has no opinion about. Selection is the one thing
+   design B must hand back, or multi-selection silently does nothing — for the pointer as much as for
+   the keyboard.
+6. **Datasets never enter the graph model.** It is what makes "a Recipe contains no data" structural
    rather than a stripping step, and it keeps the graph cheap enough to be deeply reactive.
 
 ## What is still open
 
 - **Keyboard reachability.** Checked separately after this spike — see `findings-keyboard.md`.
   Seven of ten interactions turned out to be keyboard-reachable already, which corrects R6's "no
-  keyboard path exists in the box." Two NFR-7 gaps remain — connecting two Steps, and panning or
-  zooming the canvas — plus a design-B bug the check turned up: multi-selection is dropped for
-  pointer and keyboard alike, because `applyDefault: false` also disables the applier that would
-  have applied it.
+  keyboard path exists in the box." Two small fixes followed — selection changes are now applied
+  back to the library, and the focus pulls the canvas after it — leaving **connecting two Steps** as
+  the one genuine NFR-7 gap, and it waits on a UX decision rather than on anything technical.
 - **Auto-layout and undo/redo.** Still nobody's; unchanged by this spike.
 - **Scale.** The graph carried six to seven Steps. Nothing here says what a fifty-Step Recipe costs
   to render or to re-project.
