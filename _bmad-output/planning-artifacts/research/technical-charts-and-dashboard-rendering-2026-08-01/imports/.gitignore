@@ -1,0 +1,5 @@
+# Rebuildable: the probe apps' dependencies and their build output.
+# Everything else here — probe sources, runners, raw JSON, printed PDFs — is committed.
+chart-probe/node_modules/
+chart-probe/*/dist/
+pkg-check/

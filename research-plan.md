@@ -814,12 +814,111 @@ open it from `file://`.
 
 ## R7 – Charts and dashboard rendering
 
-**Status:** [ ] open
-**Report:** –
+**Status:** [x] done (deep-recon, type technical, shape select, 2026-08-01)
+**Report:** `_bmad-output/planning-artifacts/research/technical-charts-and-dashboard-rendering-2026-08-01/research.md`
+
+**Research verdict: hand-written SVG** (93/100 on the weighted matrix). Runner-up **Apache ECharts
+6.1.0 in SVG mode** (84), then Observable Plot 0.6.17 (72), uPlot 1.6.32 (67), Chart.js 4.5.1 (64).
+**The nine-point gap is one criterion.** Footprint contributes +8 of the +9; across the other six
+hand-built is net −1. Footprint is also what R2 and R6 each explicitly disqualified — drop it and
+renormalise and the two tie at 92 to 91. Whether the old rule should hold is genuinely open: R6
+dismissed size because a 50 KB editor is noise beside Arquero's 236 KB, and ECharts' own share is
+178 KB gzip, more than twice the largest dependency taken so far.
+Five candidates were built as real single-file Vite artefacts and opened from a `file://` URL in
+Chromium 151 and Firefox 153 — measured, not compared on paper. **The hard gate separated nothing
+again:** all six artefacts build to exactly one HTML file, contain zero occurrences of `import(`,
+`fetch(`, `new Worker`, `@font-face` or a non-`data:` `url()`, and issue zero network requests
+beyond the document in both engines. Same result R6 got for graph editors.
+
+**What decides it is the printed page, and the folklore is dead.** No canvas chart printed blank —
+the canonical Firefox bug behind that belief is RESOLVED INVALID, its real cause being the browser's
+"print backgrounds" setting. What actually happens: **a canvas chart enters a PDF as a raster at
+CSS-pixel size, an SVG chart as vector plus selectable text.** Measured in Chromium, the only engine Playwright can print from: the three SVG artefacts printed
+95–131 words of real text carrying 21–35 of the app's own formatted axis labels and **zero** raster
+images; the three canvas artefacts printed 12 words — the page headings — and six images each. The
+raster tracks `devicePixelRatio` exactly (620×300 → 1240×600 → 1860×900), so a canvas chart in a
+printed document is bounded by the *screen's* pixel ratio at print time, never the print resolution.
+FR-37 weights this highest and it is what the two canvas candidates lose on.
+
+**Three assumptions the measurement overturned.**
+
+- **Volume is not a problem for anyone and no decimation is needed.** 500,000 raw line points, with
+  decimation configured on nobody: uPlot **54.7 ms (Chromium) / 60 ms (Firefox)** — flat across the
+  whole ladder, 500k costing less than 1k — hand-built 117.7 / 140, Chart.js 185.0 / 114, ECharts
+  canvas 232.8 / 193, ECharts SVG 315.7 / 197, Plot 445.5 / 505. This retires a body of round-1
+  material: Chart.js's decimation plugin and its frozen-data conflict, ECharts' `sampling` and the
+  LTTB-with-nulls distortion closed as "not planned", Vega-Lite's reported sampling inversion — all
+  answers to a question this product does not ask.
+- **The SVG renderer carries no volume penalty, because a line series is one element.** ECharts' SVG
+  output held **50–56 DOM nodes at every rung from 1,000 to 500,000 points**. The handbook's "prefer
+  canvas above ~1k elements" counts elements, and a line series does not produce one per point. This
+  is what makes the SVG renderer affordable and therefore what makes the print result reachable.
+- **No candidate mutates frozen input and none throws on it** — open for four of five after the web
+  round, now closed for all six. One conditional survives: Chart.js's decimation plugin is documented
+  to redefine `data` on the dataset, and it is off by default and was not enabled.
+
+**Two ECharts traps, both measured.** `renderToSVGString()` works on an ordinary non-SSR instance in
+SVG mode, contradicting the handbook — but in canvas mode **`getDataURL({type:'svg'})` silently
+returns a PNG**, same call, no error. And the 2019 hidden-container complaint (filed against v4.2.1,
+closed stale rather than fixed) **does not reproduce against 6.1.0**: all six candidates recovered
+full width after being shown from `display:none`, in both engines. Scope: the hidden element carried
+an explicit pixel width; the percentage-width case is untested.
+
+**The size number nobody had:** ECharts tree-shaken via `echarts/core` to bar + line + grid + tooltip,
+plus Vue, is **592,693 B / 206,286 B gzip** in one file, which puts ECharts' own share at 178.3 KB
+gzip against the vendor's own `echarts.simple` at 168.9 KB for the library alone. Tree shaking barely
+beats the prebuilt subset, and the whole-library figure of 367.9 KB overstates the real cost by ~52 %. Chart.js measures 269,714 B
+because **it ships no date adapter and a time axis without one throws**, so `date-fns` plus its
+adapter are part of the candidate, not an extra.
+
+**Licence findings.** **ApexCharts left MIT inside the window** — 231 releases through 5.0.0 declare
+MIT, 5.2.0 (2025-07-09, seven minutes after 5.1.0) does not, and the current free Community tier is
+capped at USD 2M annual revenue. Second mid-flight relicensing in two research runs after R4's
+PrimeVue. Highcharts is proprietary (its npm `license` field is a bare URL) and amCharts 5 is
+linkware requiring an attribution link — both confirmed from the LICENSE in the published package.
+
+**Two rules the implementation does not get to choose:** inline the chart's styling into the SVG
+node — scoped classes whose CSS lives in the document produce a snapshot that arrives **unstyled** in
+the export document, which is the trap the hand-built path walks into for free while ECharts (inline
+attributes) and Plot (a `<style>` child) are self-contained by construction; and never put a chart's
+fill in a CSS background, because that fill depends on a "print background graphics" setting the page
+cannot set — the printing API's own default is off, and an absent background is the actual mechanism
+behind the canvas-prints-blank folklore.
+
+**The strongest argument against the pick, and the tripwire:** the probe built the easy parts of a
+chart and skipped the tedious ones — no tooltips, no legend, and no tick algorithm exercised against
+an all-zero column, negative values, a single category, an empty result or a 60-character label.
+Before building more than the bar and line tiles, build those five cases. **PROJECT DECISION PENDING:**
+R1 and R6 both overrode a hand-built research verdict on the reasoning that a complete, widely used
+library is more battle-tested than fresh bespoke code. That reasoning applies here unchanged, and the
+shape it would take is ECharts 6.1.0 in SVG mode.
+
+**The hedge, unusually cheap here:** keep every tile behind a `(rows, config, width, height) → DOM
+node` interface with the aggregation done before the tile is called, so a tile never sees the Result
+table. A switch then rewrites two components and touches neither the Recipe format, the Dashboard
+definition, nor the export path.
+
+**Feeds R8 directly:** the browser's own print-to-PDF produced selectable, searchable German axis
+labels from an SVG chart at zero library cost, so R8's zero-library hypothesis is alive and should be
+tested before any PDF library is researched. **Two limits travel with it:** pagination is untested —
+every probe artefact printed to a single page, because the probe renders three tiles and no Result
+table — and printing was measured in **Chromium only**, since Playwright exposes no PDF output for
+Firefox. That engine gap matters here, because the folklore being refuted is a Firefox bug.
+
+**Not measured, recorded so a later run need not repeat the screen:** `@unovis/vue` 1.6.7
+(Apache-2.0, F5, Vue 3 first-class, 7 releases) is the strongest unexamined candidate. billboard.js
+4.0.3's `XMLHttpRequest` — flagged as disqualifier-shaped in the web round — **is benign**: it sits in
+the `data.url` loader, reachable but inert unless a URL is configured, verified by unpacking the
+published tarball.
 
 **Why this exists:** PRD FR-35 puts bar charts, line charts, Top-N/Bottom-N lists and key
 figures into the MVP Dashboard. `idea.md` mentioned charts but the research plan never
 carried them, so no library has been screened.
+
+> **What made this affordable, and it is worth stating once:** FR-35 asks for exactly **two** chart
+> kinds. A Top-N/Bottom-N list is a table and a key figure is a number — neither is a chart — and the
+> tile configuration is one small form. No stacking, no dual axes, no log scales, no zoom, no
+> cross-tile interaction; the PRD makes all of those explicit non-goals.
 
 **Question:** Which charting library renders bar and line charts over aggregated results in
 a single offline HTML file?
@@ -972,11 +1071,15 @@ portable file, from a `file://` page?
    there is no shared cancellation flag from `file://`. Three findings reach outside R4 — R3's export
    figures understate the browser by ~10 s at half a million rows, `hyparquet-writer`'s `GZIP` codec
    silently writes an unreadable file, and `new Worker` is a poor hard-gate signal for built artefacts.
-6. **R5** – type and locale detection; can run alongside R4.
-7. **R7 and R8** – charts and export documents. Both are presentation-layer and neither
-   blocks the transformation path, so they can wait until the ETL core works. R8 has a
-   plausible zero-library answer (print stylesheet) that should be tried before it is
-   researched properly.
+6. **R5** – type and locale detection; can run alongside R4. Started 2026-08-01.
+7. ~~**R7**~~ Done (2026-08-01), run in parallel with R5. Research verdict: hand-written SVG;
+   runner-up ECharts 6.1.0 in SVG mode. The deciding criterion turned out to be the printed page:
+   SVG prints as vector plus selectable text, canvas as a `devicePixelRatio`-bound raster. Volume
+   needs no decimation from anyone. Project decision on hand-built-versus-library still open.
+   **R8** – export documents. Still presentation-layer and still non-blocking, but R7 already
+   half-answered it: the zero-library answer (print stylesheet plus the browser's own print-to-PDF)
+   produced correct pagination and selectable German axis labels, and should be tried before any PDF
+   library is researched.
 8. **R9's remainder** – package container and storage cost.
 
 **Outside this numbering, because it is a spike rather than research: the FR-28 Recipe-authorship

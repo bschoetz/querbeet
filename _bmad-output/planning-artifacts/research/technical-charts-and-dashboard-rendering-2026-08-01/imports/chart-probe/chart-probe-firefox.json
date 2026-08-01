@@ -1,0 +1,622 @@
+{
+  "engine": "firefox",
+  "date": "2026-08-01",
+  "candidates": {
+    "chartjs": {
+      "build": {
+        "distFiles": [
+          "index.html"
+        ],
+        "singleFile": true,
+        "bytes": 269714,
+        "hazards": {
+          "dynamic import": 0,
+          "fetch(": 0,
+          "new Worker": 0,
+          "importScripts": 0,
+          "@font-face": 0,
+          "XMLHttpRequest": 0
+        },
+        "nonDataUrls": []
+      },
+      "errors": [],
+      "requests": [],
+      "extraRequests": [],
+      "mountMs": 82,
+      "heapMB": null,
+      "formatter": {
+        "calls": {
+          "y": 40,
+          "x": 28
+        },
+        "domMarkers": 0,
+        "mode": "canvas"
+      },
+      "frozen": {
+        "threw": null,
+        "mutated": false,
+        "inputFrozen": true,
+        "datasetRewritten": false
+      },
+      "resize": {
+        "steps": [
+          {
+            "name": "S",
+            "requested": 380,
+            "autoFollowed": true,
+            "widthBeforeResizeCall": 380,
+            "ms": 77
+          },
+          {
+            "name": "M",
+            "requested": 620,
+            "autoFollowed": true,
+            "widthBeforeResizeCall": 620,
+            "ms": 101
+          },
+          {
+            "name": "L",
+            "requested": 1100,
+            "autoFollowed": true,
+            "widthBeforeResizeCall": 1100,
+            "ms": 99
+          }
+        ],
+        "hiddenInit": {
+          "renderedWidthAfterShow": 520,
+          "recoveredWithoutExplicitResize": true,
+          "widthAfterExplicitResize": 520
+        }
+      },
+      "snapshot": {
+        "dom": {
+          "kind": "raster",
+          "mime": "data:image/png;base64",
+          "bytes": 77478,
+          "externalRefs": [],
+          "hasStyleChild": false,
+          "markerCount": null,
+          "sample": "data:image/png;base64"
+        }
+      },
+      "volume": [
+        {
+          "n": 1000,
+          "ms": 72
+        },
+        {
+          "n": 10000,
+          "ms": 66
+        },
+        {
+          "n": 100000,
+          "ms": 63
+        },
+        {
+          "n": 500000,
+          "ms": 114
+        }
+      ]
+    },
+    "echarts-canvas": {
+      "build": {
+        "distFiles": [
+          "index.html"
+        ],
+        "singleFile": true,
+        "bytes": 584928,
+        "hazards": {
+          "dynamic import": 0,
+          "fetch(": 0,
+          "new Worker": 0,
+          "importScripts": 0,
+          "@font-face": 0,
+          "XMLHttpRequest": 0
+        },
+        "nonDataUrls": []
+      },
+      "errors": [],
+      "requests": [],
+      "extraRequests": [],
+      "mountMs": 89,
+      "heapMB": null,
+      "formatter": {
+        "calls": {
+          "y": 18,
+          "x": 14
+        },
+        "domMarkers": 0,
+        "mode": "canvas"
+      },
+      "frozen": {
+        "threw": null,
+        "mutated": false,
+        "inputFrozen": true
+      },
+      "resize": {
+        "steps": [
+          {
+            "name": "S",
+            "requested": 380,
+            "autoFollowed": false,
+            "widthBeforeResizeCall": 620,
+            "renderedWidthBeforeResizeCall": 620,
+            "widthAfterResizeCall": 380,
+            "ms": 67
+          },
+          {
+            "name": "M",
+            "requested": 620,
+            "autoFollowed": false,
+            "widthBeforeResizeCall": 380,
+            "renderedWidthBeforeResizeCall": 380,
+            "widthAfterResizeCall": 620,
+            "ms": 66
+          },
+          {
+            "name": "L",
+            "requested": 1100,
+            "autoFollowed": false,
+            "widthBeforeResizeCall": 620,
+            "renderedWidthBeforeResizeCall": 620,
+            "widthAfterResizeCall": 1100,
+            "ms": 66
+          }
+        ],
+        "hiddenInit": {
+          "renderedWidthAfterShow": 520,
+          "recoveredWithoutExplicitResize": true,
+          "widthAfterExplicitResize": 520
+        }
+      },
+      "snapshot": {
+        "dom": {
+          "kind": "raster",
+          "mime": "data:image/png;base64",
+          "bytes": 22785,
+          "externalRefs": [],
+          "hasStyleChild": false,
+          "markerCount": null,
+          "sample": "data:image/png;base64"
+        },
+        "getDataURL": {
+          "kind": "raster",
+          "mime": "data:image/png;base64",
+          "bytes": 22785,
+          "externalRefs": [],
+          "hasStyleChild": false,
+          "markerCount": null,
+          "sample": "data:image/png;base64"
+        },
+        "renderToSVGString": {
+          "failed": "TypeError: n.renderToString is not a function"
+        }
+      },
+      "volume": [
+        {
+          "n": 1000,
+          "ms": 58,
+          "svgNodes": 2
+        },
+        {
+          "n": 10000,
+          "ms": 63,
+          "svgNodes": 2
+        },
+        {
+          "n": 100000,
+          "ms": 95,
+          "svgNodes": 2
+        },
+        {
+          "n": 500000,
+          "ms": 193,
+          "svgNodes": 2
+        }
+      ]
+    },
+    "echarts-svg": {
+      "build": {
+        "distFiles": [
+          "index.html"
+        ],
+        "singleFile": true,
+        "bytes": 592693,
+        "hazards": {
+          "dynamic import": 0,
+          "fetch(": 0,
+          "new Worker": 0,
+          "importScripts": 0,
+          "@font-face": 0,
+          "XMLHttpRequest": 0
+        },
+        "nonDataUrls": []
+      },
+      "errors": [],
+      "requests": [],
+      "extraRequests": [],
+      "mountMs": 83,
+      "heapMB": null,
+      "formatter": {
+        "calls": {
+          "y": 18,
+          "x": 14
+        },
+        "domMarkers": 32,
+        "mode": "svg"
+      },
+      "frozen": {
+        "threw": null,
+        "mutated": false,
+        "inputFrozen": true
+      },
+      "resize": {
+        "steps": [
+          {
+            "name": "S",
+            "requested": 380,
+            "autoFollowed": false,
+            "widthBeforeResizeCall": 620,
+            "renderedWidthBeforeResizeCall": 620,
+            "widthAfterResizeCall": 380,
+            "ms": 63
+          },
+          {
+            "name": "M",
+            "requested": 620,
+            "autoFollowed": false,
+            "widthBeforeResizeCall": 380,
+            "renderedWidthBeforeResizeCall": 380,
+            "widthAfterResizeCall": 620,
+            "ms": 67
+          },
+          {
+            "name": "L",
+            "requested": 1100,
+            "autoFollowed": false,
+            "widthBeforeResizeCall": 620,
+            "renderedWidthBeforeResizeCall": 620,
+            "widthAfterResizeCall": 1100,
+            "ms": 67
+          }
+        ],
+        "hiddenInit": {
+          "renderedWidthAfterShow": 520,
+          "recoveredWithoutExplicitResize": true,
+          "widthAfterExplicitResize": 520
+        }
+      },
+      "snapshot": {
+        "dom": {
+          "kind": "svg",
+          "bytes": 15643,
+          "externalRefs": [],
+          "hasStyleChild": false,
+          "hasClassRefs": false,
+          "markerCount": 13,
+          "sample": "<svg xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\" version=\"1.1\" baseProfile=\"full\" width=\"1100\" height=\"460\" style=\"position: absolute; left: 0px; top: 0px; user-select: none;\"><rect widt"
+        },
+        "getDataURL": {
+          "kind": "svg-data-uri",
+          "mime": "data:image/svg+xml;charset=UTF-8",
+          "bytes": 15364,
+          "externalRefs": [],
+          "hasStyleChild": false,
+          "markerCount": null,
+          "sample": "data:image/svg+xml;charset=UTF-8"
+        },
+        "renderToSVGString": {
+          "bytes": 16499
+        }
+      },
+      "volume": [
+        {
+          "n": 1000,
+          "ms": 51,
+          "svgNodes": 53
+        },
+        {
+          "n": 10000,
+          "ms": 67,
+          "svgNodes": 53
+        },
+        {
+          "n": 100000,
+          "ms": 95,
+          "svgNodes": 50
+        },
+        {
+          "n": 500000,
+          "ms": 197,
+          "svgNodes": 56
+        }
+      ]
+    },
+    "handbuilt": {
+      "build": {
+        "distFiles": [
+          "index.html"
+        ],
+        "singleFile": true,
+        "bytes": 70795,
+        "hazards": {
+          "dynamic import": 0,
+          "fetch(": 0,
+          "new Worker": 0,
+          "importScripts": 0,
+          "@font-face": 0,
+          "XMLHttpRequest": 0
+        },
+        "nonDataUrls": []
+      },
+      "errors": [],
+      "requests": [],
+      "extraRequests": [],
+      "mountMs": 44,
+      "heapMB": null,
+      "formatter": {
+        "calls": {
+          "y": 27,
+          "x": 6
+        },
+        "domMarkers": 33,
+        "mode": "svg"
+      },
+      "frozen": {
+        "threw": null,
+        "mutated": false,
+        "inputFrozen": true
+      },
+      "resize": {
+        "steps": [
+          {
+            "name": "S",
+            "requested": 380,
+            "rendered": 380,
+            "ms": 16
+          },
+          {
+            "name": "M",
+            "requested": 620,
+            "rendered": 620,
+            "ms": 34
+          },
+          {
+            "name": "L",
+            "requested": 1100,
+            "rendered": 1100,
+            "ms": 33
+          }
+        ],
+        "hiddenInit": {
+          "renderedWidthAfterShow": 520,
+          "recoveredWithoutExplicitResize": true
+        }
+      },
+      "snapshot": {
+        "kind": "svg",
+        "bytes": 10370,
+        "externalRefs": [],
+        "hasStyleChild": false,
+        "hasClassRefs": true,
+        "markerCount": 8,
+        "sample": "<svg xmlns=\"http://www.w3.org/2000/svg\" data-v-898ce1ab=\"\" class=\"qb-line\" width=\"1100\" height=\"460\" viewBox=\"0 0 1100 460\" role=\"img\" aria-label=\"Liniendiagramm\"><g data-v-898ce1ab=\"\"><line data-v-898ce1ab=\"\" class=\"qb-"
+      },
+      "volume": [
+        {
+          "n": 1000,
+          "ms": 28
+        },
+        {
+          "n": 10000,
+          "ms": 33
+        },
+        {
+          "n": 100000,
+          "ms": 33
+        },
+        {
+          "n": 500000,
+          "ms": 140
+        }
+      ]
+    },
+    "plot": {
+      "build": {
+        "distFiles": [
+          "index.html"
+        ],
+        "singleFile": true,
+        "bytes": 340783,
+        "hazards": {
+          "dynamic import": 0,
+          "fetch(": 0,
+          "new Worker": 0,
+          "importScripts": 0,
+          "@font-face": 0,
+          "XMLHttpRequest": 0
+        },
+        "nonDataUrls": []
+      },
+      "errors": [],
+      "requests": [],
+      "extraRequests": [],
+      "mountMs": 60,
+      "heapMB": null,
+      "formatter": {
+        "calls": {
+          "y": 19,
+          "x": 16
+        },
+        "domMarkers": 35,
+        "mode": "svg"
+      },
+      "frozen": {
+        "threw": null,
+        "mutated": false,
+        "inputFrozen": true
+      },
+      "resize": {
+        "steps": [
+          {
+            "name": "S",
+            "requested": 380,
+            "autoFollowed": false,
+            "widthAfterResizeCall": 380,
+            "ms": 55
+          },
+          {
+            "name": "M",
+            "requested": 620,
+            "autoFollowed": false,
+            "widthAfterResizeCall": 620,
+            "ms": 66
+          },
+          {
+            "name": "L",
+            "requested": 1100,
+            "autoFollowed": false,
+            "widthAfterResizeCall": 1100,
+            "ms": 67
+          }
+        ],
+        "hiddenInit": {
+          "renderedWidthAfterShow": 520,
+          "recoveredWithoutExplicitResize": true
+        }
+      },
+      "snapshot": {
+        "dom": {
+          "kind": "svg",
+          "bytes": 17453,
+          "externalRefs": [],
+          "hasStyleChild": true,
+          "hasClassRefs": true,
+          "markerCount": 24,
+          "sample": "<svg xmlns=\"http://www.w3.org/2000/svg\" class=\"plot-d6a7b5\" fill=\"currentColor\" font-family=\"system-ui, sans-serif\" font-size=\"10\" text-anchor=\"middle\" width=\"1100\" height=\"460\" viewBox=\"0 0 1100 460\"><style>:where(.plot"
+        },
+        "wrapperTag": "svg",
+        "styleSheetsInDocument": 4,
+        "plotClassOnNode": "plot-d6a7b5"
+      },
+      "volume": [
+        {
+          "n": 1000,
+          "ms": 56
+        },
+        {
+          "n": 10000,
+          "ms": 67
+        },
+        {
+          "n": 100000,
+          "ms": 133
+        },
+        {
+          "n": 500000,
+          "ms": 505
+        }
+      ]
+    },
+    "uplot": {
+      "build": {
+        "distFiles": [
+          "index.html"
+        ],
+        "singleFile": true,
+        "bytes": 120524,
+        "hazards": {
+          "dynamic import": 0,
+          "fetch(": 0,
+          "new Worker": 0,
+          "importScripts": 0,
+          "@font-face": 0,
+          "XMLHttpRequest": 0
+        },
+        "nonDataUrls": []
+      },
+      "errors": [],
+      "requests": [],
+      "extraRequests": [],
+      "mountMs": 70,
+      "heapMB": null,
+      "formatter": {
+        "calls": {
+          "y": 30,
+          "x": 24
+        },
+        "domMarkers": 0,
+        "mode": "canvas+dom-axes"
+      },
+      "frozen": {
+        "threw": null,
+        "mutated": false,
+        "inputFrozen": true,
+        "hasSetSize": true
+      },
+      "resize": {
+        "steps": [
+          {
+            "name": "S",
+            "requested": 380,
+            "autoFollowed": false,
+            "widthBeforeResizeCall": 499,
+            "widthAfterResizeCall": 380,
+            "ms": 67
+          },
+          {
+            "name": "M",
+            "requested": 620,
+            "autoFollowed": false,
+            "widthBeforeResizeCall": 259,
+            "widthAfterResizeCall": 620,
+            "ms": 67
+          },
+          {
+            "name": "L",
+            "requested": 1100,
+            "autoFollowed": false,
+            "widthBeforeResizeCall": 499,
+            "widthAfterResizeCall": 1100,
+            "ms": 66
+          }
+        ],
+        "hiddenInit": {
+          "renderedWidthAfterShow": 520,
+          "recoveredWithoutExplicitResize": true,
+          "widthAfterExplicitResize": 520
+        }
+      },
+      "snapshot": {
+        "dom": {
+          "kind": "raster",
+          "mime": "data:image/png;base64",
+          "bytes": 53979,
+          "externalRefs": [],
+          "hasStyleChild": false,
+          "markerCount": null,
+          "sample": "data:image/png;base64"
+        }
+      },
+      "volume": [
+        {
+          "n": 1000,
+          "ms": 59
+        },
+        {
+          "n": 10000,
+          "ms": 65
+        },
+        {
+          "n": 100000,
+          "ms": 66
+        },
+        {
+          "n": 500000,
+          "ms": 60
+        }
+      ]
+    }
+  },
+  "version": "153.0"
+}
