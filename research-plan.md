@@ -488,6 +488,18 @@ two-node cycle, while `containsCycle(graph)` returned `true` immediately after �
 shipped, wiring it to the guard is still your code. The hand-built canvas refuses it and names the
 reason in 12 lines.
 
+**PROJECT DECISION: Vue Flow 1.48.2** — overrides the research recommendation, on the same
+reasoning that decided R1 in Arquero's favour: a complete, widely used library is more battle-tested
+than freshly written bespoke code. Vue Flow over BaklavaJS follows the same heuristic — 6,760 stars,
+300 closed issues and 11 releases in 12 months against 2,045 / 228 / 2 — and R1's precedent settles
+the dormancy tension explicitly, since Arquero was dormant when it was chosen. **Two findings
+thereby become mandatory implementation work rather than observations:** the cycle check must sit
+*in front of* Vue Flow's mutation API, because its bundle contains no cycle detection at all and
+`addEdges` accepts one silently; and the app must decide which side owns the truth, because Vue Flow
+copies the node objects it is handed. Full consequences in the report's section "Adopting Vue Flow —
+what the measurements require". The graph model stays library-free regardless — that hedge now
+points the other way, as the exit *from* Vue Flow.
+
 **Cost, counted rather than estimated:** node dragging, background panning, cursor-anchored wheel
 zoom with correct screen↔graph conversion, connection dragging, cycle refusal with a named reason,
 orphan-Step marking and connection hit-testing come to **164 lines** (`graph.js` 40 +
@@ -677,10 +689,11 @@ portable file, from a `file://` page?
 1. ~~**R1 + R2 together** – they define the architecture.~~ Both done (2026-08-01):
    Arquero + Vue 3 (project decision on R1 was Arquero over the research recommendation).
 2. ~~**R3** – biggest risk collection.~~ Done (2026-08-01).
-3. ~~**R6 – graph editor.**~~ Done (2026-08-01): hand-built SVG canvas with a library-free graph
-   model, over Vue Flow (runner-up) and BaklavaJS. R2's Vue 3 verdict survived, so PRD Open
-   Question 4 is closed. The follow-up is a spike, not research: the variable-height tripwire
-   (Union and Join Step bodies) before more than three Step kinds are built.
+3. ~~**R6 – graph editor.**~~ Done (2026-08-01). Research verdict: hand-built SVG canvas.
+   **Project decision: Vue Flow 1.48.2**, with the graph model kept library-free either way.
+   R2's Vue 3 verdict survived, so PRD Open Question 4 is closed. Two follow-ups, both spikes
+   rather than research: the variable-height tripwire before more than three Step kinds are built,
+   and the own-cycle-check-in-front-of-`addEdges` rule, which FR-12 makes non-optional.
 4. **R9's first sub-question alone — does IndexedDB work from `file://`?** Minutes of work,
    and a negative answer invalidates PRD FR-25 as written. Do it before anything depends on it.
 5. **R4 (D2–D4)** – now also covers full-dataset search and the 614,000-row Firefox spacer

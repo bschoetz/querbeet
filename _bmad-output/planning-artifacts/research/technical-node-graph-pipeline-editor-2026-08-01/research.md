@@ -13,6 +13,7 @@ updated: '2026-08-01'
 claims_verified: 17
 claims_unverified: 0
 claims_overturned: 0
+project_decision: 'Vue Flow 1.48.2 — overrides the research recommendation, see the note below the executive summary'
 ---
 
 # technical research: Node-graph pipeline editor
@@ -73,6 +74,25 @@ criterion was "authoring a list of heterogeneous step kinds", and the requiremen
 All three probes are Vue 3 SFCs, per-kind `<component :is>` dispatch worked in every one, and
 mount ranged 11.9–68.1 ms across both engines with no errors [3]. The framework choice does not need
 revisiting.
+
+> **Project decision (2026-08-01): querbeet will use Vue Flow 1.48.2, not a hand-built canvas.**
+> The project owner overrode this recommendation, applying the same reasoning that decided R1 in
+> Arquero's favour: a complete, widely used library is more battle-tested than freshly written
+> bespoke code. That is a legitimate reading of the same evidence — this report's own verdict
+> section states that under an ecosystem re-scoring which holds a maintained upstream to be worth
+> strictly more than owned code, Vue Flow wins outright at an ecosystem weight of 10%. The research
+> verdict is left standing as research rather than rewritten to match. The practical consequences
+> are worked out in [Adopting Vue Flow](#adopting-vue-flow--what-the-measurements-require), and
+> they are not small: two of this report's findings become mandatory implementation work rather
+> than observations.
+>
+> Vue Flow over BaklavaJS follows from the same heuristic. On adoption Vue Flow leads 6,760 stars,
+> 300 closed issues and 11 releases in the last 12 months against 2,045, 228 and 2 [2]. Baklava is
+> the more actively developed of the two right now — last functional commit 2026-04-10 against Vue
+> Flow's 2026-01-23 [2] — but R1's precedent settles that tension explicitly: Arquero was dormant
+> when it was chosen, on the reasoning that forking is cheap and measured. Dormancy is not a
+> blocker under this heuristic. Vue Flow also wins the criterion Baklava scored 2/5 on: its model
+> is already plain nodes and edges, so the Recipe format FR-28 depends on stays simple.
 
 ---
 
@@ -503,6 +523,70 @@ function call on an app-owned model, but **FR-12 must not be assumed satisfied b
 8. **The LLM Recipe spike (PRD FR-28) is out of scope by design** — the research plan itself marks
    it as a spike, not research. It remains open and is now unblocked, since the Recipe shape this
    report recommends is a plain node/edge list.
+
+---
+
+## Adopting Vue Flow — what the measurements require
+
+Added 2026-08-01 after the project decision. Scope: the consequences that follow from this run's
+own measurements once Vue Flow is the carrier. Nothing here is new research; every item cites a
+finding already established above.
+
+**Two findings stop being observations and become mandatory implementation work.**
+
+1. **Cycle refusal is entirely yours, and it now sits on the critical path.** Vue Flow's bundle
+   contains zero occurrences of `cycle`, `Cycle`, `acyclic` and `topological` [M12], and `addEdges`
+   created `r1 → s1` on the chain `s1 → f1 → r1` without complaint [M8]. PRD FR-12 requires refusal
+   *with a named reason*. So the check must sit **in front of** Vue Flow's mutation API, not beside
+   it — and it must guard the programmatic path in particular, because that is the path the Recipe
+   loader and FR-28's model-authored Recipe both take. The implementation is the 12-line forward
+   walk in `imports/graph-probe/handbuilt/src/graph.js` [M11]; it survives the decision unchanged.
+
+2. **Decide, and write down, which side owns the truth — because Vue Flow copies your node
+   objects.** The node object inside Vue Flow's state is not identical to the one in the source
+   array, while `data.table` identity survives [M7]. Two coherent designs exist: let Vue Flow's
+   internal state be authoritative and derive the Recipe from it, or keep the app's model
+   authoritative and run Vue Flow with `applyDefault: false`, reconciling through `onNodesChange` /
+   `onEdgesChange` [2]. Pick one before building. This is precisely where the best-evidenced
+   practitioner regret in the whole sweep lands — the state-synchronisation issue cluster, of which
+   #1630 is still open [2].
+
+**Three things carry over unchanged.**
+
+3. **Keep the graph model library-free.** The hedge does not disappear with the decision, it
+   inverts: it was the exit from a hand-built canvas, and it is now the exit from Vue Flow. Forty
+   lines, and Vue Flow did not touch it in the probe [M11].
+4. **Freeze every dataset at the boundary.** Measured pass, no `markRaw` needed [M6].
+5. **Orphan marking and the contributing-Steps walk stay yours.** FR-12 requirements that no
+   library in the field provides; a reverse walk in the same model module.
+
+**Three practical rules from the measurements.**
+
+6. **Vendor `@vue-flow/background`** rather than depend on it — 1 year 9 months without a release,
+   zero runtime dependencies, tiny surface [2].
+7. **Gate the build on "`dist/` contains exactly one file."** Confirmed for this stack: the Vue Flow
+   probe builds to one file of 224,382 B and issues zero network requests from `file://` in both
+   engines [M5]. R2's build rules apply unchanged.
+8. **The Recipe stays a plain node/edge list.** Vue Flow's `data` is documented as "any object" [2],
+   so the Recipe maps almost directly onto its model — the decision makes FR-28 easier, not harder.
+
+**What changes about the risk register.**
+
+9. **The variable-height tripwire keeps its urgency and changes its target.** Node dimension
+   measurement is now Vue Flow's implementation rather than ours — and Vue Flow #174 is exactly
+   this bug, closed [7]. That is cheaper to test and cheaper to be wrong about. The residual risk is
+   different in kind: if it fails you file an issue against a project whose last functional commit
+   is 2026-01-23 [2], so budget for fixing it yourself rather than for a fix arriving.
+10. **Auto-layout and undo/redo remain nobody's.** Vue Flow ships neither [M10]. Both were
+    already excluded from the hand-built line count, so the estimate does not move.
+11. **Available upside the hand-built path did not have:** `@vue-flow/minimap` (2025-08-15),
+    `@vue-flow/controls` (2025-08-07) and `@vue-flow/node-resizer` (2026-01-28) — all MIT, all
+    inside the 12-month freshness gate [M4].
+
+**What this decision does not change:** recommendation 6 stands in full. Keyboard reachability was
+excluded from the selection, and PRD FR-12 and NFR-7 must not be assumed satisfied. Vue Flow does
+not help here — its graph mutations are reachable programmatically, which is the precondition for a
+keyboard path, but no such path exists in the box.
 
 ---
 
