@@ -62,6 +62,15 @@ Result Step, the positions. 33 of 33 met.
 Two limits remain, both named: one of the two assistants shares this session's vendor, and no run ever
 produced a refusal, so FR-28's correction loop is unexercised.
 
+## Still to do
+
+**Test the correction loop.** Every named refusal in the format exists so it can be pasted back into
+the chat that produced the bad Recipe — and no model has ever read one, because all five runs passed
+first time. The measurement is the number of rounds to recovery, not the pass rate of round one.
+Cheapest route: misspell one column name in a known-good answer, hand the refusal to a fresh chat, and
+see whether the model repairs exactly that. Detail and the alternative route in `findings.md`,
+*Outstanding: the correction loop has never run*.
+
 ## Explicitly out of scope
 
 - **Executing a Recipe.** Structural validity only. Whether a `gt` comparison against a German-formatted

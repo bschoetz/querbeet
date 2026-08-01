@@ -146,13 +146,53 @@ route the user out of querbeet.
    Annotations but section 3 still handed over the Pipeline containing the March mapping, so the
    rename was never actually hidden. `prompt-block-empty-pipeline.txt` hides both, and Gemini found
    the rename and the join key unaided on the first round.
-3. **No refusal, so no correction loop.** Everything passed round one. How a model behaves when handed
-   *„„Nur Süd“ filtert auf die Spalte „Abteilung“ …"* is unmeasured, and that loop is what FR-28's
-   paste-back requirement exists for. The cheapest way to reach it is probe 2 above with an empty
-   Pipeline, or a Profile with genuinely awkward column names.
-4. **Nobody asked a Probe Query.** All four resolved the `gt`/`gte` ambiguity by assuming and saying
+2. **No refusal, so no correction loop. → Outstanding work, see below.**
+3. **Nobody asked a Probe Query.** All five resolved the `gt`/`gte` ambiguity by assuming and saying
    so, which is reasonable — but it means the Probe Query section of the block is written and
    unexercised. A question that cannot be answered by assumption would be needed to reach it.
+
+### Outstanding: the correction loop has never run
+
+**This is the one part of FR-28's design that nothing has tested, and it is deliberately left open
+rather than forgotten.**
+
+The loop is what the whole rejection vocabulary exists for. A Recipe is refused, the refusal names the
+defect specifically enough to paste straight back into the same chat, the model repairs exactly that
+and returns the whole Recipe, and it loads. Thirteen named refusals were written for step three of
+that sequence — *„Nur Süd“ filtert auf die Spalte „Abteilung“ (Bedingung 1), aber sein Eingang hat sie
+nicht. Verfügbar: …* — instead of one generic *invalid Recipe*.
+
+**All five runs passed on the first attempt, so no model has ever read one of those messages.** Only
+their authors have, which is the same circularity the self-test has, relocated.
+
+Two ways it can fail without anyone noticing:
+
+- **Precise but unusable.** The JSON syntax refusal is the clear case: *"Expected double-quoted
+  property name in JSON at position 171"* points at a character offset in a document the model cannot
+  reconstruct exactly. The known fix — echo the offending line — is a presentation detail for whoever
+  builds the paste UI, and it is unvalidated because nobody has needed it.
+- **Repairs that oscillate.** The model fixes what the message names and breaks something else, so
+  round two fails differently than round one. This is the failure that argues against the design
+  rather than against a message, and it is exactly what the round count would show.
+
+**The measurement is the number of rounds, not whether round one passes.** A format that reliably
+lands in round two is fit for FR-28; one still arguing in round four is not, even if it sometimes
+succeeds immediately.
+
+**How to reach it.** A failure cannot be ordered up — asking a model to make a mistake tests nothing.
+Two routes:
+
+1. **A Profile designed to trip it**: two similarly-named columns, or column names with spaces,
+   umlauts and trailing blanks. Measures both how often a model slips *and* whether the loop carries.
+   More faithful, more expensive, and it may still pass first time.
+2. **Break a known-good Recipe by hand** — misspell one column name in `i5-gemini-empty-pipeline.json`,
+   feed the refusal to a fresh chat, and see whether the model repairs precisely that and touches
+   nothing else. Does not measure how often models err, but it does measure the thing that matters
+   here: whether the message is enough.
+
+**Recommended: 2 first**, because it is minutes of work and goes straight at the question. 1 afterwards
+if 2 passes, since a message that works on an injected defect may still not work on a defect the model
+believes in.
 
 ### Loading is not the measurement
 
