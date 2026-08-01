@@ -21,6 +21,22 @@ single-file Vue 3 + Arquero app.
 > transfer cost) and D4 (responsiveness patterns) are planned but not yet run. The executive
 > summary is written once all dimensions land. Resume with a Deepen on this folder.
 
+> **Rescope note, 2026-08-01 (after the PRD).** The scale target moved from "~100,000 rows max"
+> to **~100,000 rows per source and roughly half a million in total** (PRD NFR-3), the linear
+> step list became a **graph** of named Steps (FR-12), and **full-dataset search** entered scope
+> (FR-33). Everything measured below still holds — nothing was measured at a row count the
+> rescope invalidates — but two conclusions change in force rather than direction:
+>
+> 1. **The spacer-height guard moves from optional to mandatory**, and row height becomes a
+>    load-bearing constant rather than a styling choice. See "The scroll-range ceiling" below.
+> 2. **D2's scale ladder happens to land exactly on the new target** — five simultaneous 100k
+>    sources *is* half a million rows, measured at 552.6 MB total heap, ~400 MB of it tables.
+>
+> One question the rescope adds and this run did not measure: in a graph a Step may have several
+> consumers, so intermediate outputs stay alive. D2's sharing result strongly implies this is
+> cheap for view-verbs and costly only at `join`/`concat`, but it was measured on a linear chain.
+> Carried into the remaining work.
+
 ---
 
 ## D1 — Table rendering: virtualize, and with what?
@@ -241,13 +257,33 @@ transition lies between 16M and 20M px, consistent with the 17,187,496 px figure
 bug [1]. TanStack Virtual's own max-height issue is open with no shipped workaround [2], so a
 library would not save you here either.
 
-At querbeet's scale this is comfortable but not unlimited: 100,000 rows × 28 px = 2,800,000 px,
-exact in both engines. Firefox's cliff is at roughly **614,000 rows** at 28 px — or ~172,000
-rows if rows were 100 px tall. Because the failure on the stricter engine is a *silent blank
-list*, a one-line guard that caps the spacer height and rescales the offset mapping is worth
-having even though 100k rows do not need it. Scroll offsets themselves are precise: at a
+At 100,000 rows this was comfortable: 100,000 × 28 px = 2,800,000 px, exact in both engines,
+with Firefox's cliff a factor of six away. Scroll offsets are precise there too — at a
 2,800,000 px spacer both engines returned every requested `scrollTop` with zero drift and
 resolved a 1 px step [24].
+
+**At the rescoped half-million target it is no longer comfortable.** Because the spacer is
+`rowCount × rowHeight`, the ceiling is best read as a **row-height budget**:
+
+| px per row | Firefox (measured-safe, 16.0M px) | Firefox (bug 1527883, 17.19M px) | Chromium (clamp, 33,554,428 px) |
+| --- | --- | --- | --- |
+| 24 | 666,000 rows | 716,000 rows | 1,398,000 rows |
+| 28 | 571,000 rows | 614,000 rows | 1,198,000 rows |
+| 32 | **500,000 rows** | 537,000 rows | 1,048,000 rows |
+| 40 | 400,000 rows | 430,000 rows | 839,000 rows |
+
+**At half a million rows the maximum safe row height in Firefox is about 32 px** — and a
+comfortable table row with padding is easily 36–40 px, which is already over the cliff. Row
+height therefore stops being a styling decision and becomes a load-bearing constant that the
+design must respect or the guard must absorb.
+
+**The guard is consequently mandatory, not optional.** Cap the spacer at a safe maximum and
+rescale the scroll-offset mapping (`rowIndex = scrollTop / spacerHeight × rowCount` rather than
+`scrollTop / rowHeight`). This costs a few lines, removes row height from the risk surface
+entirely, and also lifts Chromium's own ~1.2M-row ceiling at 28 px. Note that TanStack Virtual
+would not supply this: its max-height issue is open with no shipped workaround [2], so on the
+library path the guard would have to be built anyway — which, at the rescoped target, mildly
+strengthens the hand-rolled recommendation rather than weakening it.
 
 ### Recommendation
 

@@ -256,7 +256,7 @@ formats (CSV, JSON first; XLSX second stage; Parquet export if feasible)?
 
 ## R4 – Performance & table rendering
 
-**Status:** [~] partial — D1 (table rendering / virtualization) done 2026-08-01; D2, D3, D4 not run
+**Status:** [~] partial — D1 (table rendering) and D2 (Arquero at scale) done 2026-08-01; D3, D4 not run
 **Report:** `_bmad-output/planning-artifacts/research/technical-performance-and-table-rendering-2026-08-01/research.md`
 
 **D1 verdict: virtualization is mandatory, hand-rolled fixed-height row windowing wins
@@ -278,30 +278,63 @@ The npm package ships a commercial "PrimeUI License" requiring a runtime key, wi
 eligibility-gated free tier needing annual re-confirmation, while the GitHub repository still
 displays the old MIT text. Anything from the PrimeTek family is affected.
 
+**D2 verdict (done 2026-08-01): Arquero fits, and its sharing semantics are what make a graph
+affordable.** One 100,000 × 20 source costs **80.2 MB** of Chromium heap as an Arquero table
+against 102.8 MB as plain row objects, scaling **exactly linearly** — so the revised half-million
+target is **~400 MB of tables**, and the scale ladder measured five simultaneous 100k sources at
+552.6 MB total heap. Verified by object identity: `select`, `filter`, `orderby` and `derive`
+**share** the parent's backing arrays; only `slice`, `join` and `concat` copy. A six-step
+pipeline is therefore not six copies of the data. `reify()` genuinely releases (80.2 MB → 0.7 MB
+after dropping the parent), and reading the render window costs under 1 ms at any offset, so the
+complete preview path is ~5 ms. Three architecture rules: drop the parsed row array after
+`aq.from()`; `reify()` after a selective filter and release the parent, or a 1k-row view pins
+80 MB; read the window with `objects({limit, offset})`, never by iterating.
+
+The full pipeline runs in **263 ms (Chromium) / 446 ms (Firefox)** against R1's 10.5 ms for
+hand-written plain JS in Node — the measured price of the Arquero decision, comfortably
+interactive. Firefox is 1.5–2× slower on Arquero work and **8× slower on full row
+materialization** (`objects()` over 100k: 97 ms vs 12.5 ms), which is what prompted the
+lead-browser decision above.
+
 **Rescoped 2026-08-01 after the PRD.** Three things changed the remaining dimensions:
 
 - **The scale target moved from 100,000 rows to roughly half a million in total** (PRD NFR-3).
-  The Firefox element-height cliff measured in D1 sits at **614,000 rows at 28 px per row** —
-  above that, Firefox collapses the spacer to zero height and the list silently vanishes,
-  while Chromium clamps at 33,554,428 px and keeps working. At 100k rows that cliff was a
-  factor of six away and the guard was optional; at half a million rows a Union of several
-  large sources lands close to it, so the spacer-height cap and offset rescaling must be
-  built and tested, not merely noted.
+  Re-derived from D1's measurement, the ceiling is best expressed as a **row-height budget**,
+  because the spacer is `rowCount × rowHeight`:
+
+  | px per row | Firefox (measured-safe 16.0M px) | Firefox (bug 1527883: 17.19M px) | Chromium (clamp 33,554,428 px) |
+  | --- | --- | --- | --- |
+  | 28 | 571,000 rows | 614,000 rows | 1,198,000 rows |
+  | 32 | **500,000 rows** | 537,000 rows | 1,048,000 rows |
+  | 40 | 400,000 rows | 430,000 rows | 839,000 rows |
+
+  **At half a million rows the maximum safe row height in Firefox is ~32 px.** Row height stops
+  being a styling choice and becomes a load-bearing constant. Above the ceiling Firefox collapses
+  the spacer to zero height and the list silently vanishes; Chromium clamps and keeps working.
+  The spacer cap with offset rescaling therefore moves from optional to **mandatory** — and it
+  also lifts the Chromium ceiling, which is otherwise ~1.2M rows at 28 px.
 - **Full-dataset search (FR-33) is a new performance question.** Searching every row of a
-  500k-row result while staying interactive was never scoped. It belongs in D4.
+  500k-row result while staying interactive was never scoped. It belongs in D4. D2 supplies the
+  primitive: `values(name)` iterates a column with **zero object allocation**, which is the right
+  shape for a scan.
 - **A graph editor now sits on the same main thread** (R6). Whether canvas interaction and
   table rendering compete is a D3/D4 question.
 
 **Sub-questions still open:**
-- **D2 — Arquero memory and materialization in the browser.** R1's 471 bytes/row is a Node
-  figure; the browser number, and the cost of holding every intermediate Step output alive
-  in a graph where a Step may have several consumers, are unmeasured.
 - **D3 — Off-main-thread work and transfer cost.** What actually belongs in a worker, and
-  what structured-clone or transfer costs at these row counts.
+  what structured-clone or transfer costs at these row counts. **The scale change makes this
+  sharper:** R3 measured xlsx export at ~3.3 s for 100k rows, so half a million projects to
+  roughly 16 s — export is no longer "long enough to freeze a tab", it is long enough to look
+  broken. The worker is now required rather than advisable.
 - **D4 — Responsiveness patterns.** Recompute-all versus memoize-per-Step for live preview
-  (R1 measured the full pipeline at 10.5 ms, so recompute-all is very likely fine and this
-  should be settled by measurement, not by searching — no practitioner evidence exists);
-  full-dataset search; and progress/cancellation for the ~3.3 s xlsx export.
+  (R1 measured the full pipeline at 10.5 ms and D2 measured Arquero's at 263–446 ms, so
+  recompute-all is plausible but no longer obviously free — settle it by measurement);
+  full-dataset search; graph-canvas versus table-rendering contention; and progress/cancellation
+  for the export.
+- **Carried over from D2, small:** in a DAG a Step may have several consumers, so intermediate
+  outputs stay alive. D2's sharing result says this is cheap for view-verbs and expensive only
+  at `join`/`concat` — but the multi-consumer case itself was measured on a linear chain, not a
+  graph. One short measurement, not a dimension.
 
 **Inputs already settled by R2** — do not re-research these:
 - A Web Worker *can* be created from a `file://` page: classic workers from a `blob:` URL or a
