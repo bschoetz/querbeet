@@ -80,17 +80,21 @@ names the union mapping. So this run measures whether a foreign model can **expr
 `querbeet/recipe@1`. It does not measure whether it can **find** the plan. Those are different
 questions and the second one is closer to what a real user's Profile looks like.
 
-Still outstanding, in order of what they would tell us:
+Still outstanding, in order of what they would tell us. The blocks for 2 and 3 are rendered and
+waiting; each is one paste.
 
 1. **A second vendor.** One sample cannot separate "the format is clear" from "Gemini is good at JSON".
-2. **A Profile without the give-away annotations.** Same four Sources, annotations stripped, to see
-   whether the join key and the renamed column are still found.
-3. **A task the three Step kinds cannot answer** — *Summe je Region*. Pass is the assistant saying so;
-   fail is `"kind": "aggregate"`. The block instructs it to say so and the loader refuses the invention
-   either way (`x5`), but whether a foreign model follows that instruction is unmeasured.
+   Same file: `prompt-block-example.txt`.
+2. **A Profile without the give-away annotations** — `prompt-block-no-annotations.txt`. Same four
+   Sources, same Pipeline, every Column Annotation cleared. Does a foreign model still find the join
+   key `KundenNr = Nr` and the March column that is named differently?
+3. **A task the three Step kinds cannot answer** — `prompt-block-aggregate.txt`, asking for total
+   revenue per region. Pass is the assistant saying it cannot; fail is `"kind": "aggregate"`. The block
+   instructs it to say so and the loader refuses the invention either way (`x5`), but whether a foreign
+   model follows that instruction is unmeasured.
 4. **The prose that came with the answer.** The block asks for at most three sentences on what was
-   built and assumed. Only the JSON was recorded here, so whether Gemini declared an assumption — or
-   should have asked a Probe Query instead — is not in evidence.
+   built and assumed. Only the JSON was recorded for run 1, so whether Gemini declared an assumption —
+   or should have asked a Probe Query instead — is not in evidence. Keep it for every further run.
 
 Until at least 1 and 3 are run, the status line is *the format demonstrably works across a model
 boundary; its generality is one sample deep.*
@@ -319,8 +323,10 @@ FR-26 fixes the fields, not the layout.
 | --- | --- |
 | `block-template.txt` | The FR-27 block, with the three placeholders. Source of truth. |
 | `example-context.json` | Question, Column Profile, current Recipe for the worked example. |
-| `render-block.mjs` | Template + context → block. `--check` detects drift. |
-| `prompt-block-example.txt` | Generated. Paste this into a foreign assistant. |
+| `render-block.mjs` | Template + context → block. `--check` with no arguments verifies all three rendered blocks against the template. |
+| `prompt-block-example.txt` | Generated. The worked example — this is what run 1 used. |
+| `context-no-annotations.json`, `prompt-block-no-annotations.txt` | Probe 2: the same task with every Column Annotation cleared. |
+| `context-aggregate.json`, `prompt-block-aggregate.txt` | Probe 3: a question the three Step kinds cannot answer. |
 | `proposed/columns.js` | Schema propagation per Step kind, and the column check with its named refusals. |
 | `proposed/layout.js` | Fallback layout for a Recipe with no positions. |
 | `proposed/load-recipe.mjs` | The composed load path: `fromRecipe` plus the three new checks. |

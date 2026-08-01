@@ -64,24 +64,40 @@ export function renderBlock(template, ctx) {
     .replace('{{PIPELINE}}', renderPipeline(ctx.pipeline))
 }
 
+// The blocks that live in this directory. `--check` with no arguments verifies
+// all of them, so a template edit cannot leave one of the three stale.
+const PAIRS = [
+  ['example-context.json', 'prompt-block-example.txt'],
+  ['context-no-annotations.json', 'prompt-block-no-annotations.txt'],
+  ['context-aggregate.json', 'prompt-block-aggregate.txt'],
+]
+
 const template = readFileSync(resolve(here, 'block-template.txt'), 'utf8')
-const ctx = JSON.parse(readFileSync(ctxPath, 'utf8'))
-const out = renderBlock(template, ctx)
+const pairs = check && args.length === 0 ? PAIRS : [[ctxPath, outPath]]
+let stale = 0
 
-for (const ph of ['{{FRAGE}}', '{{PROFIL}}', '{{PIPELINE}}'])
-  if (out.includes(ph)) {
-    console.error(`Placeholder ${ph} survived rendering.`)
-    process.exit(1)
-  }
+for (const [ctxFile, outFile] of pairs) {
+  const ctxAbs = resolve(here, ctxFile)
+  const outAbs = resolve(here, outFile)
+  const out = renderBlock(template, JSON.parse(readFileSync(ctxAbs, 'utf8')))
 
-if (check) {
-  const onDisk = readFileSync(outPath, 'utf8')
-  if (onDisk !== out) {
-    console.error(`STALE: ${outPath} does not match block-template.txt + ${ctxPath}. Re-run: node render-block.mjs`)
-    process.exit(1)
+  for (const ph of ['{{FRAGE}}', '{{PROFIL}}', '{{PIPELINE}}'])
+    if (out.includes(ph)) {
+      console.error(`Placeholder ${ph} survived rendering of ${outFile}.`)
+      process.exit(1)
+    }
+
+  if (check) {
+    if (readFileSync(outAbs, 'utf8') !== out) {
+      console.error(`STALE: ${outFile} does not match block-template.txt + ${ctxFile}. Re-run: node render-block.mjs ${ctxFile} ${outFile}`)
+      stale++
+    } else {
+      console.log(`fresh: ${outFile} (${Buffer.byteLength(out)} B)`)
+    }
+  } else {
+    writeFileSync(outAbs, out)
+    console.log(`wrote ${outFile} (${Buffer.byteLength(out)} B)`)
   }
-  console.log(`fresh: ${outPath} (${Buffer.byteLength(out)} B)`)
-} else {
-  writeFileSync(outPath, out)
-  console.log(`wrote ${outPath} (${Buffer.byteLength(out)} B)`)
 }
+
+if (stale) process.exit(1)
