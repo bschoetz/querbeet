@@ -19,6 +19,8 @@ Four technical research runs precede this document and are treated as settled in
 
 querbeet turns a recurring data-consolidation chore into a file you can hand to someone else. It is a single HTML file that runs by double-click in a browser, with no server, no installation and no account. A user drops in two to five report exports — CSV, JSON, Excel — clicks together a short pipeline of union, join, filter and column steps, and gets one consolidated table out, with charts and an export the recipient can act on.
 
+> **BEN:** Frage - warum nur two to five? Ist diese Grenze auf max. 5 nötig? Wo siehst Du das Maximum?
+
 What makes it more than a lightweight PowerQuery is that **the pipeline itself is a portable artifact**. A Recipe is a small JSON file describing the steps, their settings, and the input files it expects. Whoever holds a Recipe can run it against their own data without understanding it, without installing anything, and — this is the point — without sending that data to the person who wrote the Recipe. The author's expertise travels; the data does not. This is what turns a personal utility into leverage: a specialist writes a Recipe once, and a department serves itself with it repeatedly.
 
 The second lever is that Recipes are cheap to write, because a language model can write them. querbeet hands an LLM a structural profile of the loaded Sources together with the user's own Column Annotations — never the raw values — and receives back either a Recipe or a Probe Query. A Probe Query is executed locally against the real data, and only its result travels back to the model. The model comes to *understand* the data without ever *seeing* it. The whole exchange works over plain copy-paste against any chat assistant, so the tool needs no network access at all; an optional API key removes the clipboard step and changes nothing else.
@@ -32,6 +34,8 @@ querbeet serves two roles. They are the same person often enough that the MVP gi
 **The Author** builds pipelines. Technically confident, comfortable with data, not necessarily a programmer — the person who today reaches for PowerQuery, a spreadsheet full of VLOOKUPs, or a short script. They own the correctness of a Recipe.
 
 **The Consumer** receives a Recipe and runs it against their own data. They are competent in their domain and read tables fluently, but they do not build pipelines and do not want to. They are why the Recipe exists.
+
+> **BEN:** Zusätzliche Rolle **The Boxchecker** - beschreibt Compliance-Personal, das sich über die Exporte freut, die irgendwas compliance-mäßiges dokumentieren
 
 ### 2.1 Jobs To Be Done
 
@@ -135,6 +139,8 @@ A theme runs through several of them and is stated once here rather than repeate
 
 The user can add one or more files as Sources, by drag-and-drop onto the Sources pane or through a file dialog. Supported: CSV, JSON, NDJSON, XLSX. Realizes UJ-1, UJ-2.
 
+> **BEN:** was ist mit parquet als quelle?
+
 **Consequences (testable):**
 - Multiple files dropped at once each become a separate Source.
 - A Source carries a name, editable by the user, defaulting to the file name.
@@ -171,6 +177,8 @@ When a JSON Source fails to parse, the system attempts a repair and shows what i
 - A repair that succeeds is reported to the user as a repair, not silently accepted.
 - A repair that fails — including by exhausting the stack rather than raising a parse error — produces a clear message naming the file.
 
+> **BEN:** Das Recover Malformed JSON müssen wir noch ausdetaillieren, am besten trennen in 3 FRs für Erkennung, Repair und Show what it changed?
+
 #### FR-5: Flatten nested JSON with an explicit array strategy
 
 The system flattens nested JSON into a tabular Source, and the handling of arrays is a choice the user makes rather than a hidden default. Realizes UJ-1.
@@ -189,6 +197,8 @@ Every loaded Source shows its detected columns and a bounded window of its rows.
 - Row and column counts are shown for the full Source, not for the visible window.
 - The Preview renders within a interaction-responsive time regardless of Source size.
 
+> **BEN:** wie sieht Preview bei JSON aus?
+
 #### FR-7: Detect column types and require confirmation before running
 
 The system proposes a type per column using a German-aware parser and does not execute a Pipeline until the user has confirmed the type mapping of each Source once. Realizes UJ-1, UJ-2.
@@ -199,6 +209,9 @@ The system proposes a type per column using a German-aware parser and does not e
 - The user can change a column's type; the hit rate recomputes immediately.
 - Values that do not parse under the chosen type are marked as unparsed and remain inspectable — they are never silently replaced by null.
 - Running the Pipeline is blocked until confirmation, and the confirmation is stored in the Recipe so the Consumer inherits the Author's decisions.
+
+
+> **BEN:** Der Gedanke german-aware ist gut - aber gehe davon aus, dass Daten aus verschiedenen Quellen kommen und durchaus auch US-format in einem CSV sein könnte.
 
 #### FR-8: Annotate columns
 
@@ -256,6 +269,8 @@ The user can join two tables on one or several key columns, choosing left or inn
 - When the output row count exceeds the input row count, the Step warns explicitly that duplicate keys produced additional rows, and states the factor.
 - Null handling in key columns is an explicit, documented Step setting — either nulls never match, or nulls match nulls — with the setting stored in the Recipe. The default is stated in the UI rather than implied.
 
+> **BEN:** "output row coun exceeds input row count" ist eine gute heuristik. ich hätte aber gerne auch noch einen optionalen nitpicky-mode, der das pro zeile prüft, damit wir immer wissen, ob es zu dubletten kam.
+
 #### FR-13: Filter rows
 
 The user can restrict rows by conditions on columns. Realizes UJ-1, UJ-2.
@@ -266,6 +281,10 @@ The user can restrict rows by conditions on columns. Realizes UJ-1, UJ-2.
 - Comparison respects the column's confirmed type — a date comparison compares dates, not strings.
 - The Step reports how many rows were removed.
 
+> **BEN:** bei empty auch null und blanks beachten
+
+
+
 #### FR-14: Select, rename and reorder columns
 
 The user can choose which columns survive, rename them, and set their order. Realizes UJ-1.
@@ -273,6 +292,8 @@ The user can choose which columns survive, rename them, and set their order. Rea
 **Consequences (testable):**
 - Renaming to a name already in use is refused with a named reason.
 - Column order in the Step determines column order in the Result and in every export.
+
+> **BEN:** können wir eigentlich auch zusätzliche tabellen mit teilmengen einer anderen tabelle erstellen?
 
 #### FR-15: Add a computed column
 
@@ -355,6 +376,8 @@ The user can export a Recipe bundled with the data of its Sources as a single fi
 - A Package is visibly distinct from a Recipe — different extension and an unmistakable indication in the UI that it contains data.
 - Exporting a Package states the resulting file size before writing it.
 
+> **BEN:** Bitte an Komprimierung denken. Vielleicht ist das Package auch eine Zip-Datei oder ähnliches?
+
 #### FR-23: Persist the session, and make deleting it easy
 
 The current Recipe and the loaded Source data survive closing and reopening the tool, and the user can delete stored data in one obvious action. Realizes UJ-1, UJ-4.
@@ -426,6 +449,8 @@ The user can store an API key so that exchanges happen without the clipboard. Re
 - With a key configured, what is sent is identical to what the copy-paste block would have contained.
 - The UI shows unmistakably when the tool is in a state where it can make network requests.
 - The key can be removed, and removal takes effect without reloading.
+
+> **BEN:** Lass uns API aus dem MVP entfernen und für Später ins backlog nehmen
 
 ### 4.5 Result, View and Dashboard
 
@@ -523,6 +548,9 @@ The user can export the Result and Dashboard as a self-contained document to han
 - **NFR-5 — Form factor.** Desktop only, designed for Full HD. Mobile and tablet layouts are not supported and not attempted.
 - **NFR-6 — Language.** The interface is German. Code, comments, and project documents are English.
 - **NFR-7 — Accessibility.** No WCAG conformance level is targeted and no accessibility testing is required. Semantic markup, ARIA attributes where they are free, and keyboard operability for the main paths are welcome where they cost nothing — explicitly including Step reordering (FR-10), which must not depend on a drag gesture.
+
+> **BEN:** Frage - warum keine drag gesture?
+
 - **NFR-8 — Data residence.** Cell values leave the browser only through an export the user triggered, or through an LLM disclosure the user saw and confirmed. There is no other path out.
 
 ## 5. Non-Goals (Explicit)
@@ -530,7 +558,13 @@ The user can export the Result and Dashboard as a self-contained document to han
 - **No server, no backend, no accounts, no permissions.** There is nothing to log in to and nothing shared between users. A roles-and-views model is a plausible later addition and is deliberately absent now.
 - **No live data sources.** No database connections, no APIs, no scheduled pulls. Data enters as a file the user chose. The one network path that exists is the optional LLM connection, and it carries no cell values the user has not seen.
 - **Not a BI suite.** querbeet does not compete with Power BI, Tableau or Metabase. It has no semantic layer, no measures, no drill-down, no cross-filtering between tiles, no scheduled refresh.
+
+> **BEN:** NIcht sicher. ob die BI-suite Aussage stimmt....
+
 - **Not a general query tool.** There is no SQL, no formula language, no scripting. Everything the tool does is expressible as a fixed set of configured Steps — which is what makes Recipes portable and machine-writable.
+
+> **BEN:** Formeln / Skripte / SQL sind nur für den MVP ausgeklammert, kann später hinzukommen
+
 - **Not a data-acquisition tool.** querbeet consolidates files the user already has. Finding, extracting or requesting data they lack is out of scope, and a user whose primary problem is acquisition is not served by this product.
 - **No big data.** See NFR-3. No streaming, no chunked out-of-core processing, no server-side pushdown.
 - **No collaboration.** No comments, no sharing, no version history. Sharing means sending a file.
