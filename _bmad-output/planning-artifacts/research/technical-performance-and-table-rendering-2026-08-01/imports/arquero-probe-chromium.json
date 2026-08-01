@@ -1,0 +1,171 @@
+{
+ "browser": "chromium",
+ "version": "151.0.7922.34",
+ "results": {
+  "tests": {
+   "plainRows": {
+    "ms": 429.8,
+    "heapDeltaMB": 102.8,
+    "bytesPerRow": 1078
+   },
+   "fromObjects": {
+    "ms": 41.8,
+    "heapDeltaMB": 8,
+    "numRows": 100000,
+    "numCols": 21,
+    "colHandle": {
+     "ctor": "Array",
+     "keys": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6",
+      "7"
+     ],
+     "hasData": false,
+     "dataIsArray": false,
+     "dataLen": null
+    }
+   },
+   "aliasesSource": "could-not-establish",
+   "verbs": {
+    "select": {
+     "ms": 0.5,
+     "heapDeltaMB": 0,
+     "numRows": 100000,
+     "backing": "SHARED (same backing array)"
+    },
+    "filter": {
+     "ms": 10.8,
+     "heapDeltaMB": 0,
+     "numRows": 99999,
+     "backing": "SHARED (same backing array)"
+    },
+    "slice": {
+     "ms": 0.6,
+     "heapDeltaMB": 0,
+     "numRows": 50,
+     "backing": "COPIED (different backing array)"
+    },
+    "orderby": {
+     "ms": 4.7,
+     "heapDeltaMB": 0.1,
+     "numRows": 100000,
+     "backing": "SHARED (same backing array)"
+    },
+    "derive": {
+     "ms": 10.8,
+     "heapDeltaMB": 0.4,
+     "numRows": 100000,
+     "backing": "SHARED (same backing array)"
+    },
+    "join_left_sentinel": {
+     "ms": 76.7,
+     "heapDeltaMB": 11.1,
+     "numRows": 100000,
+     "backing": "COPIED (different backing array)"
+    },
+    "concat": {
+     "ms": 35.2,
+     "heapDeltaMB": 16,
+     "numRows": 200000,
+     "backing": "COPIED (different backing array)"
+    },
+    "groupby_rollup": {
+     "ms": 23.3,
+     "heapDeltaMB": 0.5,
+     "numRows": 5001,
+     "backing": "could-not-establish"
+    }
+   },
+   "materialization": {
+    "objects_full": {
+     "ms": 12.5,
+     "heapDeltaMB": 9.6,
+     "len": 100000
+    },
+    "objects_window_50": {
+     "ms": 0.5,
+     "heapDeltaMB": 0,
+     "len": 50
+    },
+    "objects_window_50_limit": {
+     "ms": 0.3,
+     "heapDeltaMB": 0,
+     "len": 50
+    },
+    "random_window_mid": {
+     "ms": 0.6,
+     "heapDeltaMB": 0,
+     "len": 50
+    },
+    "get_cell": {
+     "ms50rowsAllCols": 0.6,
+     "checksum": 11740
+    }
+   },
+   "pipeline": {
+    "label": "union + sentinel join + filter + derive",
+    "ms": 262.9,
+    "heapDeltaMB": 24.4,
+    "rows": 199805
+   },
+   "release": {
+    "heldMB": 0.4,
+    "reclaimedMB": 0,
+    "residualMB": 0.4
+   },
+   "deriveAfterFilter": {
+    "survivingRows": 1000,
+    "backingRows": 100000,
+    "naive": {
+     "ms": 1.6,
+     "heapDeltaMB": 0.4
+    },
+    "reifiedFirst": {
+     "ms": 4,
+     "heapDeltaMB": 0.1
+    }
+   },
+   "reifyRelease": {
+    "sourceMB": 80.2,
+    "plusViewAndReifyMB": -10.6,
+    "afterDroppingParentMB": 0.7,
+    "keptRows": 1000
+   },
+   "scaleLadder": [
+    {
+     "sources": 1,
+     "addedMB": 80.2,
+     "cumulativeMB": 274.4
+    },
+    {
+     "sources": 2,
+     "addedMB": 80.2,
+     "cumulativeMB": 343.9
+    },
+    {
+     "sources": 3,
+     "addedMB": 80.2,
+     "cumulativeMB": 413.5
+    },
+    {
+     "sources": 4,
+     "addedMB": 80.2,
+     "cumulativeMB": 483
+    },
+    {
+     "sources": 5,
+     "addedMB": 80.2,
+     "cumulativeMB": 552.6
+    }
+   ]
+  },
+  "arqueroVersion": "unknown",
+  "preciseMemory": true,
+  "exposedGc": true
+ }
+}

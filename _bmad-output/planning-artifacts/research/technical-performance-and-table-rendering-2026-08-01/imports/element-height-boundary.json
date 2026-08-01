@@ -1,0 +1,18 @@
+{
+ "chromium": {
+  "version": "151.0.7922.34",
+  "largestHonored": 32715118,
+  "firstFailing": 32715119,
+  "observedAtFirstFailing": 32715120,
+  "scrollHeightAtFirstFailing": 32715120,
+  "clientH": 300
+ },
+ "firefox": {
+  "version": "153.0",
+  "largestHonored": 15320311,
+  "firstFailing": 15320312,
+  "observedAtFirstFailing": 15320311,
+  "scrollHeightAtFirstFailing": 2575378,
+  "clientH": 300
+ }
+}

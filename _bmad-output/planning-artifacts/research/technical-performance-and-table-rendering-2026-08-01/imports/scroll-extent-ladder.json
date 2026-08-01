@@ -1,0 +1,188 @@
+{
+ "chromium": {
+  "version": "151.0.7922.34",
+  "ladder": [
+   {
+    "requested": 1000000,
+    "spacerBoxHeight": 1000000,
+    "containerScrollHeight": 1000000,
+    "maxReachableScrollTop": 999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 2000000,
+    "spacerBoxHeight": 2000000,
+    "containerScrollHeight": 2000000,
+    "maxReachableScrollTop": 1999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 2800000,
+    "spacerBoxHeight": 2800000,
+    "containerScrollHeight": 2800000,
+    "maxReachableScrollTop": 2799700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 4000000,
+    "spacerBoxHeight": 4000000,
+    "containerScrollHeight": 4000000,
+    "maxReachableScrollTop": 3999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 6000000,
+    "spacerBoxHeight": 6000000,
+    "containerScrollHeight": 6000000,
+    "maxReachableScrollTop": 5999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 8000000,
+    "spacerBoxHeight": 8000000,
+    "containerScrollHeight": 8000000,
+    "maxReachableScrollTop": 7999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 10000000,
+    "spacerBoxHeight": 10000000,
+    "containerScrollHeight": 10000000,
+    "maxReachableScrollTop": 9999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 12000000,
+    "spacerBoxHeight": 12000000,
+    "containerScrollHeight": 12000000,
+    "maxReachableScrollTop": 11999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 16000000,
+    "spacerBoxHeight": 16000000,
+    "containerScrollHeight": 16000000,
+    "maxReachableScrollTop": 15999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 20000000,
+    "spacerBoxHeight": 20000000,
+    "containerScrollHeight": 20000000,
+    "maxReachableScrollTop": 19999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 33000000,
+    "spacerBoxHeight": 33000000,
+    "containerScrollHeight": 33000000,
+    "maxReachableScrollTop": 32999700,
+    "boxOk": true,
+    "scrollOk": true
+   }
+  ]
+ },
+ "firefox": {
+  "version": "153.0",
+  "ladder": [
+   {
+    "requested": 1000000,
+    "spacerBoxHeight": 1000000,
+    "containerScrollHeight": 1000000,
+    "maxReachableScrollTop": 999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 2000000,
+    "spacerBoxHeight": 2000000,
+    "containerScrollHeight": 2000000,
+    "maxReachableScrollTop": 1999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 2800000,
+    "spacerBoxHeight": 2800000,
+    "containerScrollHeight": 2800000,
+    "maxReachableScrollTop": 2799700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 4000000,
+    "spacerBoxHeight": 4000000,
+    "containerScrollHeight": 4000000,
+    "maxReachableScrollTop": 3999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 6000000,
+    "spacerBoxHeight": 6000000,
+    "containerScrollHeight": 6000000,
+    "maxReachableScrollTop": 5999700.5,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 8000000,
+    "spacerBoxHeight": 8000000,
+    "containerScrollHeight": 8000000,
+    "maxReachableScrollTop": 7999700.5,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 10000000,
+    "spacerBoxHeight": 10000000,
+    "containerScrollHeight": 10000000,
+    "maxReachableScrollTop": 9999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 12000000,
+    "spacerBoxHeight": 12000000,
+    "containerScrollHeight": 12000000,
+    "maxReachableScrollTop": 11999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 16000000,
+    "spacerBoxHeight": 16000000,
+    "containerScrollHeight": 16000000,
+    "maxReachableScrollTop": 15999700,
+    "boxOk": true,
+    "scrollOk": true
+   },
+   {
+    "requested": 20000000,
+    "spacerBoxHeight": 0,
+    "containerScrollHeight": 300,
+    "maxReachableScrollTop": 0,
+    "boxOk": false,
+    "scrollOk": false
+   },
+   {
+    "requested": 33000000,
+    "spacerBoxHeight": 0,
+    "containerScrollHeight": 300,
+    "maxReachableScrollTop": 0,
+    "boxOk": false,
+    "scrollOk": false
+   }
+  ]
+ }
+}

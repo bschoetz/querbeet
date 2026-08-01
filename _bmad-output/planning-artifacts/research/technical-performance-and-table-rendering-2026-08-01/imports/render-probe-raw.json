@@ -1,0 +1,426 @@
+{
+ "chromium": {
+  "version": "151.0.7922.34",
+  "errors": [],
+  "results": {
+   "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+   "tests": {
+    "elementHeightLimit": {
+     "ladder": [
+      {
+       "requested": 100000,
+       "observed": 100000,
+       "honored": true
+      },
+      {
+       "requested": 1000000,
+       "observed": 1000000,
+       "honored": true
+      },
+      {
+       "requested": 2800000,
+       "observed": 2800000,
+       "honored": true
+      },
+      {
+       "requested": 4000000,
+       "observed": 4000000,
+       "honored": true
+      },
+      {
+       "requested": 10000000,
+       "observed": 10000000,
+       "honored": true
+      },
+      {
+       "requested": 16000000,
+       "observed": 16000000,
+       "honored": true
+      },
+      {
+       "requested": 20000000,
+       "observed": 20000000,
+       "honored": true
+      },
+      {
+       "requested": 33000000,
+       "observed": 33000000,
+       "honored": true
+      },
+      {
+       "requested": 67000000,
+       "observed": 33554428,
+       "honored": false
+      },
+      {
+       "requested": 100000000,
+       "observed": 33554428,
+       "honored": false
+      },
+      {
+       "requested": 1000000000,
+       "observed": 33554428,
+       "honored": false
+      }
+     ],
+     "firstClampedAt": 67000000,
+     "largestHonored": 33000000
+    },
+    "scrollPrecision": [
+     {
+      "spacerHeight": 2800000,
+      "scrollHeight": 0,
+      "maxScroll": 2799600,
+      "samples": [
+       {
+        "requested": 699900,
+        "readBack": 699900,
+        "drift": 0
+       },
+       {
+        "requested": 1399800,
+        "readBack": 1399800,
+        "drift": 0
+       },
+       {
+        "requested": 2099700,
+        "readBack": 2099700,
+        "drift": 0
+       },
+       {
+        "requested": 2799600,
+        "readBack": 2799600,
+        "drift": 0
+       }
+      ],
+      "oneStepDelta": 1
+     },
+     {
+      "spacerHeight": 20000000,
+      "scrollHeight": 0,
+      "maxScroll": 19999600,
+      "samples": [
+       {
+        "requested": 4999900,
+        "readBack": 4999900,
+        "drift": 0
+       },
+       {
+        "requested": 9999800,
+        "readBack": 9999800,
+        "drift": 0
+       },
+       {
+        "requested": 14999700,
+        "readBack": 14999700,
+        "drift": 0
+       },
+       {
+        "requested": 19999600,
+        "readBack": 19999600,
+        "drift": 0
+       }
+      ],
+      "oneStepDelta": 0
+     }
+    ],
+    "data": {
+     "rows": 100000,
+     "cols": 20,
+     "buildMs": 231,
+     "heapMB": 110,
+     "bytesPerRow": 1154
+    },
+    "fullRender": [
+     {
+      "rows": 1000,
+      "cols": 20,
+      "buildMs": 90,
+      "scrollMs": 0,
+      "cells": 20000,
+      "heapDeltaMB": 0.6
+     },
+     {
+      "rows": 10000,
+      "cols": 20,
+      "buildMs": 1106.6,
+      "scrollMs": 0,
+      "cells": 200000,
+      "heapDeltaMB": -2.9
+     },
+     {
+      "rows": 50000,
+      "cols": 20,
+      "buildMs": 4749.2,
+      "scrollMs": 0,
+      "cells": 1000000,
+      "heapDeltaMB": 13.2
+     },
+     {
+      "rows": 100000,
+      "cols": 20,
+      "buildMs": 11217,
+      "scrollMs": 0.6,
+      "cells": 2000000,
+      "heapDeltaMB": -3.2
+     }
+    ],
+    "windowed": [
+     {
+      "rows": 100000,
+      "cols": 20,
+      "windowSize": 50,
+      "rowH": 28,
+      "firstPaintMs": 5.3,
+      "swapMs": {
+       "p50": 4.1,
+       "p95": 4.4,
+       "max": 98.5
+      },
+      "heapDeltaMB": 0.7
+     },
+     {
+      "rows": 100000,
+      "cols": 20,
+      "windowSize": 200,
+      "rowH": 28,
+      "firstPaintMs": 16.9,
+      "swapMs": {
+       "p50": 16.8,
+       "p95": 18.7,
+       "max": 19.7
+      },
+      "heapDeltaMB": -0.5
+     }
+    ],
+    "windowed50col": {
+     "rows": 100000,
+     "cols": 50,
+     "windowSize": 50,
+     "rowH": 28,
+     "firstPaintMs": 12.5,
+     "swapMs": {
+      "p50": 10.9,
+      "p95": 11.7,
+      "max": 12.3
+     },
+     "heapDeltaMB": 3.5
+    }
+   },
+   "preciseMemory": true
+  },
+  "text": "ua: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36\n\n[1] element height limit\n{\n \"ladder\": [\n  {\n   \"requested\": 100000,\n   \"observed\": 100000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 1000000,\n   \"observed\": 1000000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 2800000,\n   \"observed\": 2800000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 4000000,\n   \"observed\": 4000000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 10000000,\n   \"observed\": 10000000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 16000000,\n   \"observed\": 16000000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 20000000,\n   \"observed\": 20000000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 33000000,\n   \"observed\": 33000000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 67000000,\n   \"observed\": 33554428,\n   \"honored\": false\n  },\n  {\n   \"requested\": 100000000,\n   \"observed\": 33554428,\n   \"honored\": false\n  },\n  {\n   \"requested\": 1000000000,\n   \"observed\": 33554428,\n   \"honored\": false\n  }\n ],\n \"firstClampedAt\": 67000000,\n \"largestHonored\": 33000000\n}\n\n[2] scroll precision\n[\n {\n  \"spacerHeight\": 2800000,\n  \"scrollHeight\": 0,\n  \"maxScroll\": 2799600,\n  \"samples\": [\n   {\n    \"requested\": 699900,\n    \"readBack\": 699900,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 1399800,\n    \"readBack\": 1399800,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 2099700,\n    \"readBack\": 2099700,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 2799600,\n    \"readBack\": 2799600,\n    \"drift\": 0\n   }\n  ],\n  \"oneStepDelta\": 1\n },\n {\n  \"spacerHeight\": 20000000,\n  \"scrollHeight\": 0,\n  \"maxScroll\": 19999600,\n  \"samples\": [\n   {\n    \"requested\": 4999900,\n    \"readBack\": 4999900,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 9999800,\n    \"readBack\": 9999800,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 14999700,\n    \"readBack\": 14999700,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 19999600,\n    \"readBack\": 19999600,\n    \"drift\": 0\n   }\n  ],\n  \"oneStepDelta\": 0\n }\n]\n\n[data] building 100k x 20 frozen rows\n{\"rows\":100000,\"cols\":20,\"buildMs\":231,\"heapMB\":110,\"bytesPerRow\":1154}\n\n[3] full unvirtualized render\n[\n {\n  \"rows\": 1000,\n  \"cols\": 20,\n  \"buildMs\": 90,\n  \"scrollMs\": 0,\n  \"cells\": 20000,\n  \"heapDeltaMB\": 0.6\n },\n {\n  \"rows\": 10000,\n  \"cols\": 20,\n  \"buildMs\": 1106.6,\n  \"scrollMs\": 0,\n  \"cells\": 200000,\n  \"heapDeltaMB\": -2.9\n },\n {\n  \"rows\": 50000,\n  \"cols\": 20,\n  \"buildMs\": 4749.2,\n  \"scrollMs\": 0,\n  \"cells\": 1000000,\n  \"heapDeltaMB\": 13.2\n },\n {\n  \"rows\": 100000,\n  \"cols\": 20,\n  \"buildMs\": 11217,\n  \"scrollMs\": 0.6,\n  \"cells\": 2000000,\n  \"heapDeltaMB\": -3.2\n }\n]\n\n[4] hand-rolled windowing\n[\n {\n  \"rows\": 100000,\n  \"cols\": 20,\n  \"windowSize\": 50,\n  \"rowH\": 28,\n  \"firstPaintMs\": 5.3,\n  \"swapMs\": {\n   \"p50\": 4.1,\n   \"p95\": 4.4,\n   \"max\": 98.5\n  },\n  \"heapDeltaMB\": 0.7\n },\n {\n  \"rows\": 100000,\n  \"cols\": 20,\n  \"windowSize\": 200,\n  \"rowH\": 28,\n  \"firstPaintMs\": 16.9,\n  \"swapMs\": {\n   \"p50\": 16.8,\n   \"p95\": 18.7,\n   \"max\": 19.7\n  },\n  \"heapDeltaMB\": -0.5\n }\n]\n\n[5] windowing with 50 columns\n{\n \"rows\": 100000,\n \"cols\": 50,\n \"windowSize\": 50,\n \"rowH\": 28,\n \"firstPaintMs\": 12.5,\n \"swapMs\": {\n  \"p50\": 10.9,\n  \"p95\": 11.7,\n  \"max\": 12.3\n },\n \"heapDeltaMB\": 3.5\n}\n\n=== DONE ==="
+ },
+ "firefox": {
+  "version": "153.0",
+  "errors": [],
+  "results": {
+   "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0",
+   "tests": {
+    "elementHeightLimit": {
+     "ladder": [
+      {
+       "requested": 100000,
+       "observed": 100000,
+       "honored": true
+      },
+      {
+       "requested": 1000000,
+       "observed": 1000000,
+       "honored": true
+      },
+      {
+       "requested": 2800000,
+       "observed": 2800000,
+       "honored": true
+      },
+      {
+       "requested": 4000000,
+       "observed": 4000000,
+       "honored": true
+      },
+      {
+       "requested": 10000000,
+       "observed": 10000000,
+       "honored": true
+      },
+      {
+       "requested": 16000000,
+       "observed": 16000000,
+       "honored": true
+      },
+      {
+       "requested": 20000000,
+       "observed": 0,
+       "honored": false
+      },
+      {
+       "requested": 33000000,
+       "observed": 0,
+       "honored": false
+      },
+      {
+       "requested": 67000000,
+       "observed": 0,
+       "honored": false
+      },
+      {
+       "requested": 100000000,
+       "observed": 0,
+       "honored": false
+      },
+      {
+       "requested": 1000000000,
+       "observed": 0,
+       "honored": false
+      }
+     ],
+     "firstClampedAt": 20000000,
+     "largestHonored": 16000000
+    },
+    "scrollPrecision": [
+     {
+      "spacerHeight": 2800000,
+      "scrollHeight": 0,
+      "maxScroll": 2799600,
+      "samples": [
+       {
+        "requested": 699900,
+        "readBack": 699900,
+        "drift": 0
+       },
+       {
+        "requested": 1399800,
+        "readBack": 1399800,
+        "drift": 0
+       },
+       {
+        "requested": 2099700,
+        "readBack": 2099700,
+        "drift": 0
+       },
+       {
+        "requested": 2799600,
+        "readBack": 2799600,
+        "drift": 0
+       }
+      ],
+      "oneStepDelta": 1
+     },
+     {
+      "spacerHeight": 20000000,
+      "scrollHeight": 0,
+      "maxScroll": 0,
+      "samples": [
+       {
+        "requested": 0,
+        "readBack": 0,
+        "drift": 0
+       },
+       {
+        "requested": 0,
+        "readBack": 0,
+        "drift": 0
+       },
+       {
+        "requested": 0,
+        "readBack": 0,
+        "drift": 0
+       },
+       {
+        "requested": 0,
+        "readBack": 0,
+        "drift": 0
+       }
+      ],
+      "oneStepDelta": 0
+     }
+    ],
+    "data": {
+     "rows": 100000,
+     "cols": 20,
+     "buildMs": 220,
+     "heapMB": 0,
+     "bytesPerRow": null
+    },
+    "fullRender": [
+     {
+      "rows": 1000,
+      "cols": 20,
+      "buildMs": 128,
+      "scrollMs": 0,
+      "cells": 20000,
+      "heapDeltaMB": 0
+     },
+     {
+      "rows": 10000,
+      "cols": 20,
+      "buildMs": 1362,
+      "scrollMs": 1,
+      "cells": 200000,
+      "heapDeltaMB": 0
+     },
+     {
+      "rows": 50000,
+      "cols": 20,
+      "buildMs": 6510,
+      "scrollMs": 0,
+      "cells": 1000000,
+      "heapDeltaMB": 0
+     },
+     {
+      "rows": 100000,
+      "cols": 20,
+      "buildMs": 12448,
+      "scrollMs": 0,
+      "cells": 2000000,
+      "heapDeltaMB": 0
+     }
+    ],
+    "windowed": [
+     {
+      "rows": 100000,
+      "cols": 20,
+      "windowSize": 50,
+      "rowH": 28,
+      "firstPaintMs": 5,
+      "swapMs": {
+       "p50": 5,
+       "p95": 6,
+       "max": 10
+      },
+      "heapDeltaMB": 0
+     },
+     {
+      "rows": 100000,
+      "cols": 20,
+      "windowSize": 200,
+      "rowH": 28,
+      "firstPaintMs": 20,
+      "swapMs": {
+       "p50": 20,
+       "p95": 31,
+       "max": 32
+      },
+      "heapDeltaMB": 0
+     }
+    ],
+    "windowed50col": {
+     "rows": 100000,
+     "cols": 50,
+     "windowSize": 50,
+     "rowH": 28,
+     "firstPaintMs": 13,
+     "swapMs": {
+      "p50": 14,
+      "p95": 19,
+      "max": 20
+     },
+     "heapDeltaMB": 0
+    }
+   },
+   "preciseMemory": false
+  },
+  "text": "ua: Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0\n\n[1] element height limit\n{\n \"ladder\": [\n  {\n   \"requested\": 100000,\n   \"observed\": 100000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 1000000,\n   \"observed\": 1000000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 2800000,\n   \"observed\": 2800000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 4000000,\n   \"observed\": 4000000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 10000000,\n   \"observed\": 10000000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 16000000,\n   \"observed\": 16000000,\n   \"honored\": true\n  },\n  {\n   \"requested\": 20000000,\n   \"observed\": 0,\n   \"honored\": false\n  },\n  {\n   \"requested\": 33000000,\n   \"observed\": 0,\n   \"honored\": false\n  },\n  {\n   \"requested\": 67000000,\n   \"observed\": 0,\n   \"honored\": false\n  },\n  {\n   \"requested\": 100000000,\n   \"observed\": 0,\n   \"honored\": false\n  },\n  {\n   \"requested\": 1000000000,\n   \"observed\": 0,\n   \"honored\": false\n  }\n ],\n \"firstClampedAt\": 20000000,\n \"largestHonored\": 16000000\n}\n\n[2] scroll precision\n[\n {\n  \"spacerHeight\": 2800000,\n  \"scrollHeight\": 0,\n  \"maxScroll\": 2799600,\n  \"samples\": [\n   {\n    \"requested\": 699900,\n    \"readBack\": 699900,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 1399800,\n    \"readBack\": 1399800,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 2099700,\n    \"readBack\": 2099700,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 2799600,\n    \"readBack\": 2799600,\n    \"drift\": 0\n   }\n  ],\n  \"oneStepDelta\": 1\n },\n {\n  \"spacerHeight\": 20000000,\n  \"scrollHeight\": 0,\n  \"maxScroll\": 0,\n  \"samples\": [\n   {\n    \"requested\": 0,\n    \"readBack\": 0,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 0,\n    \"readBack\": 0,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 0,\n    \"readBack\": 0,\n    \"drift\": 0\n   },\n   {\n    \"requested\": 0,\n    \"readBack\": 0,\n    \"drift\": 0\n   }\n  ],\n  \"oneStepDelta\": 0\n }\n]\n\n[data] building 100k x 20 frozen rows\n{\"rows\":100000,\"cols\":20,\"buildMs\":220,\"heapMB\":0,\"bytesPerRow\":null}\n\n[3] full unvirtualized render\n[\n {\n  \"rows\": 1000,\n  \"cols\": 20,\n  \"buildMs\": 128,\n  \"scrollMs\": 0,\n  \"cells\": 20000,\n  \"heapDeltaMB\": 0\n },\n {\n  \"rows\": 10000,\n  \"cols\": 20,\n  \"buildMs\": 1362,\n  \"scrollMs\": 1,\n  \"cells\": 200000,\n  \"heapDeltaMB\": 0\n },\n {\n  \"rows\": 50000,\n  \"cols\": 20,\n  \"buildMs\": 6510,\n  \"scrollMs\": 0,\n  \"cells\": 1000000,\n  \"heapDeltaMB\": 0\n },\n {\n  \"rows\": 100000,\n  \"cols\": 20,\n  \"buildMs\": 12448,\n  \"scrollMs\": 0,\n  \"cells\": 2000000,\n  \"heapDeltaMB\": 0\n }\n]\n\n[4] hand-rolled windowing\n[\n {\n  \"rows\": 100000,\n  \"cols\": 20,\n  \"windowSize\": 50,\n  \"rowH\": 28,\n  \"firstPaintMs\": 5,\n  \"swapMs\": {\n   \"p50\": 5,\n   \"p95\": 6,\n   \"max\": 10\n  },\n  \"heapDeltaMB\": 0\n },\n {\n  \"rows\": 100000,\n  \"cols\": 20,\n  \"windowSize\": 200,\n  \"rowH\": 28,\n  \"firstPaintMs\": 20,\n  \"swapMs\": {\n   \"p50\": 20,\n   \"p95\": 31,\n   \"max\": 32\n  },\n  \"heapDeltaMB\": 0\n }\n]\n\n[5] windowing with 50 columns\n{\n \"rows\": 100000,\n \"cols\": 50,\n \"windowSize\": 50,\n \"rowH\": 28,\n \"firstPaintMs\": 13,\n \"swapMs\": {\n  \"p50\": 14,\n  \"p95\": 19,\n  \"max\": 20\n },\n \"heapDeltaMB\": 0\n}\n\n=== DONE ==="
+ }
+}

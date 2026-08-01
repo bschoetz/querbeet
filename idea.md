@@ -23,7 +23,27 @@ querbeet ist ein browserbasiertes ETL-Tool für Nicht-BI-Profis. Ein Nutzer soll
 - **CDN-Libraries erlaubt**: JS-Frameworks/Libs dürfen per CDN geladen werden.
 - **Kein Server, kein Backend, keine Auth**: Alle Verarbeitung clientseitig; Daten verlassen den Browser nicht.
 - **Datenmengen**: Ausgelegt auf typische Reports, Richtwert bis ~100.000 Zeilen. Keine Big-Data-Ambitionen.
-- **Moderne Browser**: Firefox (145+) / Edge (143+)/ Chrome (143+) / Safari (26.5, bei Problemen ist Safari aber optional zu vernachlässigen)
+- **Moderne Browser**: Chromium-basiert (Edge 143+ / Chrome 143+) ist **Leitbrowser** – Projektentscheidung 2026-08-01, siehe unten. Firefox (145+) bleibt Ziel, ist aber nachrangig; Safari (26.5) optional zu vernachlässigen.
+
+  **Projektentscheidung Leitbrowser (2026-08-01).** Chromium-basierte Browser sind ab sofort der
+  Referenzbrowser für Entwicklung und Performance-Budgets. Jeder Kollege hat Edge auf dem Rechner,
+  also steht allen ein Chromium-Browser zur Verfügung. Firefox-Parität wird im Rahmen der ersten
+  MVP-Builds *gemessen* statt vorab angenommen; liefert Firefox dort nicht ab, wird er fallen
+  gelassen, statt Aufwand in Sonderbehandlung zu stecken.
+
+  Anlass war R4/D2, aber das Messbild ist differenzierter als „Firefox ist langsamer" – es ist
+  **arbeitsartabhängig** (Details in `_bmad-output/planning-artifacts/research/technical-performance-and-table-rendering-2026-08-01/research.md`):
+  - **JS-lastige Arbeit: Firefox deutlich langsamer.** Arquero-Pipeline 446 ms vs. 263 ms; volle
+    Zeilen-Materialisierung (`objects()` über 100k) 97 ms vs. 12,5 ms – Faktor 8.
+  - **DOM-Rendering: praktisch gleichauf.** 50-Zeilen-Fenster-Swap 5 ms (Firefox) vs. 4,1 ms
+    (Chromium), und Firefox war dabei *gleichmäßiger* (Maximum 10 ms vs. 98 ms).
+  - **Ein echter Verhaltensunterschied, keine Geschwindigkeitsfrage:** oberhalb von ~16–20 Mio. px
+    Elementhöhe kollabiert Firefox die Box auf Höhe 0 (Liste verschwindet lautlos), während
+    Chromium sauber bei 33.554.428 px klemmt. Bei 100k Zeilen × 28 px (2,8 Mio. px) trifft das
+    keinen von beiden.
+
+  Was im MVP zu prüfen ist, ist also **nicht** „ist Firefox langsam", sondern: reicht Firefox auf
+  den JS-lastigen Pfaden (Pipeline-Lauf, Export, Zwischenablage) noch für flüssige Bedienung.
 
 ## 4. Vorgeschlagener Tech-Stack (zur Validierung durch Claude Code)
 

@@ -1,0 +1,20 @@
+<meta charset="utf-8"><title>x</title><div id="s" style="position:absolute;left:-99999px"></div>
+<script>
+// For a virtual list the load-bearing quantity is the SCROLLABLE EXTENT of the container,
+// not the box height of the spacer. Measure both, side by side, across the ladder.
+const s=document.getElementById('s'); const rows=[];
+for (const h of [1e6,2e6,2.8e6,4e6,6e6,8e6,1e7,1.2e7,1.6e7,2e7,3.3e7]) {
+  const sc=document.createElement('div'); sc.style.cssText='width:200px;height:300px;overflow:auto';
+  const sp=document.createElement('div'); sp.style.cssText='width:1px;height:'+h+'px';
+  sc.appendChild(sp); s.appendChild(sc); document.body.offsetHeight;
+  const boxH=sp.getBoundingClientRect().height;
+  const scrollH=sc.scrollHeight;
+  sc.scrollTop=1e9; document.body.offsetHeight;
+  const reachable=sc.scrollTop;
+  rows.push({requested:h, spacerBoxHeight:boxH, containerScrollHeight:scrollH,
+             maxReachableScrollTop:reachable,
+             boxOk:Math.abs(boxH-h)<2, scrollOk:Math.abs(scrollH-h)<2});
+  sc.remove();
+}
+window.__R__=rows; document.title='DONE';
+</script>

@@ -1,0 +1,243 @@
+<meta charset="utf-8">
+<title>querbeet R4 — table rendering probe</title>
+<style>
+  body { font: 13px/1.4 monospace; margin: 1rem; }
+  pre { white-space: pre-wrap; }
+  #stage { position: absolute; left: -99999px; top: 0; width: 1200px; height: 600px; overflow: auto; }
+  table { border-collapse: collapse; }
+  td, th { padding: 0 4px; white-space: nowrap; }
+</style>
+<h1>querbeet R4 — table rendering probe</h1>
+<pre id="out">running…</pre>
+<div id="stage"></div>
+
+<script>
+// Original measurement for querbeet R4 (2026-08-01).
+// Runs from a file:// URL with no dependencies. Everything below is measured, not assumed.
+
+const OUT = document.getElementById('out');
+const STAGE = document.getElementById('stage');
+const results = { ua: navigator.userAgent, tests: {} };
+const log = (m) => { OUT.textContent += '\n' + m; };
+
+const heap = () => (performance.memory ? performance.memory.usedJSHeapSize : null);
+const mb = (b) => (b == null ? null : +(b / 1048576).toFixed(1));
+
+// Force layout so timings include the browser's own work, not just script time.
+const flush = () => document.body.offsetHeight;
+
+function makeRows(n, cols) {
+  const rows = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const r = {};
+    for (let c = 0; c < cols; c++) {
+      r['col' + c] = c % 4 === 0 ? i * c : 'v' + i + '-' + c + '-xxxxxxxx';
+    }
+    rows[i] = Object.freeze(r);
+  }
+  return Object.freeze(rows);
+}
+
+// ---------------------------------------------------------------------------
+// TEST 1 — how tall can a single element actually be?
+// A naive virtual list sizes one spacer div to rowCount * rowHeight. At 100k rows
+// that is millions of pixels. Engines clamp somewhere; find where.
+// ---------------------------------------------------------------------------
+function testElementHeightLimit() {
+  const probe = document.createElement('div');
+  probe.style.width = '1px';
+  STAGE.appendChild(probe);
+  const ladder = [];
+  const heights = [1e5, 1e6, 2.8e6, 4e6, 1e7, 1.6e7, 2e7, 3.3e7, 6.7e7, 1e8, 1e9];
+  for (const h of heights) {
+    probe.style.height = h + 'px';
+    flush();
+    const observed = probe.getBoundingClientRect().height;
+    ladder.push({ requested: h, observed, honored: Math.abs(observed - h) < 1 });
+  }
+  probe.remove();
+  const firstClamp = ladder.find((e) => !e.honored);
+  const lastHonored = [...ladder].reverse().find((e) => e.honored);
+  return { ladder, firstClampedAt: firstClamp ? firstClamp.requested : null,
+           largestHonored: lastHonored ? lastHonored.requested : null };
+}
+
+// ---------------------------------------------------------------------------
+// TEST 2 — can the scroll container actually reach the bottom of that spacer,
+// and is scrollTop precise up there? A clamped height is only half the story:
+// scroll offsets are floats and may round at large magnitudes.
+// ---------------------------------------------------------------------------
+function testScrollPrecision(spacerHeight) {
+  const sc = document.createElement('div');
+  sc.style.cssText = 'width:300px;height:400px;overflow:auto';
+  const sp = document.createElement('div');
+  sp.style.cssText = 'width:1px;height:' + spacerHeight + 'px';
+  sc.appendChild(sp);
+  STAGE.appendChild(sc);
+  flush();
+  const maxScroll = sc.scrollHeight - sc.clientHeight;
+  const samples = [];
+  for (const frac of [0.25, 0.5, 0.75, 1.0]) {
+    const want = Math.floor(maxScroll * frac);
+    sc.scrollTop = want;
+    flush();
+    samples.push({ requested: want, readBack: sc.scrollTop, drift: sc.scrollTop - want });
+  }
+  // Smallest scroll step that actually moves the container at the far end.
+  sc.scrollTop = maxScroll;
+  flush();
+  const atEnd = sc.scrollTop;
+  sc.scrollTop = atEnd - 1;
+  flush();
+  const oneStep = atEnd - sc.scrollTop;
+  sc.remove();
+  return { spacerHeight, scrollHeight: sc.scrollHeight, maxScroll, samples, oneStepDelta: oneStep };
+}
+
+// ---------------------------------------------------------------------------
+// TEST 3 — the naive path: render every row. This is the measurement that
+// decides whether virtualization is *required* rather than merely nice.
+// Ladder up so a failure at 100k still leaves usable data points.
+// ---------------------------------------------------------------------------
+function renderTable(rows, cols, from, to) {
+  const t = document.createElement('table');
+  const tb = document.createElement('tbody');
+  const frag = document.createDocumentFragment();
+  for (let i = from; i < to; i++) {
+    const tr = document.createElement('tr');
+    const r = rows[i];
+    for (let c = 0; c < cols; c++) {
+      const td = document.createElement('td');
+      td.textContent = r['col' + c];
+      tr.appendChild(td);
+    }
+    frag.appendChild(tr);
+  }
+  tb.appendChild(frag);
+  t.appendChild(tb);
+  return t;
+}
+
+function testFullRender(rows, cols, counts) {
+  const out = [];
+  for (const n of counts) {
+    STAGE.textContent = '';
+    const before = heap();
+    const t0 = performance.now();
+    let table;
+    try {
+      table = renderTable(rows, cols, 0, n);
+      STAGE.appendChild(table);
+      flush();
+    } catch (e) {
+      out.push({ rows: n, cols, error: String(e) });
+      continue;
+    }
+    const buildMs = performance.now() - t0;
+    // Scroll to the bottom and back: exercises paint/layout, not just construction.
+    const t1 = performance.now();
+    STAGE.scrollTop = STAGE.scrollHeight;
+    flush();
+    STAGE.scrollTop = 0;
+    flush();
+    const scrollMs = performance.now() - t1;
+    const domNodes = STAGE.querySelectorAll('td').length;
+    out.push({ rows: n, cols, buildMs: +buildMs.toFixed(1), scrollMs: +scrollMs.toFixed(1),
+               cells: domNodes, heapDeltaMB: mb(heap() - before) });
+  }
+  STAGE.textContent = '';
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// TEST 4 — hand-rolled windowing: absolute-positioned window over a spacer.
+// Measures the cost of one window swap, i.e. what a scroll frame must fit in.
+// ---------------------------------------------------------------------------
+function testWindowed(rows, cols, windowSize, rowH, jumps) {
+  STAGE.textContent = '';
+  const before = heap();
+  const sc = document.createElement('div');
+  sc.style.cssText = 'position:relative;width:1200px;height:' + (windowSize * rowH) + 'px;overflow:auto';
+  const spacer = document.createElement('div');
+  spacer.style.cssText = 'width:1px;height:' + (rows.length * rowH) + 'px';
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:absolute;top:0;left:0;right:0';
+  sc.appendChild(spacer);
+  sc.appendChild(holder);
+  STAGE.appendChild(sc);
+
+  const t0 = performance.now();
+  holder.appendChild(renderTable(rows, cols, 0, windowSize));
+  flush();
+  const firstPaintMs = performance.now() - t0;
+
+  const timings = [];
+  for (let j = 0; j < jumps; j++) {
+    const start = Math.floor((rows.length - windowSize) * (j / jumps));
+    const t = performance.now();
+    holder.textContent = '';
+    holder.style.transform = 'translateY(' + (start * rowH) + 'px)';
+    holder.appendChild(renderTable(rows, cols, start, start + windowSize));
+    flush();
+    timings.push(performance.now() - t);
+  }
+  timings.sort((a, b) => a - b);
+  const pick = (p) => +timings[Math.min(timings.length - 1, Math.floor(timings.length * p))].toFixed(2);
+  const heapDelta = mb(heap() - before);
+  STAGE.textContent = '';
+  return { rows: rows.length, cols, windowSize, rowH,
+           firstPaintMs: +firstPaintMs.toFixed(1),
+           swapMs: { p50: pick(0.5), p95: pick(0.95), max: +timings[timings.length - 1].toFixed(2) },
+           heapDeltaMB: heapDelta };
+}
+
+// ---------------------------------------------------------------------------
+async function main() {
+  OUT.textContent = 'ua: ' + navigator.userAgent;
+  results.preciseMemory = !!performance.memory;
+
+  log('\n[1] element height limit');
+  results.tests.elementHeightLimit = testElementHeightLimit();
+  log(JSON.stringify(results.tests.elementHeightLimit, null, 1));
+
+  log('\n[2] scroll precision');
+  results.tests.scrollPrecision = [
+    testScrollPrecision(2.8e6),   // 100k rows @ 28px
+    testScrollPrecision(2e7),     // beyond the plausible clamp
+  ];
+  log(JSON.stringify(results.tests.scrollPrecision, null, 1));
+
+  const heapBase = heap();
+  log('\n[data] building 100k x 20 frozen rows');
+  const t0 = performance.now();
+  const rows20 = makeRows(100000, 20);
+  const buildMs = performance.now() - t0;
+  const dataHeap = heap() - heapBase;
+  results.tests.data = { rows: 100000, cols: 20, buildMs: +buildMs.toFixed(1),
+                         heapMB: mb(dataHeap),
+                         bytesPerRow: dataHeap ? Math.round(dataHeap / 100000) : null };
+  log(JSON.stringify(results.tests.data));
+
+  log('\n[3] full unvirtualized render');
+  results.tests.fullRender = testFullRender(rows20, 20, [1000, 10000, 50000, 100000]);
+  log(JSON.stringify(results.tests.fullRender, null, 1));
+
+  log('\n[4] hand-rolled windowing');
+  results.tests.windowed = [
+    testWindowed(rows20, 20, 50, 28, 100),
+    testWindowed(rows20, 20, 200, 28, 50),
+  ];
+  log(JSON.stringify(results.tests.windowed, null, 1));
+
+  log('\n[5] windowing with 50 columns');
+  const rows50 = makeRows(100000, 50);
+  results.tests.windowed50col = testWindowed(rows50, 50, 50, 28, 50);
+  log(JSON.stringify(results.tests.windowed50col, null, 1));
+
+  window.__RESULTS__ = results;
+  document.title = 'DONE';
+  log('\n=== DONE ===');
+}
+
+main().catch((e) => { log('FATAL ' + e.stack); document.title = 'DONE'; });
+</script>

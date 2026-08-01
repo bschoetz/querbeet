@@ -9,7 +9,11 @@ Constraints that apply to every research question (from `idea.md`, section 3 –
 - Single HTML file, no server, no backend; all processing client-side.
 - CDN libraries allowed; a build step that emits one HTML file is acceptable.
 - Target data size: ~100,000 rows max, typical case 2–5 report files.
-- Browsers: Firefox 145+, Edge 143+, Chrome 143+ (Safari optional).
+- Browsers: **Chromium-based (Edge 143+ / Chrome 143+) is the lead browser** — project decision
+  2026-08-01, prompted by R4/D2. Firefox 145+ stays a target but is secondary and gets *measured*
+  during the first MVP builds rather than assumed; if it does not deliver on the JS-heavy paths it
+  is dropped rather than specially handled. Every colleague has Edge installed, so a Chromium
+  browser is universally available. Safari optional. Full rationale in `idea.md` section 3.
 
 ---
 

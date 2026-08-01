@@ -1,0 +1,18 @@
+<meta charset="utf-8"><title>x</title><div id="s" style="position:absolute;left:-99999px"></div>
+<script>
+// Binary search for the largest honored element height, then read back the clamp value.
+const s=document.getElementById('s');
+const p=document.createElement('div'); p.style.width='1px'; s.appendChild(p);
+function ok(h){ p.style.height=h+'px'; document.body.offsetHeight;
+  const o=p.getBoundingClientRect().height; return {o, ok: Math.abs(o-h)<1}; }
+let lo=1e6, hi=4e7;
+while (hi-lo>1){ const mid=Math.floor((lo+hi)/2); if(ok(mid).ok) lo=mid; else hi=mid; }
+const beyond=ok(hi);
+// Also: what does a scroll container report at the failure point?
+const sc=document.createElement('div'); sc.style.cssText='width:200px;height:300px;overflow:auto';
+const sp=document.createElement('div'); sp.style.cssText='width:1px;height:'+hi+'px';
+sc.appendChild(sp); s.appendChild(sc); document.body.offsetHeight;
+window.__R__={largestHonored:lo, firstFailing:hi, observedAtFirstFailing:beyond.o,
+  scrollHeightAtFirstFailing:sc.scrollHeight, clientH:sc.clientHeight};
+document.title='DONE';
+</script>
