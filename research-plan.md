@@ -61,7 +61,11 @@ made deliberately.
 `concat` silently drops columns unique to incoming tables — pad every table to the union
 of column names first; null join keys never match and no option changes that — use
 sentinel substitution (30.8 ms), never a predicate function (~3.7 s projected, drops to a
-nested-loop join); duplicate keys produce a Cartesian product. And critically,
+nested-loop join); duplicate keys produce a Cartesian product. **Qualified 2026-08-01 by R4
+Checkpoint D2-a: the sentinel rule is safe only when joining against a table with unique keys.
+If both sides can contain nulls — which the PRD's graph makes easy, since two branches of one
+source both inherit its nulls — every sentinel row matches every sentinel row, and the join
+output grows quadratically in the null count.** See R4 below. And critically,
 `fromCSV`'s default type inference **silently corrupts German numbers** — `1.234` becomes
 1.234 instead of 1234 — while sampling only the first 1000 rows, so always pass explicit
 per-column `parse` functions or feed Arquero via `aq.from()` after parsing elsewhere.
@@ -332,36 +336,37 @@ lead-browser decision above.
   full-dataset search; graph-canvas versus table-rendering contention; and progress/cancellation
   for the export.
 **Checkpoint D2-a — does the graph stay affordable when a Step has several consumers?**
-*Carried over from D2. Not a dimension: one short measurement, to run with D3/D4.*
+**Status:** [x] done 2026-08-01. Measurement: `imports/arquero-graph-measurement-2026-08-01.md`.
 
-D2 established by object identity that `select`, `filter`, `orderby` and `derive` share the
-parent's backing arrays, so a chain of them costs one copy of the data plus small per-step
-structures. **That result was measured on a linear chain.** The PRD's graph (FR-12) differs in
-two ways that the linear case cannot exhibit: one Step may feed several consumers, and a Step's
-output must stay alive as long as *any* consumer needs it, so nothing can be released early.
+**The hypothesis held on all three limbs, one D2 rule is corrected, and one new trap is
+documented.** A DAG costs one copy of the source plus one full-length array per derived column
+plus one materialisation per `join`/`concat`, and fan-out is free: **ten pure-view consumers of
+an 80 MB source cost 0.13 MB between them**, with the per-consumer figure *falling* as consumer
+count rises. A derived column costs a flat 0.40 MB per consumer at 100k rows, so a 30-Step graph
+deriving one column per Step costs ~12 MB. In a diamond, two unjoined branches cost 0.79 MB and
+recombining them costs **10.0 MB** — branching is free, combining is not. Retention is clean:
+four Steps over a shared source cost 0.82 MB, dropping one leaf reclaims only its own derive
+array, and dropping the whole graph returns exactly to baseline. **A realistic half-million-row
+graph — five sources unioned, joined to a lookup, filtered, derived — costs 447 MB and 700 ms.**
 
-*Hypothesis to falsify:* a DAG of ~5–30 Steps over the half-million-row target costs
-approximately **one copy of the source data plus one full-length array per derived column plus
-one materialisation per `join`/`concat`**, and fan-out itself is free because consumers share
-the same backing arrays.
+**Corrected: D2's `reify()` rule is conditional and was stated unconditionally.** D2 said "reify
+after a selective filter and release the parent", worth 80 MB there. In a graph the Editor can
+re-run from any Step, so the parent normally *cannot* be released — and then reifying costs
+0.10 MB and saves nothing (view 0.01 MB vs reified 0.11 MB, filtering 100k to 1k). **Reify only
+when the parent is genuinely going away.**
 
-*Measure, in the browser, holding every Step output alive simultaneously:*
-- **Fan-out is free.** One source → N view-verb consumers (N = 1, 3, 10). Heap should be flat in
-  N. If it is not, the sharing result does not survive fan-out and the graph model needs a
-  memory budget of its own.
-- **The materialising verbs are where cost lives.** A diamond — one source, two branches, rejoined
-  by `join` — against the same shape with `filter` only. The delta is the real price of a graph.
-- **Retention.** With all Step outputs held, drop one leaf and confirm nothing is reclaimed
-  (expected: a shared parent is pinned by its other consumers), then drop the whole graph and
-  confirm the heap returns to baseline. A leak here is worse than a cost.
-- **`reify()` becomes a judgement call rather than a rule.** D2's rule was "reify after a
-  selective filter and release the parent" — in a graph the parent usually *cannot* be released,
-  because the Editor can re-run from any Step. Measure whether reifying a narrow Step still pays
-  when its parent stays alive anyway. It plausibly does not, which would overturn a D2
-  recommendation.
-
-*Cheap to run:* the harness exists (`imports/arquero-browser-probe.html` plus
-`run-arquero-probe.mjs`); this is one more probe section, not a new setup.
+**New trap — R1's null-key sentinel is a Cartesian bomb between two branches.** R1 mandated
+sentinel substitution because null join keys never match; that rule was derived for joining
+against a **unique lookup**, where sentinel rows find no partner. A DAG makes the dangerous case
+easy: two branches of one source both inherit its nulls, so every sentinel row on the left
+matches every one on the right. Measured, the join output tracks the sentinel *pair* count almost
+exactly — 28,000 source rows produce **2,687,670 join rows**; growth is quadratic in the null
+count, invisible on a sample and catastrophic at scale. At 100,000 source rows the pairs come to
+~34 million and it **crashed the tab**. Reproduced in Node before being accepted.
+*Implication:* R1's null keys silently *dropped* rows; the sentinel silently *multiplies* them,
+which is worse. Either exclude sentinel rows from the join and re-attach afterwards, give each
+side a distinct sentinel so they cannot match, or refuse the join. A Join Step must warn when
+both inputs carry nulls in the key column — a UX requirement, not only an implementation detail.
 
 **Inputs already settled by R2** — do not re-research these:
 - A Web Worker *can* be created from a `file://` page: classic workers from a `blob:` URL or a

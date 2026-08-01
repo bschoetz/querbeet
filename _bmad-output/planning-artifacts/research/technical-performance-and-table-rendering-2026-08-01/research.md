@@ -32,10 +32,10 @@ single-file Vue 3 + Arquero app.
 > 2. **D2's scale ladder happens to land exactly on the new target** — five simultaneous 100k
 >    sources *is* half a million rows, measured at 552.6 MB total heap, ~400 MB of it tables.
 >
-> One question the rescope adds and this run did not measure: in a graph a Step may have several
-> consumers, so intermediate outputs stay alive. D2's sharing result strongly implies this is
-> cheap for view-verbs and costly only at `join`/`concat`, but it was measured on a linear chain.
-> Carried into the remaining work.
+> The question the rescope added — in a graph a Step may have several consumers, so intermediate
+> outputs stay alive — has since been measured as **Checkpoint D2-a** (section below). Fan-out is
+> free, joins are the whole price, and a half-million-row graph costs 447 MB. It also **corrected
+> one D2 rule** and turned up a Cartesian trap in R1's sentinel recommendation.
 
 ---
 
@@ -528,6 +528,95 @@ are both source-read and measured.
 
 ---
 
+## Checkpoint D2-a — does the graph stay affordable when a Step has several consumers?
+
+D2 proved its sharing result on a **linear chain**. The PRD's graph (FR-12) differs in two ways
+a chain cannot exhibit: one Step may feed several consumers, and its output must outlive all of
+them. This checkpoint tested the hypothesis that a DAG costs *one copy of the source, plus one
+full-length array per derived column, plus one materialisation per `join`/`concat`, with fan-out
+free*.
+
+**All three limbs are confirmed [32].** A realistic half-million-row graph — five sources,
+unioned, joined against a lookup, filtered, derived — costs **447 MB and 700 ms** [32]. But the
+run also overturned one D2 recommendation and uncovered a trap that only a graph makes reachable.
+
+### Fan-out is free; joins are the entire price
+
+| Consumers of one source Step | Pure view chain | With a derived column |
+| --- | --- | --- |
+| 1 | 0.05 MB | 0.43 MB |
+| 3 | 0.05 MB | 1.20 MB |
+| 10 | **0.13 MB** | 3.95 MB |
+
+Ten pure-view consumers of an 80 MB source cost **0.13 MB between them**, and the per-consumer
+figure *falls* as N rises [32]. A derived column costs a flat **0.40 MB per consumer**, which is
+the `Array(totalRows)` allocation D2 read from the source [27] — charged regardless of how
+selective the branch is. A 30-Step graph deriving one column per Step would cost about 12 MB at
+100k rows.
+
+The diamond makes the shape explicit [32]: two branches held unjoined cost 0.79 MB; recombining
+them with a `join_left` producing 50,000 rows costs 10.81 MB. **The rejoin is 10.0 MB of the
+10.8** — branching is free, combining is not.
+
+**Retention is clean.** Four Steps over a shared source cost 0.82 MB in total; dropping one leaf
+reclaims its own derive array (0.42 MB) and nothing else, because the shared parent stays pinned
+by its other consumers; dropping the whole graph returns **exactly to baseline** [32]. There is
+no leak, and a leaf frees only what it alone owns.
+
+### Overturned: D2's `reify()` rule is conditional, and D2 stated it unconditionally
+
+D2 recommended *reify after a selective filter and release the parent*, worth 80 MB there. In a
+graph the Editor can re-run from any Step, so **the parent normally cannot be released** — and
+then the rule inverts [32]:
+
+| Case (100,000 rows filtered to 1,000) | View only | Reified | Effect |
+| --- | --- | --- | --- |
+| **Parent stays alive — the graph case** | 0.01 MB | 0.11 MB | **costs 0.10 MB, saves nothing** |
+| Parent can be released — D2's linear case | 69.65 MB → 0.70 MB after release | | saves ~69 MB |
+
+**Corrected rule: `reify()` only when the parent is genuinely going away.** Where the parent
+stays reachable from the graph, reifying copies the surviving rows while the original arrays
+remain alive anyway — pure cost. This does not change D2's memory totals, only its advice.
+
+### New trap: R1's null-key sentinel is a Cartesian bomb between two branches
+
+R1 established that null join keys never match and mandated **sentinel substitution**. That rule
+was derived for joining against a **unique lookup**, where sentinel rows simply find no partner.
+A DAG makes the dangerous case easy: two branches of one source both inherit its nulls, so every
+sentinel row on the left matches every sentinel row on the right.
+
+| Source rows | Left × Right | Sentinels L × R | **Join output** | Time |
+| --- | --- | --- | --- | --- |
+| 7,000 | 3,500 × 2,334 | 167,000 | **170,000 rows** | 236 ms |
+| 14,000 | 7,000 × 4,667 | 667,000 | **673,000 rows** | 716 ms |
+| 28,000 | 14,000 × 9,334 | 2,668,000 | **2,687,670 rows** | 2,646 ms |
+
+**Output row count tracks the sentinel pair count almost exactly** [32] — legitimate matches are
+the small remainder. Growth is quadratic in the null count, which makes it invisible on a sample
+and catastrophic at scale: the first run of this probe attempted the same join at 100,000 source
+rows, where the sentinel pairs come to roughly 34 million, and **crashed the tab**. It was
+reproduced independently in Node before being accepted as a finding.
+
+**Implication for the Editor.** The sentinel rule must be scoped to the case it was derived for.
+When both join inputs can contain nulls, substituting a shared sentinel is worse than the
+original problem: R1's null keys silently *dropped* rows, this silently *multiplies* them. Either
+exclude sentinel rows from the join and re-attach them afterwards, or give each side a distinct
+sentinel so they cannot match, or refuse the join and tell the user. A Join Step in a graph
+should also warn when both inputs carry nulls in the key column — this is a UX requirement, not
+only an implementation detail.
+
+### Confidence and scope
+
+Everything above is original measurement in Chromium 151 [32]; Firefox has no heap
+instrumentation and the findings are structural properties of Arquero's data model rather than
+engine behaviour. Caveats carry over from D2: headless, one machine, synthetic ~16-character
+strings, five identically-shaped sources.
+
+**Checkpoint closed.** The hypothesis held, one D2 rule is corrected, and one new trap is
+documented with a route out.
+
+---
+
 ## Sources
 
 | # | Source | Publisher | Date | Accessed |
@@ -560,6 +649,7 @@ are both source-read and measured.
 | 29 | [npm registry: arquero](https://registry.npmjs.org/arquero) | npm registry | 8.0.3, 2025-05-29 | 2026-08-01 |
 | 30 | [uwdata/arquero releases](https://github.com/uwdata/arquero/releases) | uwdata/arquero | 8.0.0–8.0.3 | 2026-08-01 |
 | 31 | **Original measurement** — `imports/arquero-browser-measurement-2026-08-01.md`, raw data in `imports/arquero-probe-chromium.json` and `imports/arquero-probe-firefox.json`; harness `imports/arquero-browser-probe.html`, `imports/run-arquero-probe.mjs` | this run — Arquero 8.0.3 in Chromium 151.0.7922.34 / Firefox 153.0, `file://`, headless | 2026-08-01 | 2026-08-01 |
+| 32 | **Original measurement** — Checkpoint D2-a: `imports/arquero-graph-measurement-2026-08-01.md`, raw data in `imports/arquero-graph-chromium.json`; harness `imports/arquero-graph-probe.html`, `imports/run-graph.mjs` | this run — Arquero 8.0.3 in Chromium 151.0.7922.34, `file://`, headless | 2026-08-01 | 2026-08-01 |
 
 ## Staleness map
 

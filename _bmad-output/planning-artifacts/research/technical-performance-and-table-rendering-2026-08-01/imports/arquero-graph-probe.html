@@ -1,0 +1,233 @@
+<meta charset="utf-8">
+<title>querbeet R4 / Checkpoint D2-a — Arquero in a DAG</title>
+<pre id="out" style="font:12px/1.4 monospace; white-space:pre-wrap">loading…</pre>
+<script>
+// querbeet R4 / Checkpoint D2-a — does the graph stay affordable when a Step has
+// several consumers? D2 proved view-verbs share backing arrays, but measured a LINEAR
+// chain. A DAG differs in two ways a chain cannot exhibit: one Step feeds several
+// consumers, and its output must outlive all of them, so nothing is released early.
+//
+// The Arquero UMD bundle is injected by the runner before this script runs.
+// Heap figures need Chromium with --enable-precise-memory-info --js-flags=--expose-gc.
+
+const OUT = document.getElementById('out');
+const log = (m) => { OUT.textContent += '\n' + m; };
+const R = { tests: {} };
+window.__R__ = R;   // publish early: an OOM later still leaves everything measured so far
+
+const collect = () => { if (window.gc) { window.gc(); window.gc(); } };
+const heapBytes = () => (performance.memory ? performance.memory.usedJSHeapSize : null);
+const mb = (b) => (b == null ? null : +(b / 1048576).toFixed(2));
+
+function makeRows(n, cols, seed) {
+  const rows = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const r = {};
+    for (let c = 0; c < cols; c++) {
+      r['col' + c] = c % 4 === 0 ? i + c * 1000 + seed : 'v' + i + '-' + c + '-xxxxxxxx';
+    }
+    r.key = i % 7 === 0 ? null : 'k' + (i % 5000);
+    rows[i] = r;
+  }
+  return rows;
+}
+
+// Measure the heap retained by whatever `fn` returns, with the value still referenced.
+function retained(fn) {
+  collect(); const before = heapBytes();
+  const t0 = performance.now();
+  const value = fn();
+  const ms = performance.now() - t0;
+  collect(); const after = heapBytes();
+  return { value, ms: +ms.toFixed(1), heapMB: mb(after - before) };
+}
+
+const N = 100000, COLS = 20;
+const F = (fn) => aq.escape(fn);
+
+const tick = () => new Promise((r) => setTimeout(r, 30));
+
+async function main() {
+  R.preciseMemory = !!performance.memory;
+  R.exposedGc = !!window.gc;
+  R.shape = { rowsPerSource: N, cols: COLS };
+  log('preciseMemory=' + R.preciseMemory + ' gc=' + R.exposedGc);
+
+  // The source Step. In the Editor this stays alive: the user can re-run from any Step.
+  const src = aq.from(makeRows(N, COLS, 0));
+  collect();
+  const baseline = heapBytes();
+  log('source table built, baseline heap ' + mb(baseline) + ' MB');
+
+  // --- TEST 1 — is fan-out free? -------------------------------------------
+  // One Step feeding N consumers. If sharing survives fan-out, heap is flat in N.
+  // Two variants: pure views (no new columns) vs. views that derive a column, since
+  // D2 showed `derive` allocates one array sized to the BACKING row count.
+  R.tests.fanOut = (() => {
+    const out = { pureViews: [], withDerive: [] };
+    for (const n of [1, 3, 10]) {
+      const pure = retained(() => {
+        const held = [];
+        for (let i = 0; i < n; i++) {
+          held.push(src.filter(F((d) => d.col0 % 2 === 0)).select('col0', 'col1', 'col4', 'key'));
+        }
+        return held;
+      });
+      out.pureViews.push({ consumers: n, heapMB: pure.heapMB, ms: pure.ms,
+                           perConsumerMB: mb((pure.heapMB || 0) * 1048576 / n) });
+      const der = retained(() => {
+        const held = [];
+        for (let i = 0; i < n; i++) {
+          held.push(src.filter(F((d) => d.col0 % 2 === 0))
+                       .derive({ ['c' + i]: F((d) => d.col0 + 1) }));
+        }
+        return held;
+      });
+      out.withDerive.push({ consumers: n, heapMB: der.heapMB, ms: der.ms,
+                            perConsumerMB: mb((der.heapMB || 0) * 1048576 / n) });
+    }
+    return out;
+  })();
+  await tick();
+  log('[1] fan-out: ' + JSON.stringify(R.tests.fanOut));
+
+  // --- TEST 2 — the diamond: what does rejoining actually cost? -------------
+  // Same graph shape twice: branch, branch, then either rejoin or don't.
+  R.tests.diamond = (() => {
+    const branchesOnly = retained(() => {
+      const a = src.filter(F((d) => d.col0 % 2 === 0)).derive({ a: F((d) => d.col0 * 2) });
+      const b = src.filter(F((d) => d.col0 % 3 === 0)).derive({ b: F((d) => d.col4 + 1) });
+      return [a, b];
+    });
+    // Rejoin on col0, which is unique per row — the realistic "recombine two branches
+    // of the same rows" shape. NB: joining the two branches on `key` instead explodes;
+    // see the sentinelExplosion test below, which is why this is not that.
+    const rejoined = retained(() => {
+      const a = src.filter(F((d) => d.col0 % 2 === 0)).derive({ a: F((d) => d.col0 * 2) });
+      const b = src.filter(F((d) => d.col0 % 3 === 0)).derive({ b: F((d) => d.col4 + 1) });
+      const j = a.join_left(b, ['col0', 'col0']);
+      return [a, b, j];
+    });
+    return {
+      branchesOnly: { heapMB: branchesOnly.heapMB, ms: branchesOnly.ms },
+      rejoined: { heapMB: rejoined.heapMB, ms: rejoined.ms,
+                  rows: rejoined.value[2].numRows() },
+      priceOfTheJoinMB: mb(((rejoined.heapMB || 0) - (branchesOnly.heapMB || 0)) * 1048576)
+    };
+  })();
+  await tick();
+  log('[2] diamond: ' + JSON.stringify(R.tests.diamond));
+
+  // --- TEST 3 — retention: does dropping one leaf free anything? ------------
+  // Expected: no. A shared parent is pinned by its other consumers. What matters is
+  // that dropping the WHOLE graph returns to baseline — a leak here is worse than a cost.
+  R.tests.retention = (() => {
+    collect(); const before = heapBytes();
+    let s1 = src.filter(F((d) => d.col0 % 2 === 0));
+    let s2 = s1.derive({ x: F((d) => d.col0 + 1) });      // leaf on the s1 branch
+    let s3 = s1.select('col0', 'col1', 'key');            // second consumer of s1
+    let s4 = src.derive({ y: F((d) => d.col4 * 2) });     // second consumer of src
+    collect(); const whole = heapBytes();
+    s2 = null;                                            // drop one leaf
+    collect(); const afterLeaf = heapBytes();
+    s1 = null; s3 = null; s4 = null;                      // drop the rest of the graph
+    collect(); const afterAll = heapBytes();
+    return { graphHeldMB: mb(whole - before),
+             afterDroppingOneLeafMB: mb(afterLeaf - before),
+             reclaimedByLeafMB: mb(whole - afterLeaf),
+             afterDroppingWholeGraphMB: mb(afterAll - before),
+             sourceStillAlive: src.numRows() === N };
+  })();
+  await tick();
+  log('[3] retention: ' + JSON.stringify(R.tests.retention));
+
+  // --- TEST 2b — the sentinel trap the graph makes reachable ----------------
+  // R1 mandated sentinel substitution because null join keys never match. That rule was
+  // derived for joining a table against a UNIQUE lookup, where sentinel rows simply find
+  // no partner. In a DAG, two branches of the same source both inherit its nulls — and
+  // then every sentinel row on the left matches every sentinel row on the right.
+  // Deliberately small: at 100k this allocates tens of millions of rows and kills the tab.
+  R.tests.sentinelExplosion = (() => {
+    const out = [];
+    for (const n of [7000, 14000, 28000]) {
+      const s = aq.from(makeRows(n, COLS, 0));
+      const a = s.filter(F((d) => d.col0 % 2 === 0)).derive({ jk: F((d) => (d.key == null ? ' NULL ' : d.key)) });
+      const b = s.filter(F((d) => d.col0 % 3 === 0)).derive({ jk: F((d) => (d.key == null ? ' NULL ' : d.key)) });
+      const sa = a.filter(F((d) => d.jk === ' NULL ')).numRows();
+      const sb = b.filter(F((d) => d.jk === ' NULL ')).numRows();
+      const t0 = performance.now();
+      const j = a.join_left(b, ['jk', 'jk']);
+      const ms = performance.now() - t0;
+      out.push({ sourceRows: n, leftRows: a.numRows(), rightRows: b.numRows(),
+                 sentinelLeft: sa, sentinelRight: sb, sentinelPairs: sa * sb,
+                 joinRows: j.numRows(), ms: +ms.toFixed(0) });
+    }
+    return out;
+  })();
+  await tick();
+  log('[2b] sentinel explosion: ' + JSON.stringify(R.tests.sentinelExplosion));
+
+  // --- TEST 4 — does reify() still pay when the parent cannot be released? ---
+  // D2's rule: "reify after a selective filter and release the parent" — worth 80 MB.
+  // In a graph the Editor can re-run from any Step, so the parent stays alive anyway.
+  // If so, reify() buys nothing and costs a copy. This can overturn a D2 recommendation.
+  R.tests.reifyInGraph = (() => {
+    const narrow = retained(() => src.filter(F((d) => d.col0 % 100 === 0)));  // ~1% survives
+    const narrowReified = retained(() => src.filter(F((d) => d.col0 % 100 === 0)).reify());
+    // And the case D2 actually measured, for contrast: parent released afterwards.
+    collect(); const b2 = heapBytes();
+    let localSrc = aq.from(makeRows(N, COLS, 5));
+    let view = localSrc.filter(F((d) => d.col0 % 100 === 0));
+    let compact = view.reify();
+    collect(); const held = heapBytes();
+    localSrc = null; view = null;
+    collect(); const released = heapBytes();
+    const keptRows = compact.numRows();
+    compact = null; collect();
+    return {
+      parentStaysAlive: {
+        viewOnlyMB: narrow.heapMB, reifiedMB: narrowReified.heapMB,
+        costOfReifyingMB: mb(((narrowReified.heapMB || 0) - (narrow.heapMB || 0)) * 1048576),
+        survivingRows: narrow.value.numRows()
+      },
+      parentCanBeReleased: {
+        withParentMB: mb(held - b2), afterReleaseMB: mb(released - b2), keptRows
+      }
+    };
+  })();
+  await tick();
+  log('[4] reify in a graph: ' + JSON.stringify(R.tests.reifyInGraph));
+
+  // --- TEST 5 — the realistic total: a graph over ~500k rows ----------------
+  R.tests.halfMillion = (() => {
+    try {
+      collect(); const before = heapBytes();
+      const sources = [];
+      for (let i = 0; i < 5; i++) sources.push(aq.from(makeRows(N, COLS, 200 + i)));
+      collect(); const withSources = heapBytes();
+      // A plausible graph: pad-and-union all five, sentinel, join a lookup, filter, derive.
+      const lookupRows = new Array(5000);
+      for (let i = 0; i < 5000; i++) lookupRows[i] = { key: 'k' + i, label: 'L' + i };
+      const lookup = aq.from(lookupRows);
+      const t0 = performance.now();
+      let u = sources[0];
+      for (let i = 1; i < 5; i++) u = u.concat(sources[i]);
+      const us = u.derive({ jk: F((d) => (d.key == null ? ' NULL ' : d.key)) });
+      const j = us.join_left(lookup, ['jk', 'key']);   // lookup's key column is `key`, not `jk`
+      const f = j.filter(F((d) => d.col0 % 2 === 0));
+      const result = f.derive({ total: F((d) => d.col0 + d.col4) });
+      const ms = performance.now() - t0;
+      collect(); const withGraph = heapBytes();
+      return { sources: 5, totalRows: 5 * N, sourcesMB: mb(withSources - before),
+               graphAddsMB: mb(withGraph - withSources), totalMB: mb(withGraph - before),
+               pipelineMs: +ms.toFixed(1), resultRows: result.numRows() };
+    } catch (e) { return { error: String(e) }; }
+  })();
+  log('[5] half a million rows: ' + JSON.stringify(R.tests.halfMillion));
+
+  document.title = 'DONE';
+  log('\n=== DONE ===');
+}
+
+main().catch((e) => { log('FATAL ' + e.stack); R.fatal = String(e.stack); document.title = 'DONE'; });
+</script>

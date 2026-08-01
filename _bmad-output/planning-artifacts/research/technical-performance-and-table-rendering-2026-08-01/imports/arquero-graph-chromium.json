@@ -1,0 +1,131 @@
+{
+ "browser": "chromium",
+ "version": "151.0.7922.34",
+ "done": true,
+ "crashed": false,
+ "results": {
+  "tests": {
+   "fanOut": {
+    "pureViews": [
+     {
+      "consumers": 1,
+      "heapMB": 0.05,
+      "ms": 11.8,
+      "perConsumerMB": 0.05
+     },
+     {
+      "consumers": 3,
+      "heapMB": 0.05,
+      "ms": 25.8,
+      "perConsumerMB": 0.02
+     },
+     {
+      "consumers": 10,
+      "heapMB": 0.13,
+      "ms": 63.3,
+      "perConsumerMB": 0.01
+     }
+    ],
+    "withDerive": [
+     {
+      "consumers": 1,
+      "heapMB": 0.43,
+      "ms": 17.3,
+      "perConsumerMB": 0.43
+     },
+     {
+      "consumers": 3,
+      "heapMB": 1.2,
+      "ms": 49.7,
+      "perConsumerMB": 0.4
+     },
+     {
+      "consumers": 10,
+      "heapMB": 3.95,
+      "ms": 137.8,
+      "perConsumerMB": 0.4
+     }
+    ]
+   },
+   "diamond": {
+    "branchesOnly": {
+     "heapMB": 0.79,
+     "ms": 33.3
+    },
+    "rejoined": {
+     "heapMB": 10.81,
+     "ms": 127.4,
+     "rows": 50000
+    },
+    "priceOfTheJoinMB": 10.02
+   },
+   "retention": {
+    "graphHeldMB": 0.82,
+    "afterDroppingOneLeafMB": 0.4,
+    "reclaimedByLeafMB": 0.42,
+    "afterDroppingWholeGraphMB": 0,
+    "sourceStillAlive": true
+   },
+   "sentinelExplosion": [
+    {
+     "sourceRows": 7000,
+     "leftRows": 3500,
+     "rightRows": 2334,
+     "sentinelLeft": 500,
+     "sentinelRight": 334,
+     "sentinelPairs": 167000,
+     "joinRows": 170000,
+     "ms": 240
+    },
+    {
+     "sourceRows": 14000,
+     "leftRows": 7000,
+     "rightRows": 4667,
+     "sentinelLeft": 1000,
+     "sentinelRight": 667,
+     "sentinelPairs": 667000,
+     "joinRows": 673000,
+     "ms": 721
+    },
+    {
+     "sourceRows": 28000,
+     "leftRows": 14000,
+     "rightRows": 9334,
+     "sentinelLeft": 2000,
+     "sentinelRight": 1334,
+     "sentinelPairs": 2668000,
+     "joinRows": 2687670,
+     "ms": 2816
+    }
+   ],
+   "reifyInGraph": {
+    "parentStaysAlive": {
+     "viewOnlyMB": 0.02,
+     "reifiedMB": 0.11,
+     "costOfReifyingMB": 0.09,
+     "survivingRows": 1000
+    },
+    "parentCanBeReleased": {
+     "withParentMB": 69.65,
+     "afterReleaseMB": 0.7,
+     "keptRows": 1000
+    }
+   },
+   "halfMillion": {
+    "sources": 5,
+    "totalRows": 500000,
+    "sourcesMB": 358.43,
+    "graphAddsMB": 88.64,
+    "totalMB": 447.07,
+    "pipelineMs": 699.9,
+    "resultRows": 250000
+   }
+  },
+  "preciseMemory": true,
+  "exposedGc": true,
+  "shape": {
+   "rowsPerSource": 100000,
+   "cols": 20
+  }
+ }
+}
