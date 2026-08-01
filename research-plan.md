@@ -562,8 +562,104 @@ totals, and Checkpoint D2-a. Nothing in R6, R9 or the spike contradicts a measur
 
 ## R5 – Type detection & smaller decisions
 
-**Status:** [ ] open
-**Report:** –
+**Status:** [x] done (deep-research harness, three passes, 2026-08-01)
+**Report:** `_bmad-output/planning-artifacts/research/technical-type-and-locale-detection-2026-08-01/research.md`
+
+**The requirement that gave R5 its name has no prior art, and that is the finding.** DuckDB, Power
+Query, LibreOffice Calc and Frictionless all resolve locale ambiguity **silently** — none emits a
+warning, a confidence value or a second-reading flag, and a grep of DuckDB's auto-detection page
+finds the word "warn" zero times. DuckDB documents its tie-break as a preference list in which
+**DD-MM silently beats MM-DD**; Power Query parses with the OS locale inherited once at workbook
+creation. So FR-9's *reporting* requirement has nothing to copy. What does exist is **override**
+prior art, and the best of it is Power Query's "Change Type → Using Locale", which asks for a type
+and a locale in one action and serialises the culture into the saved script
+(`Table.TransformColumnTypes(…, culture)`).
+
+**Every engine samples, and that is the thing not to copy: DuckDB 20,480 rows, Arquero 1,000,
+Power Query 200, Frictionless 100.** The signal that actually resolves `03/04/2025` — a day value
+above 12 — is decisive *only within the window scanned*, and Frictionless issue #1689 is a
+reproduction of the resulting corruption on a 2 GB file. querbeet's columns are at most 100,000
+rows and the scan is a column walk: **scan the whole column.** One asymmetry is worth keeping:
+DuckDB fails loudly when a post-sample value violates the sniffed type — but **in a fully ambiguous
+column, where every reading parses, no error can ever fire in any of these tools.**
+
+**Five answers, each with the runner-up that lost:**
+
+| Question | Answer | Runner-up |
+| --- | --- | --- |
+| Ambiguity | Full-column scan, both readings as competing hypotheses, report the decisive-evidence count *and* an explicit "nothing settles this" state | DuckDB's preference order — turns an unresolvable case into a silent winner |
+| Numbers | Separators from `Intl.NumberFormat.formatToParts`, own parser | `@internationalized/number` 3.6.7 — gate-clean, but size and throughput unmeasured |
+| Dates | `date-fns` 4.4.0 `parse` | `d3-time-format` — stricter, ~500 B locale object, but you maintain the table |
+| Recording | Per column `{type, decimalChar, groupChar, dateFormat, missingValues, keepOriginal}` | CSVW's `format` object — same content, heavier document model |
+| Comparison value | **A JSON number** in canonical machine form | Always-a-string — equivalent except above 2⁵³ |
+| CSS | Tailwind v4.3.3 with `preflight.css` omitted from the split import | Hand-written scoped CSS — closer than it looks |
+
+**The comparison-value answer overturns this plan's own lean** — the sub-question below still reads
+"the first is the only one that keeps a Recipe portable across locales". The plan reasoned
+that only a string keeps a Recipe portable across locales. The opposite holds: a JSON number needs
+no locale to be read correctly anywhere, while a string re-imports into `value` the exact defect R1
+and R3 measured. Anthropic's documentation frames it the same way — for `passengers: int`,
+unconstrained output may be `"two"` or `"2"`, and **the number is the target while the string is
+named "the incompatible type"**. The shape that produced the FR-28 spike's four-to-one split turns
+out to be Microsoft's own reference schema for exactly querbeet's `column`/`operator`/`value` step,
+with `value` typed `anyOf[string, number, object]` and no discriminator. **querbeet cannot use the
+one mechanism that fixes this** — grammar-constrained sampling under `strict: true` — because a
+Recipe arrives by copy-paste, so enforcement moves to the ingest validator: accept a JSON number,
+coerce a canonical numeric string (which alone converts four of the five measured authorings),
+**refuse a grouping separator or comma decimal by name**, in `columns.js`'s message style. And add a
+numeric filter example to `block-template.txt` the same day — its only filter example today is a
+text comparison, at both line 74 and line 128, which is why five authors guessed.
+
+**Two structural findings reach past R5.** First, **no parsing library infers a format from the
+data** — date-fns, Luxon, Day.js and d3 all require the caller to supply the pattern, so the
+candidate-enumeration loop is querbeet's own code in every case and **throughput must be budgeted as
+rows × columns × candidates tried**, not rows × columns. Luxon is the only measured datapoint at
+356 ms per 100,000 values *per candidate* even with its precompiled parser (~7 s for 100k × 20),
+which is why it lost. Second, **Day.js silently ignores a format string when its plugin is not
+registered**: `dayjs('12-25-1995','MM-DD-YYYY')` returns the right date via the native path while
+`dayjs('25.12.1995','DD.MM.YYYY')` returns Invalid Date — same bug family as R1's and R3's, third
+direction. **Temporal is not an option at all:** `PlainDate.from()` accepts only RFC 9557 strings, so
+`"31.12.2025"` throws, and it is not Baseline because Safari does not ship it (Chrome/Edge 144,
+Firefox 139 — this research's own brief assumed 143+ and was wrong).
+
+**The CSS gate separates nothing and the freshness gate separates everything.** Measured against the
+published tarballs: **zero `@font-face` rules in any candidate and every `url()` a `data:` URI**,
+including Vue Flow's own two stylesheets. But Pico 2.1.1 is 16 months old, Bulma 15, Simple.css 14
+and Water.css **59** — only Tailwind, UnoCSS and Open Props pass the plan's 12-month rule. The
+decisive measurement is that **`tailwindcss/utilities.css` as published is 21 bytes**: every utility
+is generated from the app's own markup, so Tailwind's inlined cost scales with querbeet rather than
+with the package (fixed part: `theme.css` 19,586 B raw), while a classless framework ships its whole
+sheet regardless — Pico 83 KB raw, Bulma 678 KB. Preflight is removable by deleting one line of the
+three-line split import, which is what makes Tailwind safe next to `@vue-flow/core/dist/style.css`
+(3,930 B, the only mandatory one; `theme-default.css` is optional and its theming surface is CSS
+custom properties anyway).
+
+**A process failure recorded because it nearly hid a gap:** pass 2 ranked claims globally and
+verified only the top 15, so one angle took every slot and the filter-format and CSS claims were
+fetched and then never adjudicated — the run reported "no surviving claims", which reads as *nothing
+found* but meant *nothing checked*. Pass 3 recovered them from the journal. **Rank within each angle,
+not across them.** Totals across the three passes: 43 sources, 207 claims extracted, 53 adjudicated,
+34 confirmed, 19 refuted. Four refutations taught more than the claims did — notably that JsonLogic
+implements `>` as bare JS, so with two string operands it compares **lexicographically**
+(`"900" > "1000"` is `true`), which is querbeet's default case since PapaParse runs with
+`dynamicTyping` off.
+
+**Six numbers still need a local measurement**, none of them blocking: parser throughput at
+100k × 20 × candidates; whether Chromium and Firefox return byte-identical separators for `de-DE`
+and `fr-FR` (only Node/ICU 78.3 was measured, and the U+00A0 → U+202F migration lands per engine);
+the tree-shaken cost of date-fns's locales (the claimed figure was refuted 0-3); Day.js's localized
+tokens; querbeet's own Tailwind output size; and `@internationalized/number`'s real min+gzip against
+its unverified 1.7 kB vendor claim. **Not researched at all:** `chrono-node` and `any-date-parser`
+— the only *inference* parsers in the field and therefore the only candidates that could contradict
+the no-library-infers-a-format finding — plus `d3-format`, `numbro`, `autonumeric`, `currency.js`,
+`dinero.js`, and the GraphQL, Vega-Lite, RQL/JSON:API and Sigma rows of the filter survey.
+
+**And the one that is design work rather than research:** how to word and score the ambiguity report
+for a non-specialist. FR-9's example wording is a *hit rate* ("842 of 900 values readable") and it
+answers a different question than ambiguity — **a column can have a 100 % hit rate under both
+readings**, and that is the case the report must name. No tool anywhere reports one, so there is no
+UX prior art; Frictionless's `field_confidence` is the wrong model, being a global tuning knob
+implemented as relative candidate scoring rather than a per-column reported score.
 
 **Question:** How to detect and handle data types on import, plus remaining
 smaller stack decisions?
@@ -895,8 +991,16 @@ the same reasoning that decided R1 in Arquero's favour and R6 in Vue Flow's: a c
 library is more battle-tested than freshly written bespoke code. The third override in three runs,
 and the one where it is cheapest to justify, because the report's own strongest counter-argument —
 tooltips, legends and the tick algorithm's edge cases — is exactly what the library brings. The
-tripwire above survives the decision and now tests it: if ECharts has *not* absorbed those five
-cases, the justification is gone and the 184-line fallback is still in `imports/chart-probe/`.
+tripwire above survived the decision and was then run against it — **2026-08-01, and it passes**
+(`imports/edge-case-tripwire-2026-08-01.md`). Eight cases in both engines: none threw, and **every
+case's serialized SVG contains zero `NaN`, `Infinity` or `undefined`**. All-zero synthesises a 0–1
+range instead of collapsing; negatives get a real zero baseline; an empty result draws an empty plot;
+and null gaps become three separate `M` commands rather than an interpolation — so the `sampling` ban
+costs nothing. **One failure, cosmetic:** a 60-character rotated category label escapes the SVG by
+15.2 px (Chromium) / 21 px (Firefox). **Two tile settings follow and are not optional** — a
+long-label strategy (`axisLabel.width` + `overflow`, or a shortening formatter, which querbeet
+already owns) and `barMaxWidth`, without which a single-category tile is a 237 px slab in a 346 px
+plot. Still unexercised on every candidate: tooltips and legends.
 
 **Seven consequences, none of them preferences** (full derivation in the report's section "Adopting
 ECharts — what the measurements require"): register `SVGRenderer` and nothing else, because canvas
@@ -1088,7 +1192,16 @@ portable file, from a `file://` page?
    there is no shared cancellation flag from `file://`. Three findings reach outside R4 — R3's export
    figures understate the browser by ~10 s at half a million rows, `hyparquet-writer`'s `GZIP` codec
    silently writes an unreadable file, and `new Worker` is a poor hard-gate signal for built artefacts.
-6. **R5** – type and locale detection; can run alongside R4. Started 2026-08-01.
+6. ~~**R5**~~ Done (2026-08-01), run in parallel with R7. The reporting requirement has **no prior
+   art** — DuckDB, Power Query, LibreOffice and Frictionless all resolve locale ambiguity silently,
+   and every one of them samples (20,480 / 200 / 100 rows against Arquero's 1,000), so the decisive
+   day-above-12 signal is only decisive inside the window scanned. Scan the whole column. Separators
+   come free from `Intl.NumberFormat.formatToParts`; dates from `date-fns` 4.4.0, since **no library
+   infers a format** and the candidate loop is querbeet's own code either way. **The comparison value
+   is a JSON number, which overturns this plan's own lean** — a number needs no locale to be read
+   correctly anywhere, and it is unenforced today in both `columns.js` and `block-template.txt`.
+   CSS: Tailwind v4.3.3 with `preflight.css` deleted from the split import; Pico fails the freshness
+   gate at 16 months.
 7. ~~**R7**~~ Done (2026-08-01), run in parallel with R5. Research verdict: hand-written SVG;
    runner-up ECharts 6.1.0 in SVG mode. The deciding criterion turned out to be the printed page:
    SVG prints as vector plus selectable text, canvas as a `devicePixelRatio`-bound raster. Volume

@@ -1,0 +1,387 @@
+{
+  "engine": "chromium",
+  "errors": [],
+  "cases": {
+    "all-zero": {
+      "id": "all-zero",
+      "kind": "bar",
+      "expect": "an axis that does not collapse and no NaN geometry",
+      "threw": null,
+      "badNumbers": {
+        "NaN": 0,
+        "Infinity": 0,
+        "undefined": 0
+      },
+      "bytes": 2643,
+      "axisTicks": [
+        "‹0",
+        "‹0,2",
+        "‹0,4",
+        "‹0,6",
+        "‹0,8",
+        "‹1"
+      ],
+      "distinctTicks": 6,
+      "categoryLabels": [
+        "Bayern",
+        "Hessen",
+        "Berlin",
+        "Bremen"
+      ],
+      "escapes": [],
+      "clipped": false,
+      "svgSize": {
+        "w": 460,
+        "h": 280
+      },
+      "expectedBars": 4,
+      "drawnBars": 4,
+      "bars": [
+        {
+          "x": 113.3,
+          "y": 190,
+          "w": 59.3,
+          "h": 0
+        },
+        {
+          "x": 199.3,
+          "y": 190,
+          "w": 59.3,
+          "h": 0
+        },
+        {
+          "x": 285.3,
+          "y": 190,
+          "w": 59.3,
+          "h": 0
+        },
+        {
+          "x": 371.3,
+          "y": 190,
+          "w": 59.3,
+          "h": 0
+        }
+      ],
+      "plotWidth": 460
+    },
+    "single-category": {
+      "id": "single-category",
+      "kind": "bar",
+      "expect": "one bar of sane width, inside the plot area",
+      "threw": null,
+      "badNumbers": {
+        "NaN": 0,
+        "Infinity": 0,
+        "undefined": 0
+      },
+      "bytes": 1936,
+      "axisTicks": [
+        "‹0",
+        "‹1.000",
+        "‹2.000",
+        "‹3.000",
+        "‹4.000",
+        "‹5.000"
+      ],
+      "distinctTicks": 6,
+      "categoryLabels": [
+        "Bayern"
+      ],
+      "escapes": [],
+      "clipped": false,
+      "svgSize": {
+        "w": 460,
+        "h": 280
+      },
+      "expectedBars": 1,
+      "drawnBars": 1,
+      "bars": [
+        {
+          "x": 153.3,
+          "y": 22.3,
+          "w": 237.4,
+          "h": 167.7
+        }
+      ],
+      "plotWidth": 460
+    },
+    "negative": {
+      "id": "negative",
+      "kind": "bar",
+      "expect": "a zero baseline with bars on both sides of it",
+      "threw": null,
+      "badNumbers": {
+        "NaN": 0,
+        "Infinity": 0,
+        "undefined": 0
+      },
+      "bytes": 2902,
+      "axisTicks": [
+        "‹-1.500",
+        "‹-1.000",
+        "‹-500",
+        "‹0",
+        "‹500",
+        "‹1.000",
+        "‹1.500"
+      ],
+      "distinctTicks": 7,
+      "categoryLabels": [
+        "Bayern",
+        "Hessen",
+        "Berlin",
+        "Bremen"
+      ],
+      "escapes": [],
+      "clipped": false,
+      "svgSize": {
+        "w": 460,
+        "h": 280
+      },
+      "expectedBars": 4,
+      "drawnBars": 4,
+      "bars": [
+        {
+          "x": 113.3,
+          "y": 29.8,
+          "w": 59.3,
+          "h": 71.2
+        },
+        {
+          "x": 199.3,
+          "y": 101,
+          "w": 59.3,
+          "h": 47.5
+        },
+        {
+          "x": 285.3,
+          "y": 74.3,
+          "w": 59.3,
+          "h": 26.7
+        },
+        {
+          "x": 371.3,
+          "y": 101,
+          "w": 59.3,
+          "h": 89
+        }
+      ],
+      "plotWidth": 460
+    },
+    "all-negative": {
+      "id": "all-negative",
+      "kind": "bar",
+      "expect": "an axis whose range covers only negatives",
+      "threw": null,
+      "badNumbers": {
+        "NaN": 0,
+        "Infinity": 0,
+        "undefined": 0
+      },
+      "bytes": 2665,
+      "axisTicks": [
+        "‹-1.200",
+        "‹-1.000",
+        "‹-800",
+        "‹-600",
+        "‹-400",
+        "‹-200",
+        "‹0"
+      ],
+      "distinctTicks": 7,
+      "categoryLabels": [
+        "Bayern",
+        "Hessen",
+        "Berlin"
+      ],
+      "escapes": [],
+      "clipped": false,
+      "svgSize": {
+        "w": 460,
+        "h": 280
+      },
+      "expectedBars": 3,
+      "drawnBars": 3,
+      "bars": [
+        {
+          "x": 117.8,
+          "y": 12,
+          "w": 79.1,
+          "h": 178
+        },
+        {
+          "x": 232.4,
+          "y": 12,
+          "w": 79.1,
+          "h": 118.7
+        },
+        {
+          "x": 347.1,
+          "y": 12,
+          "w": 79.1,
+          "h": 66.8
+        }
+      ],
+      "plotWidth": 460
+    },
+    "empty": {
+      "id": "empty",
+      "kind": "bar",
+      "expect": "no throw, no NaN, and an empty plot rather than a broken one",
+      "threw": null,
+      "badNumbers": {
+        "NaN": 0,
+        "Infinity": 0,
+        "undefined": 0
+      },
+      "bytes": 362,
+      "axisTicks": [],
+      "distinctTicks": 0,
+      "categoryLabels": [],
+      "escapes": [],
+      "clipped": false,
+      "svgSize": {
+        "w": 460,
+        "h": 280
+      },
+      "expectedBars": 0,
+      "drawnBars": 0,
+      "bars": [],
+      "plotWidth": 460
+    },
+    "label-60": {
+      "id": "label-60",
+      "kind": "bar",
+      "expect": "the long label handled without escaping the SVG box",
+      "threw": null,
+      "badNumbers": {
+        "NaN": 0,
+        "Infinity": 0,
+        "undefined": 0
+      },
+      "bytes": 2362,
+      "axisTicks": [
+        "‹0",
+        "‹200",
+        "‹400",
+        "‹600",
+        "‹800",
+        "‹1.000"
+      ],
+      "distinctTicks": 6,
+      "categoryLabels": [
+        "Nordrhein-Westfalen und angrenzende Verwaltungsbezirke XY",
+        "Hessen"
+      ],
+      "escapes": [
+        {
+          "tag": "text",
+          "text": "Nordrhein-Westfalen und angren",
+          "outLeftPx": 15.2,
+          "outRightPx": -217.6,
+          "outTopPx": -93.2,
+          "outBottomPx": -1.2
+        }
+      ],
+      "clipped": true,
+      "svgSize": {
+        "w": 460,
+        "h": 280
+      },
+      "expectedBars": 2,
+      "drawnBars": 2,
+      "bars": [
+        {
+          "x": 191.1,
+          "y": 19.9,
+          "w": 94.6,
+          "h": 70.7
+        },
+        {
+          "x": 328.2,
+          "y": 59.1,
+          "w": 94.6,
+          "h": 31.4
+        }
+      ],
+      "plotWidth": 460
+    },
+    "line-with-nulls": {
+      "id": "line-with-nulls",
+      "kind": "line",
+      "expect": "gaps rendered as gaps, no NaN in the path",
+      "threw": null,
+      "badNumbers": {
+        "NaN": 0,
+        "Infinity": 0,
+        "undefined": 0
+      },
+      "bytes": 4086,
+      "axisTicks": [
+        "‹0",
+        "‹3",
+        "‹6",
+        "‹9",
+        "‹12",
+        "‹15",
+        "‹0",
+        "‹1",
+        "‹2",
+        "‹3",
+        "‹4",
+        "‹5"
+      ],
+      "distinctTicks": 10,
+      "categoryLabels": [],
+      "escapes": [],
+      "clipped": false,
+      "svgSize": {
+        "w": 460,
+        "h": 280
+      },
+      "seriesPathLength": 39,
+      "moveCommands": 3,
+      "seriesPathSample": "M100 88L168.8 57.6M306.4 103.2M444 27.2"
+    },
+    "flat-line": {
+      "id": "flat-line",
+      "kind": "line",
+      "expect": "a degenerate y-range that still produces distinct ticks",
+      "threw": null,
+      "badNumbers": {
+        "NaN": 0,
+        "Infinity": 0,
+        "undefined": 0
+      },
+      "bytes": 4959,
+      "axisTicks": [
+        "‹0",
+        "‹1",
+        "‹2",
+        "‹3",
+        "‹4",
+        "‹5",
+        "‹6",
+        "‹7",
+        "‹0",
+        "‹0,5",
+        "‹1",
+        "‹1,5",
+        "‹2",
+        "‹2,5",
+        "‹3"
+      ],
+      "distinctTicks": 11,
+      "categoryLabels": [],
+      "escapes": [],
+      "clipped": false,
+      "svgSize": {
+        "w": 460,
+        "h": 280
+      },
+      "seriesPathLength": 38,
+      "moveCommands": 1,
+      "seriesPathSample": "M100 12L214.6667 12L329.3333 12L444 12"
+    }
+  }
+}

@@ -3,3 +3,4 @@
 chart-probe/node_modules/
 chart-probe/*/dist/
 pkg-check/
+chart-probe/edge/dist/

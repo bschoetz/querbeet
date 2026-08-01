@@ -501,10 +501,28 @@ ECharts becomes the largest single dependency in the project by more than a fact
 Arquero. R2 and R6 both ruled footprint out as a criterion; this is the point at which that rule was
 knowingly applied to a number an order of magnitude larger than the one it was written for.
 
-**The tripwire that tests this pick,** in the shape R6 used: before more than the bar and line tiles
-exist, render both against an all-zero column, a single category, negative values, an empty result
-and a 60-character label. The pick is justified by ECharts having absorbed those cases already — if it
-has not, the justification is gone and the 184-line fallback is still in `imports/chart-probe/`.
+**The tripwire that tests this pick — run 2026-08-01, and it passes.**
+`imports/edge-case-tripwire-2026-08-01.md`. Eight cases against the chosen registration in both
+engines: an all-zero column, a single category, mixed negatives, all-negatives, an empty result, a
+60-character label, a line with null gaps, and a flat line. **Seven pass outright; none threw; and
+the serialized SVG of every case contains zero occurrences of `NaN`, `Infinity` or `undefined`** —
+the failure the tripwire was aimed at. All-zero synthesises a 0–1 range rather than collapsing;
+negatives get a real zero baseline with bars on both sides of it; an empty result draws an empty plot
+rather than a broken one; and null gaps become **three separate `M` commands**, not an interpolation
+and not a NaN — which confirms the `sampling` ban costs nothing, since the unsampled path handles
+nulls correctly.
+
+**The one failure is the long label, and it is a layout limit rather than a defect.** A 60-character
+rotated category label escapes the SVG's left edge by **15.2 px in Chromium and 21 px in Firefox**;
+ECharts shrinks the plot and shifts the y-axis to accommodate it, and that is not enough. **Two tile
+settings follow and are not optional**, because FR-35's grouping column carries arbitrary user text:
+a long-label strategy — `axisLabel.width` with `overflow: 'truncate'`, or a shortening formatter,
+which querbeet already owns since the formatter is application-supplied — and `barMaxWidth`, without
+which a single-category tile renders as a 237 px slab in a 346 px plot.
+
+The 184-line hand-built fallback stays in `imports/chart-probe/handbuilt/`. It was never exercised
+against any of these cases, and a tick algorithm that gets `0…0`, an empty array and a zero-width
+range right is exactly the code that is cheap to write and expensive to finish.
 
 ## What this run hands to other work
 
@@ -561,10 +579,11 @@ Round 1 digests, with the source tables that back every bracketed reference:
   stands against it is 149.4 KB and a separate stylesheet.
 - **The hidden-container test used an explicit pixel width.** The percentage-width case that the
   original ECharts report described is untested.
-- **Tooltips, legends and tick-algorithm edge cases were not built** on any candidate. This is the
-  gap the verdict's strongest counter-argument rests on, and it would be closed by a spike rather
-  than by research: build the bar and line tiles against an all-zero column, a single category,
-  negative values, an empty result and a 60-character label.
+- ~~**Tooltips, legends and tick-algorithm edge cases were not built** on any candidate.~~ The edge
+  cases were closed for the chosen library on 2026-08-01 — see the tripwire above and
+  `imports/edge-case-tripwire-2026-08-01.md`. **Tooltips and legends remain unexercised**, on ECharts
+  and on every other candidate; they are the part of the counter-argument that is still only an
+  expectation.
 - **LICENSE files could not be retrieved** from the published packages of vega-lite, chartist,
   layerchart and ag-charts-community; only the npm-declared fields are known for those four. All are
   cut candidates, so this blocks nothing.
