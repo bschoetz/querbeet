@@ -453,8 +453,76 @@ fetchable at runtime from `file://`.
 
 ## R6 – Node-graph pipeline editor
 
-**Status:** [ ] open — **on the critical path**
-**Report:** –
+**Status:** [x] done (deep-recon, type technical, shape select, 2026-08-01)
+**Report:** `_bmad-output/planning-artifacts/research/technical-node-graph-pipeline-editor-2026-08-01/research.md`
+
+**Verdict: build the canvas by hand and keep the graph model library-free** (85/100 on the
+weighted matrix). Runner-up Vue Flow 1.48.2 (75), BaklavaJS 2.8.1 (68). All three were built as
+real single-file Vite artifacts and opened from a `file://` URL in Chromium 151 and Firefox 153 —
+this is measured, not compared on paper.
+
+**The gate that shaped this whole research plan turned out to separate nothing.** All three
+candidates build to exactly one HTML file (224,382 / 175,233 / 73,532 B), contain zero
+occurrences of `import(`, `fetch(`, `new Worker`, `importScripts`, `@font-face` or a non-`data:`
+`url()`, and issue **zero network requests beyond the document** from `file://` in both engines,
+with no page errors. The lazy-loading hazard exists in the field but not among the finalists:
+`@maxgraph/core`'s stylesheet fetches four `.gif` files by relative URL, and Rete's auto-layout
+path is elkjs-in-a-Worker (also `EPL-2.0 OR GPL-3.0-or-later`).
+
+**The ownership question is settled, and it settles in everyone's favour.** A frozen 100,000×20
+table placed by reference in node data comes back out of each library's own state with identity
+preserved, `isReactive` false, and array plus rows still frozen. **Vue's reactivity skips
+non-extensible objects, so `Object.freeze` is itself the protection** and Vue Flow's `markRaw`
+advice does not apply to a frozen payload — this overturns the screening conclusion that Vue Flow
+would fail on ownership. R2's existing rule already covers it. The editor itself costs 0.32–2.76 MB
+of heap against ~94 MB for one source table — **0.34 % to 2.93 % of a single table**, so
+**footprint genuinely cannot decide this**.
+
+**What decides it is graph semantics, and both libraries fail the PRD requirement.** FR-12 says a
+cycle-creating connection "is refused with a named reason". **Vue Flow has no cycle detection in its
+bundle** — `addEdges` created `r1 → s1` on the chain `s1 → f1 → r1` without complaint, and a
+literal search of the published `vue-flow-core.mjs` finds zero occurrences of `cycle`, `Cycle`,
+`acyclic` or `topological`. The unguarded path is the programmatic one, which a Recipe loader and
+an LLM-authored Recipe both use. BaklavaJS refuses a self-loop but accepted the
+two-node cycle, while `containsCycle(graph)` returned `true` immediately after — the detector is
+shipped, wiring it to the guard is still your code. The hand-built canvas refuses it and names the
+reason in 12 lines.
+
+**Cost, counted rather than estimated:** node dragging, background panning, cursor-anchored wheel
+zoom with correct screen↔graph conversion, connection dragging, cycle refusal with a named reason,
+orphan-Step marking and connection hit-testing come to **164 lines** (`graph.js` 40 +
+`Canvas.vue` 124). No auto-layout, undo/redo, minimap, multi-select or keyboard handling — but
+**neither library ships auto-layout either**, and Vue Flow ships no undo/redo. Baklava does ship
+undo/redo, clipboard, subgraphs and a topological sort.
+
+**The strongest argument against the pick, and the tripwire that tests it:** node dimension
+measurement. React Flow #3270 (a node vanishes without an explicit width) and Vue Flow #174
+(handles misplaced on dynamic-height nodes) are the same failure family — asynchronous DOM
+geometry — in two independent mature codebases, and the probe used fixed-height nodes. Before building more than three Step kinds, build the Union
+and Join bodies — the tallest, most variable ones — resize one at runtime and confirm the anchors
+follow. If they do not and the fix is not small, switch to Vue Flow then.
+
+**The hedge:** keep the model (`graph.js`-shaped — nodes, edges, cycle check, contributing-Steps
+walk) free of both the canvas and any library, the same seam R2 mandated for the pipeline core.
+Neither library touched it in the probe, so a switch rewrites one component and leaves the Recipe
+format and FR-28's LLM protocol untouched.
+
+**Also settles PRD Open Question 4: R2's Vue 3 verdict survives.** All three probes are Vue 3 SFCs,
+per-kind `<component :is>` dispatch worked in every one, mount 18–97 ms across both engines with
+no errors.
+
+**Licence findings worth carrying forward.** Vue Flow is MIT with no paid tier and no runtime key,
+confirmed on vueflow.dev and in the shipped LICENSE — which carries a webkid GmbH copyright, since
+it is an independent Vue reimplementation under React Flow's MIT grant, *not* xyflow code.
+**Rete.js is disqualified on licence verification, not capability:** none of its four packages
+ships a LICENSE file at all, so MIT rests solely on the `package.json` field. And `jointjs` was
+renamed — the maintained line is `@joint/core` 4.3.1 (2026-07-27, MPL-2.0, zero dependencies), the
+freshest release in the field; screening the old name alone would have scored a live project dead.
+
+**One deviation from the PRD, recorded deliberately:** keyboard reachability was excluded from
+this selection by project decision at the plan gate. **PRD FR-12 and NFR-7 must not be assumed
+satisfied by this research.** The hand-built path makes adding it cheaper than either library
+would, since every mutation is already a plain function call on an app-owned model.
 
 **Why this exists:** the PRD replaced the linear step list with a directed acyclic graph of
 named Steps (FR-12), on a project decision taken 2026-08-01. `idea.md` section 6 had
@@ -609,10 +677,10 @@ portable file, from a `file://` page?
 1. ~~**R1 + R2 together** – they define the architecture.~~ Both done (2026-08-01):
    Arquero + Vue 3 (project decision on R1 was Arquero over the research recommendation).
 2. ~~**R3** – biggest risk collection.~~ Done (2026-08-01).
-3. **R6 – graph editor.** Promoted to the front. It is on the critical path, it is
-   structural for the Editor, the Recipe format and the LLM protocol, and it carries an
-   open question against R2's framework verdict. Nothing downstream should be built before
-   it is answered.
+3. ~~**R6 – graph editor.**~~ Done (2026-08-01): hand-built SVG canvas with a library-free graph
+   model, over Vue Flow (runner-up) and BaklavaJS. R2's Vue 3 verdict survived, so PRD Open
+   Question 4 is closed. The follow-up is a spike, not research: the variable-height tripwire
+   (Union and Join Step bodies) before more than three Step kinds are built.
 4. **R9's first sub-question alone — does IndexedDB work from `file://`?** Minutes of work,
    and a negative answer invalidates PRD FR-25 as written. Do it before anything depends on it.
 5. **R4 (D2–D4)** – now also covers full-dataset search and the 614,000-row Firefox spacer

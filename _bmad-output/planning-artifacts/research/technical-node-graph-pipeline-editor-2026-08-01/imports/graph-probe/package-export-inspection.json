@@ -1,0 +1,36 @@
+{
+ "method": "Object.keys() on the published UMD build for baklavajs; export-statement parse of the published ESM build for vue-flow; literal identifier counts in the vue-flow ESM build.",
+ "date": "2026-08-01",
+ "baklavajs/renderer-vue@2.8.1": {
+  "exportCount": 75,
+  "featureExportsPresent": [
+   "UNDO_COMMAND",
+   "REDO_COMMAND",
+   "useHistory",
+   "COPY_COMMAND",
+   "PASTE_COMMAND",
+   "CLEAR_CLIPBOARD_COMMAND",
+   "useClipboard",
+   "CREATE_SUBGRAPH_COMMAND",
+   "SAVE_SUBGRAPH_COMMAND",
+   "SWITCH_TO_MAIN_GRAPH_COMMAND",
+   "OPEN_SIDEBAR_COMMAND",
+   "TOOLBAR_COMMANDS",
+   "DEFAULT_TOOLBAR_COMMANDS",
+   "ZOOM_TO_FIT_GRAPH_COMMAND"
+  ],
+  "featureExportsAbsent": []
+ },
+ "@vue-flow/core@1.48.2": {
+  "exportCount": 69,
+  "exportsMatchingHistoryClipboardSubgraphCycle": [],
+  "identifierCountsInDist": {
+   "cycle": 0,
+   "Cycle": 0,
+   "acyclic": 0,
+   "topological": 0,
+   "isValidConnection": 37,
+   "connectionExists": 4
+  }
+ }
+}

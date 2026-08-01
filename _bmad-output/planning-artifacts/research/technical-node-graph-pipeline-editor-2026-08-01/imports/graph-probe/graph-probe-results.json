@@ -1,0 +1,379 @@
+{
+ "vueflow": {
+  "distFiles": [
+   "index.html"
+  ],
+  "distFileCount": 1,
+  "bytes": 224382,
+  "hazards": {
+   "dynamic import": 0,
+   "fetch(": 0,
+   "new Worker": 0,
+   "importScripts": 0,
+   "@font-face": 0,
+   "XMLHttpRequest": 0
+  },
+  "nonDataUrls": [],
+  "externalSrc": [],
+  "browsers": {
+   "chromium": {
+    "version": "151.0.7922.34",
+    "errors": [],
+    "extraRequests": [],
+    "results": {
+     "candidate": "vue-flow@1.48.2",
+     "nodeKindsRendered": [
+      "source",
+      "filter",
+      "result",
+      "filter"
+     ],
+     "distinctNodeKinds": [
+      "filter",
+      "result",
+      "source"
+     ],
+     "edgePathsRendered": 4,
+     "identityPreserved": true,
+     "readbackIsReactive": false,
+     "readbackIsProxy": false,
+     "toRawIsSame": true,
+     "tableStillFrozen": true,
+     "rowCountAfter": 100000,
+     "firstCellAfter": 0,
+     "heapBeforeBytes": 1702300,
+     "heapAfterTableBytes": 96138929,
+     "heapAfterMountBytes": 98902269,
+     "tableCostBytes": 94436629,
+     "mountCostBytes": 2763340,
+     "mountMs": 62.399999998509884,
+     "edgePathsAtMount": 2,
+     "programmatic": {
+      "ok": true,
+      "nodeCount": 4,
+      "edgeCount": 3
+     },
+     "zoomApi": {
+      "ok": true
+     },
+     "cycle": {
+      "accepted": true,
+      "edgeCountAfter": 4,
+      "note": "addEdges is the programmatic path; isValidConnection guards the pointer path only"
+     },
+     "nodesArrayStillOurs": true,
+     "sourceNodeObjectIdentity": false
+    }
+   },
+   "firefox": {
+    "version": "153.0",
+    "errors": [],
+    "extraRequests": [],
+    "results": {
+     "candidate": "vue-flow@1.48.2",
+     "nodeKindsRendered": [
+      "source",
+      "filter",
+      "result",
+      "filter"
+     ],
+     "distinctNodeKinds": [
+      "filter",
+      "result",
+      "source"
+     ],
+     "edgePathsRendered": 4,
+     "identityPreserved": true,
+     "readbackIsReactive": false,
+     "readbackIsProxy": false,
+     "toRawIsSame": true,
+     "tableStillFrozen": true,
+     "rowCountAfter": 100000,
+     "firstCellAfter": 0,
+     "heapBeforeBytes": null,
+     "heapAfterTableBytes": null,
+     "heapAfterMountBytes": null,
+     "tableCostBytes": null,
+     "mountCostBytes": null,
+     "mountMs": 61,
+     "edgePathsAtMount": 2,
+     "programmatic": {
+      "ok": true,
+      "nodeCount": 4,
+      "edgeCount": 3
+     },
+     "zoomApi": {
+      "ok": true
+     },
+     "cycle": {
+      "accepted": true,
+      "edgeCountAfter": 4,
+      "note": "addEdges is the programmatic path; isValidConnection guards the pointer path only"
+     },
+     "nodesArrayStillOurs": true,
+     "sourceNodeObjectIdentity": false
+    }
+   }
+  }
+ },
+ "baklava": {
+  "distFiles": [
+   "index.html"
+  ],
+  "distFileCount": 1,
+  "bytes": 175233,
+  "hazards": {
+   "dynamic import": 0,
+   "fetch(": 0,
+   "new Worker": 0,
+   "importScripts": 0,
+   "@font-face": 0,
+   "XMLHttpRequest": 0
+  },
+  "nonDataUrls": [],
+  "externalSrc": [],
+  "browsers": {
+   "chromium": {
+    "version": "151.0.7922.34",
+    "errors": [],
+    "extraRequests": [],
+    "results": {
+     "candidate": "baklavajs@2.8.1",
+     "nodeKindsRendered": [
+      "source",
+      "filter",
+      "result",
+      "filter"
+     ],
+     "distinctNodeKinds": [
+      "filter",
+      "result",
+      "source"
+     ],
+     "edgePathsRendered": 3,
+     "identityPreserved": true,
+     "readbackIsReactive": false,
+     "readbackIsProxy": false,
+     "toRawIsSame": true,
+     "tableStillFrozen": true,
+     "rowCountAfter": 100000,
+     "firstCellAfter": 0,
+     "heapBeforeBytes": 1585011,
+     "heapAfterTableBytes": 96084232,
+     "heapAfterMountBytes": 97209888,
+     "tableCostBytes": 94499221,
+     "mountCostBytes": 1125656,
+     "mountMs": 68.10000000149012,
+     "edgePathsAtMount": 2,
+     "programmatic": {
+      "ok": true,
+      "nodeCount": 4,
+      "edgeCount": 3
+     },
+     "cycle": {
+      "checkConnectionReturn": "{\"connectionAllowed\":true,\"dummyConnection\":{\"id\":\"dfb83449-f193-4ec6-a165-7c095926611b\",\"from\":\"<iface>\",\"to\":\"<iface>\"},\"connectionsInDanger\":[]}",
+      "addConnectionReturn": "[object Object]",
+      "connectionCountAfter": 4,
+      "containsCycleAfterAdding": true
+     },
+     "cycleCheck": {
+      "selfLoopReturn": "{\"connectionAllowed\":false}"
+     },
+     "commands": {
+      "undo": true,
+      "undoCommandName": "UNDO",
+      "redoCommandName": "REDO",
+      "hasHistory": true
+     },
+     "nodeTitlesRendered": [
+      "Source",
+      "Source",
+      "Filter",
+      "Filter",
+      "Ergebnis",
+      "Ergebnis"
+     ],
+     "baklavaNodeCount": 3,
+     "connectionCount": 3
+    }
+   },
+   "firefox": {
+    "version": "153.0",
+    "errors": [],
+    "extraRequests": [],
+    "results": {
+     "candidate": "baklavajs@2.8.1",
+     "nodeKindsRendered": [
+      "source",
+      "filter",
+      "result",
+      "filter"
+     ],
+     "distinctNodeKinds": [
+      "filter",
+      "result",
+      "source"
+     ],
+     "edgePathsRendered": 3,
+     "identityPreserved": true,
+     "readbackIsReactive": false,
+     "readbackIsProxy": false,
+     "toRawIsSame": true,
+     "tableStillFrozen": true,
+     "rowCountAfter": 100000,
+     "firstCellAfter": 0,
+     "heapBeforeBytes": null,
+     "heapAfterTableBytes": null,
+     "heapAfterMountBytes": null,
+     "tableCostBytes": null,
+     "mountCostBytes": null,
+     "mountMs": 54,
+     "edgePathsAtMount": 2,
+     "programmatic": {
+      "ok": true,
+      "nodeCount": 4,
+      "edgeCount": 3
+     },
+     "cycle": {
+      "checkConnectionReturn": "{\"connectionAllowed\":true,\"dummyConnection\":{\"id\":\"c462a46f-c38e-4203-8540-7499922ce01a\",\"from\":\"<iface>\",\"to\":\"<iface>\"},\"connectionsInDanger\":[]}",
+      "addConnectionReturn": "[object Object]",
+      "connectionCountAfter": 4,
+      "containsCycleAfterAdding": true
+     },
+     "cycleCheck": {
+      "selfLoopReturn": "{\"connectionAllowed\":false}"
+     },
+     "commands": {
+      "undo": true,
+      "undoCommandName": "UNDO",
+      "redoCommandName": "REDO",
+      "hasHistory": true
+     },
+     "nodeTitlesRendered": [
+      "Source",
+      "Source",
+      "Filter",
+      "Filter",
+      "Ergebnis",
+      "Ergebnis"
+     ],
+     "baklavaNodeCount": 3,
+     "connectionCount": 3
+    }
+   }
+  }
+ },
+ "handbuilt": {
+  "distFiles": [
+   "index.html"
+  ],
+  "distFileCount": 1,
+  "bytes": 73532,
+  "hazards": {
+   "dynamic import": 0,
+   "fetch(": 0,
+   "new Worker": 0,
+   "importScripts": 0,
+   "@font-face": 0,
+   "XMLHttpRequest": 0
+  },
+  "nonDataUrls": [],
+  "externalSrc": [],
+  "browsers": {
+   "chromium": {
+    "version": "151.0.7922.34",
+    "errors": [],
+    "extraRequests": [],
+    "results": {
+     "candidate": "hand-built-svg",
+     "nodeKindsRendered": [
+      "source",
+      "filter",
+      "result",
+      "filter"
+     ],
+     "distinctNodeKinds": [
+      "filter",
+      "result",
+      "source"
+     ],
+     "edgePathsRendered": 3,
+     "identityPreserved": true,
+     "readbackIsReactive": false,
+     "readbackIsProxy": false,
+     "toRawIsSame": true,
+     "tableStillFrozen": true,
+     "rowCountAfter": 100000,
+     "firstCellAfter": 0,
+     "heapBeforeBytes": 1348534,
+     "heapAfterTableBytes": 95692247,
+     "heapAfterMountBytes": 96016095,
+     "tableCostBytes": 94343713,
+     "mountCostBytes": 323848,
+     "mountMs": 11.900000002235174,
+     "edgePathsAtMount": 2,
+     "programmatic": {
+      "ok": true,
+      "nodeCount": 4,
+      "edgeCount": 3
+     },
+     "zoomApi": {
+      "ok": true,
+      "k": 1.2
+     },
+     "cycleRefused": true,
+     "cycleReason": "Verbindung r1 → s1 würde einen Zyklus schließen.",
+     "edgeHitTargets": 3,
+     "orphanMarked": 1
+    }
+   },
+   "firefox": {
+    "version": "153.0",
+    "errors": [],
+    "extraRequests": [],
+    "results": {
+     "candidate": "hand-built-svg",
+     "nodeKindsRendered": [
+      "source",
+      "filter",
+      "result",
+      "filter"
+     ],
+     "distinctNodeKinds": [
+      "filter",
+      "result",
+      "source"
+     ],
+     "edgePathsRendered": 3,
+     "identityPreserved": true,
+     "readbackIsReactive": false,
+     "readbackIsProxy": false,
+     "toRawIsSame": true,
+     "tableStillFrozen": true,
+     "rowCountAfter": 100000,
+     "firstCellAfter": 0,
+     "heapBeforeBytes": null,
+     "heapAfterTableBytes": null,
+     "heapAfterMountBytes": null,
+     "tableCostBytes": null,
+     "mountCostBytes": null,
+     "mountMs": 48,
+     "edgePathsAtMount": 2,
+     "programmatic": {
+      "ok": true,
+      "nodeCount": 4,
+      "edgeCount": 3
+     },
+     "zoomApi": {
+      "ok": true,
+      "k": 1.2
+     },
+     "cycleRefused": true,
+     "cycleReason": "Verbindung r1 → s1 würde einen Zyklus schließen.",
+     "edgeHitTargets": 3,
+     "orphanMarked": 1
+    }
+   }
+  }
+ }
+}
