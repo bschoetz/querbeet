@@ -568,9 +568,12 @@ published package.
 - **Node rendering:** can node bodies be arbitrary Vue components? Each Step kind has its own
   configuration form, which is the same `<component :is>` dispatch problem R2 scored Vue on.
 
-**Spike sketched 2026-08-01:** `_bmad-output/planning-artifacts/spikes/spike-editor-vueflow-2026-08-01.md`
+**Spike sketched 2026-08-01, done 2026-08-01:** `_bmad-output/planning-artifacts/spikes/spike-editor-vueflow-2026-08-01.md`
 — four questions in one build (variable-height anchors, the cycle guard in front of `addEdges`,
 which side owns the truth, and the Recipe round trip), starting from R6's existing Vue Flow probe.
+All four pass in Chromium 151 and Firefox 153; anchors drift 0 px / 0.02 px, the Recipe round-trips
+byte-identically at 1,309 B, and the ownership question is decided for design B — the model is
+authoritative. Results and the rules that follow: `spikes/editor-vueflow-2026-08-01/findings.md`.
 
 **Related spike, not research:** PRD FR-28 requires a language model to emit a valid Recipe
 from documentation alone, and a graph is materially harder to get right than a list. Draft
