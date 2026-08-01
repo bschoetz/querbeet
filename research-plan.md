@@ -651,8 +651,41 @@ document and a PDF?
 
 ## R9 – Browser persistence and the Package container
 
-**Status:** [ ] open
-**Report:** –
+**Status:** [~] partial — the IndexedDB gate answered 2026-08-01; everything else open
+**Report:** `_bmad-output/planning-artifacts/research/technical-browser-persistence-and-packaging-2026-08-01/research.md`
+
+**Gate answer: IndexedDB works from `file://` in Chromium 151 and Firefox 153, and the data
+survives closing and relaunching the browser. PRD FR-25 is buildable as written.** Measured with
+persistent browser profiles, so "across sessions" means the process was restarted, not reloaded:
+`open()` in 3.0 / 6.0 ms, a 100,000 × 20 Source written and read back intact at both ends of the
+array, no page errors in either engine.
+
+**Three findings the gate question did not ask for, all with product consequences:**
+
+- **The `file://` origin is one shared bucket.** A page in a *different directory* read the full
+  100,000-row Source written by another directory's page, in both engines. There is no per-file or
+  per-directory partition, and querbeet cannot fix it from the inside. So: two copies of
+  `querbeet.html` share one session; any other local HTML file can read querbeet's stored data;
+  FR-25's one-action delete clears the *shared* store; and FR-24's Package needs a discriminator in
+  the database or key name, because the origin supplies none.
+- **`navigator.storage.persist()` never settles in Firefox from `file://`** — still pending at an
+  8,000 ms bound, while Chromium resolves in 0.2 ms with `false`. Persistent storage is not
+  grantable from `file://` in either engine, and **an unguarded `await` on it deadlocks startup in
+  Firefox** before the first byte is stored. This cost the probe's own first run 180 s. Race it
+  against a timeout or do not call it; `persisted()` is safe in both.
+- **Storage costs about a tenth of the heap.** 100,000 × 20 rows occupy 8,913,424 B (Chromium) /
+  9,960,184 B (Firefox) stored, against ~94 MB for the same data in the JS heap (R6). Quota before
+  any write is ~10.0 GiB in Chromium and ~1.15 GiB in Firefox. `put` 304.6 / 731.0 ms, `get`
+  194.9 / 825.0 ms.
+
+**Linear projection to half a million rows — extrapolation from one point, not a measurement:**
+~45–50 MB stored, comfortable against both quotas, and a write of ~1.5 s (Chromium) / ~3.7 s
+(Firefox). R3's freeze threshold was ~3.3 s, so **Firefox lands on that line and Chromium does
+not** — whether the write needs a worker is now a real question rather than an assumed no.
+
+**Still open:** everything below except the first sub-question. Eviction is *more* open than
+before, not less: since persistence cannot be granted, the store is best-effort in both engines and
+no pressure test was run.
 
 **Why this exists:** PRD FR-25 stores the Recipe *and* the loaded source data across sessions
 with a one-action delete, and FR-24 defines a compressed Package bundling a Recipe with its
@@ -694,8 +727,10 @@ portable file, from a `file://` page?
    R2's Vue 3 verdict survived, so PRD Open Question 4 is closed. Two follow-ups, both spikes
    rather than research: the variable-height tripwire before more than three Step kinds are built,
    and the own-cycle-check-in-front-of-`addEdges` rule, which FR-12 makes non-optional.
-4. **R9's first sub-question alone — does IndexedDB work from `file://`?** Minutes of work,
-   and a negative answer invalidates PRD FR-25 as written. Do it before anything depends on it.
+4. ~~**R9's first sub-question alone — does IndexedDB work from `file://`?**~~ Done (2026-08-01):
+   yes, in both engines, surviving a browser restart. FR-25 holds. Three consequences fell out —
+   the shared `file://` bucket, the `persist()` deadlock in Firefox, and a Firefox write time at
+   half a million rows that lands on R3's tab-freeze threshold.
 5. **R4 (D2–D4)** – now also covers full-dataset search and the 614,000-row Firefox spacer
    cliff, which is close to the revised scale target.
 6. **R5** – type and locale detection; can run alongside R4.

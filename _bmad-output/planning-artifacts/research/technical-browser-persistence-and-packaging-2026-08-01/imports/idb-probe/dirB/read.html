@@ -1,0 +1,25 @@
+<!doctype html><html><head><meta charset="utf-8"><title>idb-read</title></head><body>
+<pre id="out"></pre>
+<script src="idb.js"></script>
+<script>
+(async () => {
+  const R = { step: 'read', origin: location.origin, href: location.href };
+  R.estimate = await estimate();
+  try {
+    const db = await openDb();
+    R.opened = true;
+    R.marker = await get(db, 'marker');
+    const t0 = performance.now();
+    const rows = await get(db, 'source-100k');
+    R.readMs100k = performance.now() - t0;
+    R.rowsBack = rows && rows.length;
+    R.firstCellBack = rows && rows[0] && rows[0].c0;
+    R.lastCellBack = rows && rows[99999] && rows[99999].c19;
+    R.sawWrittenData = !!(rows && rows.length === 100000);
+    db.close();
+  } catch (e) { R.opened = R.opened || false; R.error = String(e && e.message || e); }
+  window.__R__ = R;
+  document.getElementById('out').textContent = JSON.stringify(R, null, 1);
+  document.title = 'DONE';
+})();
+</script></body></html>

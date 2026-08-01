@@ -1,0 +1,42 @@
+<!doctype html><html><head><meta charset="utf-8"><title>idb-write</title></head><body>
+<pre id="out"></pre>
+<script src="idb.js"></script>
+<script>
+// Every stage is separately timed and separately bounded, so a hang names itself.
+const R = { step: 'write', stages: [] };
+function withTimeout(p, ms, label) {
+  return Promise.race([
+    Promise.resolve(p),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('TIMEOUT after ' + ms + 'ms')), ms)),
+  ]);
+}
+async function stage(label, ms, fn) {
+  const t0 = performance.now();
+  try { const v = await withTimeout(fn(), ms, label); R.stages.push({ label, ms: +(performance.now() - t0).toFixed(1), ok: true, v }); return v; }
+  catch (e) { R.stages.push({ label, ms: +(performance.now() - t0).toFixed(1), ok: false, err: String(e && e.message || e) }); return undefined; }
+}
+(async () => {
+  R.origin = location.origin;
+  R.indexedDBPresent = typeof indexedDB !== 'undefined' && indexedDB !== null;
+  R.isSecureContext = window.isSecureContext;
+  await stage('estimate.before', 5000, () => estimate());
+  await stage('storage.persist()', 8000, () => (navigator.storage && navigator.storage.persist) ? navigator.storage.persist() : 'no-fn');
+  await stage('storage.persisted()', 5000, () => (navigator.storage && navigator.storage.persisted) ? navigator.storage.persisted() : 'no-fn');
+  const db = await stage('indexedDB.open', 10000, () => openDb());
+  if (db) {
+    await stage('put marker', 10000, () => put(db, 'marker', { writtenBy: 'dirA/write.html' }));
+    const small = makeRows(1000, 20);
+    await stage('put 1k x 20', 20000, () => put(db, 'source-1k', small));
+    const rows = await stage('build 100k x 20 in memory', 60000, async () => { const r = makeRows(100000, 20); R.builtRows = r.length; return r.length; }) !== undefined ? makeRows(100000, 20) : null;
+    if (rows) {
+      await stage('put 100k x 20', 120000, () => put(db, 'source-100k', rows));
+      await stage('get 100k x 20', 120000, async () => { const b = await get(db, 'source-100k'); R.rowsBack = b && b.length; R.lastCellBack = b && b[99999] && b[99999].c19; return R.rowsBack; });
+    }
+    try { db.close(); } catch (e) {}
+  }
+  await stage('estimate.after', 5000, () => estimate());
+  window.__R__ = R;
+  document.getElementById('out').textContent = JSON.stringify(R, null, 1);
+  document.title = 'DONE';
+})();
+</script></body></html>

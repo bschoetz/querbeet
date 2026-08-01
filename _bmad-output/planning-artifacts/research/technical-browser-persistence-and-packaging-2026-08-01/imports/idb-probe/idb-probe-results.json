@@ -1,0 +1,327 @@
+{
+ "chromium": {
+  "profile": "/tmp/idbprobe-chromium-PnGPdd",
+  "version": "151.0.7922.34",
+  "s1_write": {
+   "label": "session1 write dirA",
+   "errors": [],
+   "R": {
+    "step": "write",
+    "stages": [
+     {
+      "label": "estimate.before",
+      "ms": 2.1,
+      "ok": true,
+      "v": {
+       "quota": 10737418240,
+       "usage": 0,
+       "usageDetails": {}
+      }
+     },
+     {
+      "label": "storage.persist()",
+      "ms": 0.2,
+      "ok": true,
+      "v": false
+     },
+     {
+      "label": "storage.persisted()",
+      "ms": 0.1,
+      "ok": true,
+      "v": false
+     },
+     {
+      "label": "indexedDB.open",
+      "ms": 3,
+      "ok": true,
+      "v": {}
+     },
+     {
+      "label": "put marker",
+      "ms": 1,
+      "ok": true,
+      "v": {
+       "isTrusted": true
+      }
+     },
+     {
+      "label": "put 1k x 20",
+      "ms": 17.1,
+      "ok": true,
+      "v": {
+       "isTrusted": true
+      }
+     },
+     {
+      "label": "build 100k x 20 in memory",
+      "ms": 301.2,
+      "ok": true,
+      "v": 100000
+     },
+     {
+      "label": "put 100k x 20",
+      "ms": 304.6,
+      "ok": true,
+      "v": {
+       "isTrusted": true
+      }
+     },
+     {
+      "label": "get 100k x 20",
+      "ms": 194.9,
+      "ok": true,
+      "v": 100000
+     },
+     {
+      "label": "estimate.after",
+      "ms": 1,
+      "ok": true,
+      "v": {
+       "quota": 10746331664,
+       "usage": 8913424,
+       "usageDetails": {
+        "indexedDB": 8913424
+       }
+      }
+     }
+    ],
+    "origin": "file://",
+    "indexedDBPresent": true,
+    "isSecureContext": true,
+    "builtRows": 100000,
+    "rowsBack": 100000,
+    "lastCellBack": "v99999_19"
+   }
+  },
+  "s1_readSameDir": {
+   "label": "session1 read dirA (same file, same dir)",
+   "errors": [],
+   "R": {
+    "step": "read",
+    "origin": "file://",
+    "href": "file:///tmp/claude-1000/-home-n-to-Github-querbeet/e775f96c-c1a6-43e2-8b0c-8f90ee4d562f/scratchpad/idbprobe/dirA/read.html",
+    "estimate": {
+     "quota": 10746331664,
+     "usage": 8913424,
+     "usageDetails": {
+      "indexedDB": 8913424
+     }
+    },
+    "opened": true,
+    "marker": {
+     "writtenBy": "dirA/write.html"
+    },
+    "readMs100k": 208.80000000074506,
+    "rowsBack": 100000,
+    "firstCellBack": 0,
+    "lastCellBack": "v99999_19",
+    "sawWrittenData": true
+   }
+  },
+  "s1_readOtherDir": {
+   "label": "session1 read dirB (different dir)",
+   "errors": [],
+   "R": {
+    "step": "read",
+    "origin": "file://",
+    "href": "file:///tmp/claude-1000/-home-n-to-Github-querbeet/e775f96c-c1a6-43e2-8b0c-8f90ee4d562f/scratchpad/idbprobe/dirB/read.html",
+    "estimate": {
+     "quota": 10746331664,
+     "usage": 8913424,
+     "usageDetails": {
+      "indexedDB": 8913424
+     }
+    },
+    "opened": true,
+    "marker": {
+     "writtenBy": "dirA/write.html"
+    },
+    "readMs100k": 210.80000000074506,
+    "rowsBack": 100000,
+    "firstCellBack": 0,
+    "lastCellBack": "v99999_19",
+    "sawWrittenData": true
+   }
+  },
+  "s2_readAfterRestart": {
+   "label": "session2 read dirA AFTER RESTART",
+   "errors": [],
+   "R": {
+    "step": "read",
+    "origin": "file://",
+    "href": "file:///tmp/claude-1000/-home-n-to-Github-querbeet/e775f96c-c1a6-43e2-8b0c-8f90ee4d562f/scratchpad/idbprobe/dirA/read.html",
+    "estimate": {
+     "quota": 10737418240,
+     "usage": 0,
+     "usageDetails": {}
+    },
+    "opened": true,
+    "marker": {
+     "writtenBy": "dirA/write.html"
+    },
+    "readMs100k": 223.30000000074506,
+    "rowsBack": 100000,
+    "firstCellBack": 0,
+    "lastCellBack": "v99999_19",
+    "sawWrittenData": true
+   }
+  }
+ },
+ "firefox": {
+  "profile": "/tmp/idbprobe-firefox-NOrOCQ",
+  "version": "153.0",
+  "s1_write": {
+   "label": "session1 write dirA",
+   "errors": [],
+   "R": {
+    "step": "write",
+    "stages": [
+     {
+      "label": "estimate.before",
+      "ms": 9,
+      "ok": true,
+      "v": {
+       "quota": 1238988800,
+       "usage": 0
+      }
+     },
+     {
+      "label": "storage.persist()",
+      "ms": 8224,
+      "ok": false,
+      "err": "TIMEOUT after 8000ms"
+     },
+     {
+      "label": "storage.persisted()",
+      "ms": 1,
+      "ok": true,
+      "v": false
+     },
+     {
+      "label": "indexedDB.open",
+      "ms": 6,
+      "ok": true,
+      "v": {}
+     },
+     {
+      "label": "put marker",
+      "ms": 1,
+      "ok": true,
+      "v": {
+       "isTrusted": true
+      }
+     },
+     {
+      "label": "put 1k x 20",
+      "ms": 5,
+      "ok": true,
+      "v": {
+       "isTrusted": true
+      }
+     },
+     {
+      "label": "build 100k x 20 in memory",
+      "ms": 490,
+      "ok": true,
+      "v": 100000
+     },
+     {
+      "label": "put 100k x 20",
+      "ms": 731,
+      "ok": true,
+      "v": {
+       "isTrusted": true
+      }
+     },
+     {
+      "label": "get 100k x 20",
+      "ms": 825,
+      "ok": true,
+      "v": 100000
+     },
+     {
+      "label": "estimate.after",
+      "ms": 8,
+      "ok": true,
+      "v": {
+       "quota": 1238988800,
+       "usage": 9960184
+      }
+     }
+    ],
+    "origin": "null",
+    "indexedDBPresent": true,
+    "isSecureContext": true,
+    "builtRows": 100000,
+    "rowsBack": 100000,
+    "lastCellBack": "v99999_19"
+   }
+  },
+  "s1_readSameDir": {
+   "label": "session1 read dirA (same file, same dir)",
+   "errors": [],
+   "R": {
+    "step": "read",
+    "origin": "null",
+    "href": "file:///tmp/claude-1000/-home-n-to-Github-querbeet/e775f96c-c1a6-43e2-8b0c-8f90ee4d562f/scratchpad/idbprobe/dirA/read.html",
+    "estimate": {
+     "quota": 1238988800,
+     "usage": 9926616
+    },
+    "opened": true,
+    "marker": {
+     "writtenBy": "dirA/write.html"
+    },
+    "readMs100k": 777,
+    "rowsBack": 100000,
+    "firstCellBack": 0,
+    "lastCellBack": "v99999_19",
+    "sawWrittenData": true
+   }
+  },
+  "s1_readOtherDir": {
+   "label": "session1 read dirB (different dir)",
+   "errors": [],
+   "R": {
+    "step": "read",
+    "origin": "null",
+    "href": "file:///tmp/claude-1000/-home-n-to-Github-querbeet/e775f96c-c1a6-43e2-8b0c-8f90ee4d562f/scratchpad/idbprobe/dirB/read.html",
+    "estimate": {
+     "quota": 1238988800,
+     "usage": 9926616
+    },
+    "opened": true,
+    "marker": {
+     "writtenBy": "dirA/write.html"
+    },
+    "readMs100k": 758,
+    "rowsBack": 100000,
+    "firstCellBack": 0,
+    "lastCellBack": "v99999_19",
+    "sawWrittenData": true
+   }
+  },
+  "s2_readAfterRestart": {
+   "label": "session2 read dirA AFTER RESTART",
+   "errors": [],
+   "R": {
+    "step": "read",
+    "origin": "null",
+    "href": "file:///tmp/claude-1000/-home-n-to-Github-querbeet/e775f96c-c1a6-43e2-8b0c-8f90ee4d562f/scratchpad/idbprobe/dirA/read.html",
+    "estimate": {
+     "quota": 1238988800,
+     "usage": 9926616
+    },
+    "opened": true,
+    "marker": {
+     "writtenBy": "dirA/write.html"
+    },
+    "readMs100k": 771,
+    "rowsBack": 100000,
+    "firstCellBack": 0,
+    "lastCellBack": "v99999_19",
+    "sawWrittenData": true
+   }
+  }
+ }
+}
