@@ -1,0 +1,78 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Bestellungen Q1 mit Kundenname über 1000 EUR",
+  "sources": [
+    {
+      "id": "b1",
+      "name": "Bestellungen Januar",
+      "file": "bestellungen-2026-01.csv",
+      "columns": ["Bestellnr", "Datum", "KundenNr", "Betrag", "Region"],
+      "ui": { "x": 0, "y": 0 }
+    },
+    {
+      "id": "b2",
+      "name": "Bestellungen Februar",
+      "file": "bestellungen-2026-02.csv",
+      "columns": ["Bestellnr", "Datum", "KundenNr", "Betrag", "Region"],
+      "ui": { "x": 0, "y": 140 }
+    },
+    {
+      "id": "b3",
+      "name": "Bestellungen März",
+      "file": "bestellungen-2026-03.csv",
+      "columns": ["Bestellnr", "Datum", "Kunden-Nr", "Betrag", "Region"],
+      "ui": { "x": 0, "y": 280 }
+    },
+    {
+      "id": "kd",
+      "name": "Kundenliste",
+      "file": "kunden.csv",
+      "columns": ["Nr", "Name", "Branche", "Ort"],
+      "ui": { "x": 0, "y": 420 }
+    }
+  ],
+  "steps": [
+    {
+      "id": "u1",
+      "name": "Alle Monatsbestellungen vereinen",
+      "kind": "union",
+      "inputs": ["b1", "b2", "b3"],
+      "config": {
+        "mappings": [
+          { "target": "KundenNr", "from": "Kunden-Nr" }
+        ],
+        "unmatched": "keep"
+      },
+      "ui": { "x": 260, "y": 140 }
+    },
+    {
+      "id": "j1",
+      "name": "Kundenname anreichern",
+      "kind": "join",
+      "inputs": ["u1", "kd"],
+      "config": {
+        "keys": [
+          { "left": "KundenNr", "right": "Nr" }
+        ],
+        "type": "left",
+        "nullsMatch": false,
+        "duplicateAudit": false
+      },
+      "ui": { "x": 520, "y": 210 }
+    },
+    {
+      "id": "f1",
+      "name": "Nur Beträge über 1000 EUR",
+      "kind": "filter",
+      "inputs": "j1",
+      "config": {
+        "conditions": [
+          { "column": "Betrag", "op": "gt", "value": 1000 }
+        ],
+        "combine": "and"
+      },
+      "ui": { "x": 780, "y": 210 }
+    }
+  ],
+  "result": "f1"
+}

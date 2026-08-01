@@ -1,7 +1,7 @@
 # Spike results: can a model write a Recipe from the documentation alone?
 
-**Date:** 2026-08-01 · **Status:** built, self-tested, and **passed cold by two assistants in four runs, none needing a second round**
-**Answers:** PRD Open Question 3 — yes, with the sample size named. **Feeds:** FR-27, FR-28.
+**Date:** 2026-08-01 · **Status:** built, self-tested, and **passed cold by two assistants in five runs, none needing a second round**
+**Answers:** PRD Open Question 3 — yes, including the harder half: a foreign model *finds* the plan, not just expresses it. **Feeds:** FR-27, FR-28.
 **Artefacts:** `block-template.txt`, three rendered blocks, `proposed/`, `selftest/`
 **Raw data:** `selftest/results.json`, `independent-runs.md`
 **Built on:** `../editor-vueflow-2026-08-01/` — `querbeet/recipe@1`, its validator and its named rejections
@@ -19,11 +19,17 @@ by a message that names the defect.
 
 **But the model that wrote those five Recipes also wrote the block and the validator behind it**, so
 that is a consistency check on the documentation and not a measurement of machine authorship. The
-measurement is the four independent runs: **Gemini and Sonnet 5, cold, no repository access, no
-instruction beyond the block. All four loaded on the first round; not one needed a correction.** The
-three that were asked to build the same Pipeline produced the same graph as each other and as this
-session, differing in exactly one boolean. The fourth was asked for something the three Step kinds
-cannot do, and said so instead of inventing a kind.
+measurement is the five independent runs: **Gemini and Sonnet 5, cold, no repository access, no
+instruction beyond the block. All five loaded on the first round; not one needed a correction.** Four
+were asked to build the same Pipeline and produced the same graph as each other and as this session.
+One was asked for something the three Step kinds cannot do, and said so instead of inventing a kind.
+
+**The one that matters most is i5.** The other blocks hand the model the current Pipeline, which in the
+worked example already contains the mapping that reconciles March's differently-spelled column — so no
+earlier run had to *find* that, only keep it. i5's block has no Pipeline and no Column Annotations:
+four files, their column names, and the question. Gemini found the rename by comparing the Profiles,
+named it before being asked, matched `KundenNr` against `Nr` across two files unaided, and built the
+same graph. That is the harder half of Open Question 3, and it holds.
 
 The sample is small and its limits are named in *The independent test* below — chiefly that one of the
 two assistants shares this session's vendor, and that no run ever produced a refusal, so FR-28's
@@ -39,7 +45,7 @@ column names right*.
 
 ## The independent test
 
-**Four runs, 2026-08-01.** Each one a fresh session with no access to this repository, given one
+**Five runs, 2026-08-01.** Each one a fresh session with no access to this repository, given one
 rendered block and nothing else — no follow-up, no correction, no hint. Prose verbatim in
 `independent-runs.md`; Recipes in `selftest/cases/i*.json`.
 
@@ -49,16 +55,38 @@ rendered block and nothing else — no follow-up, no correction, no hint. Prose 
 | i2 | Sonnet 5 | worked example | accepted round 1, both paths — identical Recipe |
 | i3 | Gemini | example, **all Column Annotations cleared** | accepted round 1, both paths — identical Recipe |
 | i4 | Gemini | a question the three Step kinds cannot answer | **refused the task in prose, invented no kind** |
+| i5 | Gemini | **no annotations and no Pipeline** — nothing copyable | accepted round 1, both paths — same graph, found unaided |
 
 **Nothing needed a second round.** No refusal was ever produced, so the paste-the-error-back loop that
 FR-28 is designed around is still unexercised — the one part of the design this test could not reach.
 
-### The four authors converge on one graph
+### i5 — the probe where nothing could be copied
 
-i1, i2, i3 and this session's own `t5-modify` are the same Recipe: same Step ids, kinds, `inputs`
-wiring, `result`, and the same `config` values throughout — **except one flag**. Sonnet 5's answer is
-identical to this session's down to every config value; Gemini's two answers are identical to each
-other.
+The other four blocks handed over part of the answer. Section 3 gives the model the Pipeline as it
+stands, and in the worked example that Pipeline already contains the Union with its
+`Kunden-Nr → KundenNr` mapping — so no earlier run had to *find* the March rename, only preserve it.
+i3 cleared the Column Annotations but left that Pipeline in place, which is why it was written up as
+weaker than intended.
+
+`prompt-block-empty-pipeline.txt` removes both: bare column names, an empty Pipeline, the question.
+The join key and the March spelling appear nowhere in it.
+
+**Gemini met all seven requirements, first round.** It compared the three monthly Profiles, noticed
+that March spells the customer number differently, and said so before being asked —
+*„Da im März die Spalte Kunden-Nr heißt (in Januar/Februar KundenNr), wird diese beim Zusammentragen
+per mappings auf KundenNr vereinheitlicht."* It then matched `KundenNr` in the orders against `Nr` in
+the customer list, two different strings in two different files with nothing pointing at either. The
+graph it built is the one every other run produced.
+
+**This is the answer to the question the earlier runs could not reach.** A foreign model does not only
+*express* a plan in `querbeet/recipe@1`; given a Column Profile and nothing else, it *finds* one.
+
+### The five authors converge on one graph
+
+i1, i2, i3, i5 and this session's own `t5-modify` are the same Recipe: same Step ids, kinds, `inputs`
+wiring, `result`, and the same `config` values throughout — **except one flag, and one value type**.
+Sonnet 5's answer is identical to this session's down to every config value; Gemini's three answers
+are identical to each other. i5 arrived at that graph with nothing to copy.
 
 | | Gemini (i1, i3) | Sonnet 5 (i2) | This session (`t5`) |
 | --- | --- | --- | --- |
@@ -78,17 +106,19 @@ block example carries a value the author did not intend as a recommendation.
 Neither choice is wrong here: the Profile reports `Nr` at 1,103 distinct values across 1,103 rows, so
 the join key is unique and the audit has nothing to catch.
 
-### What the four runs establish
+### What the five runs establish
 
 - **The format crosses a vendor boundary.** Two assistants, no shared session, no repository access,
   same graph. This is the point Open Question 3 asked about, and it holds.
-- **The modify path works, three times over.** Every run returned the pre-existing Union verbatim —
-  id, name, mapping, position — rather than rebuilding it in its own idiom. That was the part most
-  likely to fail and it never did.
+- **A foreign model finds the plan, not just the format** — i5, above. The two decisions the Column
+  Profile is *for* — which columns mean the same thing, which pair joins — were both made unaided.
+- **The modify path works, four times over.** Every run given a Pipeline returned the pre-existing
+  Union verbatim — id, name, mapping, position — rather than rebuilding it in its own idiom. That was
+  the part most likely to fail and it never did.
 - **The linear shorthand is discoverable.** `"inputs": "j1"` on the single-input Step, arrays on the
   others, in every run, without being told twice.
-- **`ui` survived length pressure** in all four. The fallback layout was built for this case and was
-  never needed. It stays: four samples are not a guarantee, and it costs 30 lines.
+- **`ui` survived length pressure** in all five. The fallback layout was built for this case and was
+  never needed. It stays: five samples are not a guarantee, and it costs 30 lines.
 - **The instruction not to invent a Step kind is followed** — i4, below.
 - **The answer protocol produces useful prose.** i2 and i3 each declared the assumption that *„über
   1000 Euro"* means `gt` and not `gte`, unprompted, in the three sentences the block allows. That
@@ -112,13 +142,10 @@ route the user out of querbeet.
 1. **Two vendors, and one of them is this session's own family.** Sonnet 5 and the Opus 5 session that
    wrote the format share a vendor and a training lineage; only Gemini is genuinely foreign. The
    honest count is **one foreign vendor plus one same-family model**, not two independent samples.
-2. **The annotation probe was weaker than intended.** Clearing the Column Annotations removed the
-   pointer to the join key — and Gemini still matched `KundenNr` against `Nr`, which are different
-   strings, so that inference is real. But the *other* hard decision, the March column named
-   `Kunden-Nr`, was never actually hidden: section 3 of the block hands over the current Pipeline, and
-   that Pipeline contains the mapping. **`prompt-block-empty-pipeline.txt` closes that hole** —
-   annotations cleared *and* no Pipeline, so the model must find the join key, notice the March
-   spelling and build the whole graph. Rendered and unrun.
+2. ~~**The annotation probe was weaker than intended.**~~ **Closed by i5.** i3 cleared the Column
+   Annotations but section 3 still handed over the Pipeline containing the March mapping, so the
+   rename was never actually hidden. `prompt-block-empty-pipeline.txt` hides both, and Gemini found
+   the rename and the join key unaided on the first round.
 3. **No refusal, so no correction loop.** Everything passed round one. How a model behaves when handed
    *„„Nur Süd“ filtert auf die Spalte „Abteilung“ …"* is unmeasured, and that loop is what FR-28's
    paste-back requirement exists for. The cheapest way to reach it is probe 2 above with an empty
@@ -135,18 +162,18 @@ case now carries **named requirements evaluated against the graph the model itse
 measured path, deliberately: on the proposed path the fallback layout would credit the tool for
 placement the model never did).
 
-| Requirement | i1 | i2 | i3 | i4 |
-| --- | --- | --- | --- | --- |
-| Union across all three monthly files | · | · | · | — |
-| March column `Kunden-Nr` reconciled | · | · | · | · |
-| Join on `KundenNr = Nr` | · | · | · | — |
-| Left join, so no order is lost | · | · | · | — |
-| Filter `Betrag > 1000` | · | · | · | — |
-| Result Step is the filter | · | · | · | — |
-| Positions set, nothing left on 0,0 | · | · | · | — |
-| The given Union preserved unchanged | · | · | · | · |
+| Requirement | i1 | i2 | i3 | i4 | i5 |
+| --- | --- | --- | --- | --- | --- |
+| Union across all three monthly files | · | · | · | — | · |
+| March column `Kunden-Nr` reconciled | · | · | · | · | **· unaided** |
+| Join on `KundenNr = Nr` | · | · | · | — | **· unaided** |
+| Left join, so no order is lost | · | · | · | — | · |
+| Filter `Betrag > 1000` | · | · | · | — | · |
+| Result Step is the filter | · | · | · | — | · |
+| Positions set, nothing left on 0,0 | · | · | · | — | · |
+| The given Union preserved unchanged | · | · | · | · | n/a — none was given |
 
-**26 of 26 met.** The predicates are loose about *how* — the March column may be reconciled by mapping
+**33 of 33 met.** The predicates are loose about *how* — the March column may be reconciled by mapping
 either spelling onto the other, and the Join may take its inputs in either order — and strict about
 *that*. They are not vacuous: run against a Recipe that solves a different task, four of the five
 task-specific ones fail.
@@ -154,14 +181,27 @@ task-specific ones fail.
 A missed requirement does not fail the run. The model may have chosen differently and still be right,
 so a miss is reported loudly and counted while pass/fail keeps meaning *loads / does not load*.
 
-### One ambiguity all four authors shared
+### The one thing the authors disagree about
 
-`"value": "1000"` — a string, for a `gt` comparison against a numeric column. Four independent authors
-wrote the string, because the block's only filter example uses one (`"Süd"`) and nothing in the format
-says what type a comparison value has or who coerces it. Unanimity across four authors makes it the
-de-facto convention rather than a decision. **It should become a decision**, in the block and in
-whatever the transformation engine does with it — R1/R5 territory, and a `Betrag` formatted
-`1.234,56` is exactly where a silent coercion goes wrong.
+`"value"` in a filter condition, for a `gt` comparison against a numeric column:
+
+| | i1 Gemini | i2 Sonnet 5 | i3 Gemini | i5 Gemini | this session |
+| --- | --- | --- | --- | --- | --- |
+| `value` for `Betrag > 1000` | `"1000"` | `"1000"` | `"1000"` | **`1000`** | `"1000"` |
+
+Four strings and one number, from the same assistant that wrote three of the strings. Nothing in the
+format says what type a comparison value has or who coerces it, and the block's only filter example
+compares a text column (`"Süd"`), so it offers no guidance for a numeric one. This was written up as
+a de-facto convention after four unanimous authors; i5 shows it is not a convention, it is a coin
+flip.
+
+**It has to become a decision, and it is not cosmetic.** The column it compares against is a `Betrag`
+formatted `1.234,56`. A string comparison, a numeric comparison and a locale-aware parse give three
+different answers to *is this row above a thousand euros*, and the loader currently accepts all of
+them without comment. Whoever settles it — R5 designs the German number parser, R1 owns what Arquero
+does with the result — should settle it in the block and in the validator on the same day. Until then
+`x11`-style column checking catches a wrong column name but not a wrong value type, which is the
+quieter of the two failures.
 
 ---
 
@@ -388,7 +428,7 @@ FR-26 fixes the fields, not the layout.
 | `prompt-block-example.txt` | Generated. The worked example — this is what run 1 used. |
 | `context-no-annotations.json`, `prompt-block-no-annotations.txt` | Probe 2: the same task with every Column Annotation cleared. |
 | `context-aggregate.json`, `prompt-block-aggregate.txt` | Probe 3: a question the three Step kinds cannot answer. |
-| `context-empty-pipeline.json`, `prompt-block-empty-pipeline.txt` | Probe 4, the sharpest: annotations cleared *and* no Pipeline, so the March rename is genuinely hidden. Rendered, not yet run. |
+| `context-empty-pipeline.json`, `prompt-block-empty-pipeline.txt` | Probe 4, the sharpest: annotations cleared *and* no Pipeline, so the March rename is genuinely hidden. Run as i5; passed. |
 | `proposed/columns.js` | Schema propagation per Step kind, and the column check with its named refusals. |
 | `proposed/layout.js` | Fallback layout for a Recipe with no positions. |
 | `proposed/load-recipe.mjs` | The composed load path: `fromRecipe` plus the three new checks. |

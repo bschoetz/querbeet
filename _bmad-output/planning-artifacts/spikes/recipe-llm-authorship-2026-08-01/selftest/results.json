@@ -1,6 +1,6 @@
 {
   "summary": {
-    "cases": 25,
+    "cases": 26,
     "authored": 5,
     "authoredAcceptedBoth": 5,
     "roundTripped": 5,
@@ -9,12 +9,16 @@
     "gapsClosedByProposed": 3,
     "newRefusalsFromProposed": 5,
     "stillOpenByDecision": 2,
-    "independentCases": 4,
-    "independentAcceptedFirstRound": 4,
-    "requirementsChecked": 26,
-    "requirementsMet": 26,
+    "independentCases": 5,
+    "independentAcceptedFirstRound": 5,
+    "requirementsChecked": 33,
+    "requirementsMet": 33,
+    "filterValueTypes": [
+      "string",
+      "number"
+    ],
     "failures": 0,
-    "evidenceClass": "t*/x*/s* weak — same model authored the format, the documentation and those cases. i* independent: gemini r1, sonnet5 r1, gemini r1, gemini r1."
+    "evidenceClass": "t*/x*/s* weak — same model authored the format, the documentation and those cases. i* independent: gemini r1, sonnet5 r1, gemini r1, gemini r1, gemini r1."
   },
   "results": [
     {
@@ -807,6 +811,9 @@
       "round": 1,
       "block": "example",
       "invented": [],
+      "valueTypes": [
+        "string"
+      ],
       "pass": true
     },
     {
@@ -894,6 +901,9 @@
       "round": 1,
       "block": "example",
       "invented": [],
+      "valueTypes": [
+        "string"
+      ],
       "pass": true
     },
     {
@@ -981,6 +991,9 @@
       "round": 1,
       "block": "no-annotations",
       "invented": [],
+      "valueTypes": [
+        "string"
+      ],
       "pass": true
     },
     {
@@ -1040,6 +1053,93 @@
       "round": 1,
       "block": "aggregate",
       "invented": [],
+      "valueTypes": [],
+      "pass": true
+    },
+    {
+      "case": "i5-gemini-empty-pipeline.json",
+      "task": "Unabhängig, Gemini: leere Pipeline, keine Spaltennotizen — findet es Join-Schlüssel und März-Umbenennung selbst?",
+      "bytes": 1936,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 7,
+        "edges": 6,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@780,210",
+          "j1@520,210",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true,
+        "requirements": [
+          {
+            "name": "Union über alle drei Monatsdateien",
+            "met": true
+          },
+          {
+            "name": "März-Spalte „Kunden-Nr“ vereinheitlicht",
+            "met": true
+          },
+          {
+            "name": "Join über KundenNr = Nr",
+            "met": true
+          },
+          {
+            "name": "Left Join, damit keine Bestellung verlorengeht",
+            "met": true
+          },
+          {
+            "name": "Filter Betrag > 1000",
+            "met": true
+          },
+          {
+            "name": "Ergebnis-Step ist der Filter",
+            "met": true
+          },
+          {
+            "name": "Positionen gesetzt, nichts liegt auf 0,0",
+            "met": true
+          }
+        ]
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 7,
+        "edges": 6,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@780,210",
+          "j1@520,210",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true,
+        "requirements": []
+      },
+      "independent": "gemini",
+      "round": 1,
+      "block": "empty-pipeline",
+      "invented": [],
+      "valueTypes": [
+        "number"
+      ],
       "pass": true
     }
   ]

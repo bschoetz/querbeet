@@ -103,6 +103,9 @@ const CASES = [
   // that does not exist, so the pass condition lives in the prose: say so
   // rather than invent a kind. The Recipe it returned is the unchanged Union.
   { file: 'i4-gemini-block-aggregate.json', task: 'Unabhängig, Gemini: eine Frage, die die drei Step-Arten nicht beantworten können.', measured: 'ok', independent: 'gemini', round: 1, block: 'aggregate', requires: () => [REQ.unionPreserved, REQ.marchColumnReconciled] },
+  // The sharpest probe: no annotations AND no Pipeline, so neither the join key
+  // nor the March spelling is handed over. Nothing here may be copied.
+  { file: 'i5-gemini-empty-pipeline.json', task: 'Unabhängig, Gemini: leere Pipeline, keine Spaltennotizen — findet es Join-Schlüssel und März-Umbenennung selbst?', measured: 'ok', independent: 'gemini', round: 1, block: 'empty-pipeline', requires: () => FULL_TASK },
 ]
 
 // A foreign assistant must not invent a Step kind — the block forbids it and
@@ -231,6 +234,15 @@ for (const c of CASES) {
     row.block = c.block
     const doc = JSON.parse(text)
     row.invented = (doc.steps || []).map((s) => s.kind).filter((k) => !IMPLEMENTED_KINDS.includes(k))
+    // The format never says what type a comparison value has. Record what each
+    // author chose, because that is the evidence for making it a decision.
+    row.valueTypes = [
+      ...new Set(
+        (doc.steps || [])
+          .filter((st) => st.kind === 'filter')
+          .flatMap((st) => (st.config?.conditions || []).map((c) => typeof c?.value)),
+      ),
+    ]
   }
 
   const verdict = (want, got, match) => {
@@ -272,6 +284,7 @@ const summary = {
   independentAcceptedFirstRound: independent.filter((r) => r.round === 1 && r.pass).length,
   requirementsChecked: independent.reduce((n, r) => n + (r.measured.requirements || []).length, 0),
   requirementsMet: independent.reduce((n, r) => n + (r.measured.requirements || []).filter((q) => q.met).length, 0),
+  filterValueTypes: [...new Set(independent.flatMap((r) => r.valueTypes || []))],
   failures,
   evidenceClass: independent.length
     ? `t*/x*/s* weak — same model authored the format, the documentation and those cases. i* independent: ${independent.map((r) => `${r.independent} r${r.round}`).join(', ')}.`
@@ -298,6 +311,7 @@ if (!quiet) {
       )
       for (const q of r.measured.requirements || [])
         console.log(`         ${q.met ? '·' : '✗ VERFEHLT'} ${q.name}`)
+      if (r.valueTypes.length) console.log(`         → Filter-Vergleichswert als ${r.valueTypes.join(' und ')}`)
     }
   }
 
