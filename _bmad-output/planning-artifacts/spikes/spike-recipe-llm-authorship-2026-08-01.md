@@ -1,7 +1,7 @@
 # Spike: can a model write a Recipe from the documentation alone?
 
-**Status:** [x] built, self-tested, and passed by a foreign assistant on the first round, 2026-08-01
-— **one vendor, one task; the generality is one sample deep**
+**Status:** [x] built, self-tested, and passed cold by two assistants in four runs, 2026-08-01 —
+**none needed a second round**
 **Created:** 2026-08-01, unblocked by the Vue Flow Editor spike
 **Kind:** spike. The outcome is a prompt block, a self-test, and one honest caveat.
 **Results:** `recipe-llm-authorship-2026-08-01/findings.md`
@@ -42,11 +42,15 @@ The self-test is **weak evidence**. The format, the documentation and the test R
 same model in the same session, and that session had read the validator first. It can show the
 documentation does not contradict the loader. It cannot show the documentation is sufficient.
 
-That is why the block was pasted into **Gemini**, cold, and its answer run through the same test:
-accepted on the first round, on both load paths, and identical to this session's own answer Step for
-Step. One vendor, one task — and a task whose two hard decisions the example's Column Annotations
-name outright, so it measures whether a foreign model can *express* a plan, not whether it can *find*
-one. What remains is in `findings.md`, section *The independent test*.
+That is why the blocks were pasted into **Gemini and Sonnet 5**, cold, and their answers run through
+the same test. Four runs, all accepted on the first round on both load paths; the three that built the
+same Pipeline produced the same graph as each other and as this session, differing in exactly one
+boolean; the fourth was asked for something the three Step kinds cannot do and said so rather than
+inventing a kind. Prose verbatim in `independent-runs.md`, analysis in `findings.md`.
+
+The limits are named there too: one of the two assistants shares this session's vendor, no run ever
+produced a refusal so FR-28's correction loop is unexercised, and the annotation probe left the March
+rename visible in the Pipeline it handed over.
 
 ## Explicitly out of scope
 

@@ -1,8 +1,9 @@
 # Spike results: can a model write a Recipe from the documentation alone?
 
-**Date:** 2026-08-01 · **Status:** artefacts built, self-test green, **first independent run passed — one vendor, one round**
-**Answers:** PRD Open Question 3 — the mechanism, not yet the generality. **Feeds:** FR-27, FR-28.
-**Artefacts:** `block-template.txt`, `prompt-block-example.txt`, `proposed/`, `selftest/` · **Raw data:** `selftest/results.json`
+**Date:** 2026-08-01 · **Status:** built, self-tested, and **passed cold by two assistants in four runs, none needing a second round**
+**Answers:** PRD Open Question 3 — yes, with the sample size named. **Feeds:** FR-27, FR-28.
+**Artefacts:** `block-template.txt`, three rendered blocks, `proposed/`, `selftest/`
+**Raw data:** `selftest/results.json`, `independent-runs.md`
 **Built on:** `../editor-vueflow-2026-08-01/` — `querbeet/recipe@1`, its validator and its named rejections
 come from there and **were not modified**. See *Why the new checks are a separate module*.
 
@@ -16,12 +17,17 @@ config shape, every rejection class. A full FR-27 block for four Sources and a r
 and all five byte-stable across a save/load round trip. **Thirteen** defect classes are each refused
 by a message that names the defect.
 
-**But the model that wrote those five Recipes also wrote the block and the validator behind it.** That
-is a consistency check on the documentation, not a measurement of machine authorship — which is why
-the block was then pasted into **Gemini**, in a session with no access to this repository and with no
-instruction beyond the block itself. Its answer loaded on the first round, on both paths, and matched
-this session's own answer to the same task Step for Step. See *The independent test* below, including
-what that one data point does not cover.
+**But the model that wrote those five Recipes also wrote the block and the validator behind it**, so
+that is a consistency check on the documentation and not a measurement of machine authorship. The
+measurement is the four independent runs: **Gemini and Sonnet 5, cold, no repository access, no
+instruction beyond the block. All four loaded on the first round; not one needed a correction.** The
+three that were asked to build the same Pipeline produced the same graph as each other and as this
+session, differing in exactly one boolean. The fourth was asked for something the three Step kinds
+cannot do, and said so instead of inventing a kind.
+
+The sample is small and its limits are named in *The independent test* below — chiefly that one of the
+two assistants shares this session's vendor, and that no run ever produced a refusal, so FR-28's
+paste-the-error-back loop is still unexercised.
 
 Four things the loader accepted that arguably it should not were found and are now settled: **three by
 code** (column checking, a Source under `steps`, a fallback layout), **one by amending the PRD**
@@ -33,79 +39,100 @@ column names right*.
 
 ## The independent test
 
-**Run 1 — Gemini, 2026-08-01.** Fresh session, no repository access, no project context. Input:
-`prompt-block-example.txt` and nothing else. No follow-up, no correction, no hint.
+**Four runs, 2026-08-01.** Each one a fresh session with no access to this repository, given one
+rendered block and nothing else — no follow-up, no correction, no hint. Prose verbatim in
+`independent-runs.md`; Recipes in `selftest/cases/i*.json`.
 
-**Result: accepted on the first round, on both load paths.** 7 Steps, 6 edges, `result: f1`,
-round trip byte-identical, 2,386 B. `selftest/cases/i1-gemini.json`.
+| Run | Assistant | Block | Result |
+| --- | --- | --- | --- |
+| i1 | Gemini | worked example | accepted round 1, both paths — 7 Steps, 6 edges, round trip identical |
+| i2 | Sonnet 5 | worked example | accepted round 1, both paths — identical Recipe |
+| i3 | Gemini | example, **all Column Annotations cleared** | accepted round 1, both paths — identical Recipe |
+| i4 | Gemini | a question the three Step kinds cannot answer | **refused the task in prose, invented no kind** |
 
-It is not merely valid — it is the same Recipe this session wrote for the same task. Step ids, kinds,
-`inputs` wiring and `result` are identical, and two of the three `config` objects match byte for byte:
+**Nothing needed a second round.** No refusal was ever produced, so the paste-the-error-back loop that
+FR-28 is designed around is still unexercised — the one part of the design this test could not reach.
 
-| | Gemini | This session (`t5-modify`) |
-| --- | --- | --- |
-| Steps, wiring, `result` | `u1 → j1 → f1`, result `f1` | identical |
-| `u1` (given in the block) | preserved verbatim, mappings and `ui` included | identical |
-| `j1` join keys, type, `nullsMatch` | `KundenNr = Nr`, `left`, `false` | identical |
-| `j1` `duplicateAudit` | `false` | `true` |
-| `f1` condition | `Betrag`, `gt`, `"1000"` | identical |
-| `inputs` shorthand | bare string on `f1`, array on `u1`/`j1` | identical |
-| `ui` | on every Source and Step | identical convention, different y for `j1`/`f1` |
+### The four authors converge on one graph
 
-The single behavioural difference, `duplicateAudit`, is not an error either way: the Column Profile
-reports `Nr` at 1,103 distinct values across 1,103 rows, so the join key is unique and a duplicate
-audit has nothing to catch. Whether Gemini read that or simply copied the `false` from the block's own
-join example cannot be told from one sample — the block shows `"duplicateAudit": false`, so both
-explanations fit.
+i1, i2, i3 and this session's own `t5-modify` are the same Recipe: same Step ids, kinds, `inputs`
+wiring, `result`, and the same `config` values throughout — **except one flag**. Sonnet 5's answer is
+identical to this session's down to every config value; Gemini's two answers are identical to each
+other.
 
-### What this one run establishes
+| | Gemini (i1, i3) | Sonnet 5 (i2) | This session (`t5`) |
+| --- | --- | --- | --- |
+| `u1` (given in the block) | preserved verbatim | preserved verbatim | preserved verbatim |
+| `j1` keys / type / `nullsMatch` | `KundenNr = Nr`, `left`, `false` | identical | identical |
+| **`j1` `duplicateAudit`** | **`false`** | **`true`** | **`true`** |
+| `f1` condition | `Betrag`, `gt`, `"1000"` | identical | identical |
+| `inputs` shorthand, `ui` | both used correctly | both used correctly | both used correctly |
 
-- **The block is sufficient for its own worked example.** Sections 4–5 carried a foreign model to a
-  valid, sensible, loadable Recipe with no interaction.
-- **The modify path works.** Gemini preserved `u1` — an id, a name and a mapping it did not choose —
-  byte for byte, rather than rebuilding the Pipeline in its own idiom. That is what FR-27's
-  "modify rather than only create" needs and it was the part most likely to fail.
+**The one disagreement has a visible cause.** Sonnet 5's prose gives its reason — *„mit
+Duplikat-Prüfung, falls eine Kundennummer mehrfach vorkommt"* — while neither Gemini run mentions the
+flag at all. The block's own join example shows `"duplicateAudit": false`. So the split is between an
+author who reasoned about the flag and one who took the example's value. **An example in a
+specification is a default in practice**, whatever the prose around it says. Worth knowing wherever a
+block example carries a value the author did not intend as a recommendation.
+
+Neither choice is wrong here: the Profile reports `Nr` at 1,103 distinct values across 1,103 rows, so
+the join key is unique and the audit has nothing to catch.
+
+### What the four runs establish
+
+- **The format crosses a vendor boundary.** Two assistants, no shared session, no repository access,
+  same graph. This is the point Open Question 3 asked about, and it holds.
+- **The modify path works, three times over.** Every run returned the pre-existing Union verbatim —
+  id, name, mapping, position — rather than rebuilding it in its own idiom. That was the part most
+  likely to fail and it never did.
 - **The linear shorthand is discoverable.** `"inputs": "j1"` on the single-input Step, arrays on the
-  others, without being told twice.
-- **`ui` survives length pressure**, at least here. The fallback layout was built for this case and
-  was not needed. It stays: one sample is not a guarantee, and the field remains the first thing a
-  model under pressure drops.
+  others, in every run, without being told twice.
+- **`ui` survived length pressure** in all four. The fallback layout was built for this case and was
+  never needed. It stays: four samples are not a guarantee, and it costs 30 lines.
+- **The instruction not to invent a Step kind is followed** — i4, below.
+- **The answer protocol produces useful prose.** i2 and i3 each declared the assumption that *„über
+  1000 Euro"* means `gt` and not `gte`, unprompted, in the three sentences the block allows. That
+  ambiguity is real and is exactly what a user needs surfaced.
 
-### What it does not establish, and the honest caveat
+### i4 — the question the tool cannot answer
 
-**One vendor, one round, one task — and the task was made easier by my own example.** The Column
-Profile in `example-context.json` carries annotations that hand over both hard decisions:
-*„zeigt auf Kundenliste.Nr"* names the join key, and *„heißt hier anders als im Januar und Februar"*
-names the union mapping. So this run measures whether a foreign model can **express** a plan in
-`querbeet/recipe@1`. It does not measure whether it can **find** the plan. Those are different
-questions and the second one is closer to what a real user's Profile looks like.
+Asked for total revenue per region, sorted descending — grouping, summing and sorting, none of which
+the three implemented kinds can do. Gemini named all three missing operations, attributed the limit to
+the Step kinds rather than to the question, returned the unchanged Recipe, and **invented no `kind`**.
+The run asserts this mechanically: any `kind` outside `union`/`join`/`filter` fails the case.
 
-Still outstanding, in order of what they would tell us. The blocks for 2 and 3 are rendered and
-waiting; each is one paste.
+It then sent the user to a spreadsheet — *„diese Schritte müsstest du anschließend in einem
+Tabellenkalkulationsprogramm (z. B. per Pivot-Tabelle) vornehmen."* That is not a defect in the block;
+it is what a competent assistant does with a tool that stops short. It is also a direct argument for
+FR-18's Aggregate Step: the missing kind does not make the assistant fail, it makes the assistant
+route the user out of querbeet.
 
-1. **A second vendor.** One sample cannot separate "the format is clear" from "Gemini is good at JSON".
-   Same file: `prompt-block-example.txt`.
-2. **A Profile without the give-away annotations** — `prompt-block-no-annotations.txt`. Same four
-   Sources, same Pipeline, every Column Annotation cleared. Does a foreign model still find the join
-   key `KundenNr = Nr` and the March column that is named differently?
-3. **A task the three Step kinds cannot answer** — `prompt-block-aggregate.txt`, asking for total
-   revenue per region. Pass is the assistant saying it cannot; fail is `"kind": "aggregate"`. The block
-   instructs it to say so and the loader refuses the invention either way (`x5`), but whether a foreign
-   model follows that instruction is unmeasured.
-4. **The prose that came with the answer.** The block asks for at most three sentences on what was
-   built and assumed. Only the JSON was recorded for run 1, so whether Gemini declared an assumption —
-   or should have asked a Probe Query instead — is not in evidence. Keep it for every further run.
+### What the runs still do not establish
 
-Until at least 1 and 3 are run, the status line is *the format demonstrably works across a model
-boundary; its generality is one sample deep.*
+1. **Two vendors, and one of them is this session's own family.** Sonnet 5 and the Opus 5 session that
+   wrote the format share a vendor and a training lineage; only Gemini is genuinely foreign. The
+   honest count is **one foreign vendor plus one same-family model**, not two independent samples.
+2. **The annotation probe was weaker than intended.** Clearing the Column Annotations removed the
+   pointer to the join key — and Gemini still matched `KundenNr` against `Nr`, which are different
+   strings, so that inference is real. But the *other* hard decision, the March column named
+   `Kunden-Nr`, was never actually hidden: section 3 of the block hands over the current Pipeline, and
+   that Pipeline contains the mapping. To test the rename, the probe needs a block whose Pipeline is
+   empty.
+3. **No refusal, so no correction loop.** Everything passed round one. How a model behaves when handed
+   *„„Nur Süd“ filtert auf die Spalte „Abteilung“ …"* is unmeasured, and that loop is what FR-28's
+   paste-back requirement exists for. The cheapest way to reach it is probe 2 above with an empty
+   Pipeline, or a Profile with genuinely awkward column names.
+4. **Nobody asked a Probe Query.** All four resolved the `gt`/`gte` ambiguity by assuming and saying
+   so, which is reasonable — but it means the Probe Query section of the block is written and
+   unexercised. A question that cannot be answered by assumption would be needed to reach it.
 
-### One ambiguity the run exposed
+### One ambiguity all four authors shared
 
-`"value": "1000"` — a string, for a `gt` comparison against a numeric column. This session wrote the
-same thing, the block's only filter example uses a string (`"Süd"`), and nothing in the format says
-what type a comparison value has or who coerces it. Two independent authors picked the string, which
-makes it the de-facto convention rather than a decision. **It should become a decision**, in the block
-and in whatever the transformation engine does with it — R1/R5 territory, and a `Betrag` formatted
+`"value": "1000"` — a string, for a `gt` comparison against a numeric column. Four independent authors
+wrote the string, because the block's only filter example uses one (`"Süd"`) and nothing in the format
+says what type a comparison value has or who coerces it. Unanimity across four authors makes it the
+de-facto convention rather than a decision. **It should become a decision**, in the block and in
+whatever the transformation engine does with it — R1/R5 territory, and a `Betrag` formatted
 `1.234,56` is exactly where a silent coercion goes wrong.
 
 ---
@@ -121,7 +148,7 @@ and in whatever the transformation engine does with it — R1/R5 territory, and 
 | `proposed/columns.js` | Schema propagation and the column check — the FR-28 clause the Editor spike's validator does not cover. |
 | `proposed/layout.js` | The fallback layout for a Recipe that arrives without `ui`. |
 | `proposed/load-recipe.mjs` | `fromRecipe` + the three new checks, in the order the product should run them. |
-| `selftest/cases/` | 22 Recipes: 5 authored for real tasks, 11 defects, 5 probes for things the loader might wave through, and 1 written by a foreign assistant. |
+| `selftest/cases/` | 25 Recipes: 5 authored for real tasks, 11 defects, 5 probes for things the loader might wave through, and 4 written by foreign assistants. |
 | `selftest/run-selftest.mjs` | Runs every case through **both** load paths, checks acceptance, checks the refusal names the defect, and re-serializes every accepted graph to check the round trip. |
 
 The example is deliberately a **modification** task, not a fresh build: the block hands the model the
@@ -226,8 +253,8 @@ still stand afterwards:
    of the block. Anything the documentation forgets to say, the author still knows. **This measures
    whether the documentation contradicts the validator. It cannot measure whether the documentation is
    sufficient.** *This is the point run 1 addresses, one sample deep.*
-2. **One model, one style.** One foreign vendor is one foreign vendor. See *The independent test*,
-   outstanding item 1.
+2. **One model, one style.** Addressed by the independent runs, within their own limits — see
+   *The independent test*, *What the runs still do not establish*.
 3. **No user in the loop.** FR-27's block is assembled by a person who has a real question about real
    files. Every question here was written to be answerable by three Step kinds, and the example's
    Column Annotations name both hard decisions outright.
@@ -236,20 +263,24 @@ still stand afterwards:
    touched here. A Recipe can be structurally perfect and semantically wrong, and this spike cannot
    tell the difference — the column check narrows that gap without closing it.
 
-### How to run the remaining independent tests
+### How to run a further independent test
 
-Run 1 is done and written up above. Each further run is the same five minutes:
+Four are done and written up above. Each further run is the same five minutes:
 
-1. Open a fresh session in an assistant with no access to this repository. **Vary the vendor** — that
-   is the variable run 1 could not vary.
-2. Paste the block. Nothing else. No corrections, no follow-up hints. For probe 2 or 3 above, render a
-   block from an edited context first: `node render-block.mjs my-context.json my-block.txt`.
+1. Open a fresh session in an assistant with no access to this repository. **Vary the vendor** — the
+   variable that is thinnest so far, since Sonnet 5 shares this session's family.
+2. Paste one of the three rendered blocks. Nothing else. No corrections, no follow-up hints. For a new
+   probe, edit a context file and render: `node render-block.mjs my-context.json my-block.txt`.
 3. Save the answer's JSON to `selftest/cases/i<n>-<vendor>.json`, add a row to the `CASES` table in
-   `run-selftest.mjs` with `measured: 'ok', independent: '<vendor>', round: 1`, and run it. **Keep the
-   prose that came with it** — it is evidence about assumptions, and run 1 lost it.
-4. If it is refused: paste the refusal back verbatim — that is the loop FR-28 is designed around —
-   and record how many rounds it takes. **The number of rounds is the finding**, not the pass/fail of
-   round one. Save each round as its own case.
+   `run-selftest.mjs` with `measured: 'ok', independent: '<vendor>', round: 1, block: '<block>'`, and
+   run it. **Keep the prose** and add it to `independent-runs.md` — what a model chooses to flag there
+   is evidence, and it is what distinguished i2 and i3 from i1.
+4. If it is refused: paste the refusal back verbatim — that is the loop FR-28 is designed around and
+   the one part of the design nothing has reached yet — and record how many rounds it takes. **The
+   number of rounds is the finding.** Save each round as its own case.
+
+The two probes most likely to produce something new, in order: **a block whose Pipeline is empty**, so
+the March rename is genuinely hidden rather than handed over in section 3; and **a third vendor**.
 
 ## The four gaps, and what was done about them
 
@@ -331,5 +362,6 @@ FR-26 fixes the fields, not the layout.
 | `proposed/layout.js` | Fallback layout for a Recipe with no positions. |
 | `proposed/load-recipe.mjs` | The composed load path: `fromRecipe` plus the three new checks. |
 | `selftest/run-selftest.mjs` | The self-test, and the table of cases with their expectations per path. |
-| `selftest/cases/` | 22 Recipes: `t*` authored, `x*` defects, `s*` the silent acceptances this spike went looking for, `i*` the independent runs. |
+| `selftest/cases/` | 25 Recipes: `t*` authored, `x*` defects, `s*` the silent acceptances this spike went looking for, `i*` the four independent runs. |
 | `selftest/results.json` | Generated. Per case and per path: acceptance, node and edge count, positions, round-trip verdict, refusal text. |
+| `independent-runs.md` | The raw record of the four independent runs, with each assistant's prose quoted verbatim. |

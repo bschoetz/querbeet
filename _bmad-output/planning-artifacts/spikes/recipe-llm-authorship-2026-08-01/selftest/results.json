@@ -1,6 +1,6 @@
 {
   "summary": {
-    "cases": 22,
+    "cases": 25,
     "authored": 5,
     "authoredAcceptedBoth": 5,
     "roundTripped": 5,
@@ -9,10 +9,10 @@
     "gapsClosedByProposed": 3,
     "newRefusalsFromProposed": 5,
     "stillOpenByDecision": 2,
-    "independentCases": 1,
-    "independentAcceptedFirstRound": 1,
+    "independentCases": 4,
+    "independentAcceptedFirstRound": 4,
     "failures": 0,
-    "evidenceClass": "t*/x*/s* weak — same model authored the format, the documentation and those cases. i* independent: gemini r1."
+    "evidenceClass": "t*/x*/s* weak — same model authored the format, the documentation and those cases. i* independent: gemini r1, sonnet5 r1, gemini r1, gemini r1."
   },
   "results": [
     {
@@ -701,7 +701,7 @@
     },
     {
       "case": "i1-gemini.json",
-      "task": "Unabhängig, Gemini, Runde 1: prompt-block-example.txt, sonst nichts.",
+      "task": "Unabhängig, Gemini: prompt-block-example.txt, sonst nichts.",
       "bytes": 2386,
       "expect": {
         "measured": "ok",
@@ -747,6 +747,160 @@
       },
       "independent": "gemini",
       "round": 1,
+      "block": "example",
+      "invented": [],
+      "pass": true
+    },
+    {
+      "case": "i2-sonnet5.json",
+      "task": "Unabhängig, Sonnet 5: derselbe Block, anderer Anbieter.",
+      "bytes": 1824,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 7,
+        "edges": 6,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@780,280",
+          "j1@520,280",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 7,
+        "edges": 6,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@780,280",
+          "j1@520,280",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "independent": "sonnet5",
+      "round": 1,
+      "block": "example",
+      "invented": [],
+      "pass": true
+    },
+    {
+      "case": "i3-gemini-noannotations.json",
+      "task": "Unabhängig, Gemini: derselbe Block ohne Spaltennotizen — findet es den Join-Schlüssel ohne Wegweiser?",
+      "bytes": 2383,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 7,
+        "edges": 6,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@780,140",
+          "j1@520,140",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 7,
+        "edges": 6,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@780,140",
+          "j1@520,140",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "independent": "gemini",
+      "round": 1,
+      "block": "no-annotations",
+      "invented": [],
+      "pass": true
+    },
+    {
+      "case": "i4-gemini-block-aggregate.json",
+      "task": "Unabhängig, Gemini: eine Frage, die die drei Step-Arten nicht beantworten können.",
+      "bytes": 1595,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 5,
+        "edges": 3,
+        "result": "u1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 5,
+        "edges": 3,
+        "result": "u1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "independent": "gemini",
+      "round": 1,
+      "block": "aggregate",
+      "invented": [],
       "pass": true
     }
   ]

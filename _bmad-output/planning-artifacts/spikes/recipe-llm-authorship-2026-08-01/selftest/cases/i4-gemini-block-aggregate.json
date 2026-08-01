@@ -1,0 +1,95 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Bestellungen Q1",
+  "sources": [
+    {
+      "id": "b1",
+      "name": "Bestellungen Januar",
+      "file": "bestellungen-2026-01.csv",
+      "columns": [
+        "Bestellnr",
+        "Datum",
+        "KundenNr",
+        "Betrag",
+        "Region"
+      ],
+      "ui": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "b2",
+      "name": "Bestellungen Februar",
+      "file": "bestellungen-2026-02.csv",
+      "columns": [
+        "Bestellnr",
+        "Datum",
+        "KundenNr",
+        "Betrag",
+        "Region"
+      ],
+      "ui": {
+        "x": 0,
+        "y": 140
+      }
+    },
+    {
+      "id": "b3",
+      "name": "Bestellungen März",
+      "file": "bestellungen-2026-03.csv",
+      "columns": [
+        "Bestellnr",
+        "Datum",
+        "Kunden-Nr",
+        "Betrag",
+        "Region"
+      ],
+      "ui": {
+        "x": 0,
+        "y": 280
+      }
+    },
+    {
+      "id": "kd",
+      "name": "Kundenliste",
+      "file": "kunden.csv",
+      "columns": [
+        "Nr",
+        "Name",
+        "Branche",
+        "Ort"
+      ],
+      "ui": {
+        "x": 0,
+        "y": 420
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "u1",
+      "name": "Q1 zusammen",
+      "kind": "union",
+      "inputs": [
+        "b1",
+        "b2",
+        "b3"
+      ],
+      "config": {
+        "mappings": [
+          {
+            "target": "KundenNr",
+            "from": "Kunden-Nr"
+          }
+        ],
+        "unmatched": "keep"
+      },
+      "ui": {
+        "x": 260,
+        "y": 140
+      }
+    }
+  ],
+  "result": "u1"
+}

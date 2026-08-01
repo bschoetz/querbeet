@@ -96,8 +96,19 @@ const CASES = [
   // repository, from prompt-block-example.txt and nothing else. These are the
   // only cases in this file that are evidence about machine authorship rather
   // than about the documentation's self-consistency.
-  { file: 'i1-gemini.json', task: 'Unabhängig, Gemini, Runde 1: prompt-block-example.txt, sonst nichts.', measured: 'ok', independent: 'gemini', round: 1 },
+  { file: 'i1-gemini.json', task: 'Unabhängig, Gemini: prompt-block-example.txt, sonst nichts.', measured: 'ok', independent: 'gemini', round: 1, block: 'example' },
+  { file: 'i2-sonnet5.json', task: 'Unabhängig, Sonnet 5: derselbe Block, anderer Anbieter.', measured: 'ok', independent: 'sonnet5', round: 1, block: 'example' },
+  { file: 'i3-gemini-noannotations.json', task: 'Unabhängig, Gemini: derselbe Block ohne Spaltennotizen — findet es den Join-Schlüssel ohne Wegweiser?', measured: 'ok', independent: 'gemini', round: 1, block: 'no-annotations' },
+  // The aggregate probe is not about the JSON. Its question needs a Step kind
+  // that does not exist, so the pass condition lives in the prose: say so
+  // rather than invent a kind. The Recipe it returned is the unchanged Union.
+  { file: 'i4-gemini-block-aggregate.json', task: 'Unabhängig, Gemini: eine Frage, die die drei Step-Arten nicht beantworten können.', measured: 'ok', independent: 'gemini', round: 1, block: 'aggregate' },
 ]
+
+// A foreign assistant must not invent a Step kind — the block forbids it and
+// `x5` proves the loader catches it, but instruction-following is the thing
+// under test in the aggregate probe.
+const IMPLEMENTED_KINDS = ['union', 'join', 'filter']
 
 function shape(graph) {
   return {
@@ -147,6 +158,9 @@ for (const c of CASES) {
   if (c.independent) {
     row.independent = c.independent
     row.round = c.round
+    row.block = c.block
+    const doc = JSON.parse(text)
+    row.invented = (doc.steps || []).map((s) => s.kind).filter((k) => !IMPLEMENTED_KINDS.includes(k))
   }
 
   const verdict = (want, got, match) => {
@@ -156,7 +170,8 @@ for (const c of CASES) {
   row.pass =
     verdict(row.expect.measured, row.measured, c.match) &&
     verdict(row.expect.proposed, row.proposed, c.proposedMatch || c.match) &&
-    (!c.expectLaidOut || row.proposed.laidOut)
+    (!c.expectLaidOut || row.proposed.laidOut) &&
+    (row.invented || []).length === 0
   if (!row.pass) failures++
   results.push(row)
 }
@@ -202,11 +217,12 @@ if (!quiet) {
     show(
       independent,
       (r) =>
-        `${r.independent}, Runde ${r.round}: ` +
+        `${r.independent} / ${r.block}, Runde ${r.round}: ` +
         (r.proposed.accepted
           ? `angenommen — ${r.proposed.nodes} Steps, ${r.proposed.edges} Kanten, result=${r.proposed.result}, ` +
             `round trip ${r.proposed.roundTrip ? 'identisch' : 'ABWEICHEND'}` +
-            (r.proposed.laidOut ? ', ohne ui (Layout gesetzt)' : '')
+            (r.proposed.laidOut ? ', ohne ui (Layout gesetzt)' : '') +
+            (r.invented.length ? `, ERFUNDENE ART: ${r.invented.join(', ')}` : '')
           : `abgelehnt — ${r.proposed.errors[0]}`),
     )
   }
