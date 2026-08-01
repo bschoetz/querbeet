@@ -48,9 +48,15 @@ same Pipeline produced the same graph as each other and as this session, differi
 boolean; the fourth was asked for something the three Step kinds cannot do and said so rather than
 inventing a kind. Prose verbatim in `independent-runs.md`, analysis in `findings.md`.
 
-The limits are named there too: one of the two assistants shares this session's vendor, no run ever
-produced a refusal so FR-28's correction loop is unexercised, and the annotation probe left the March
-rename visible in the Pipeline it handed over.
+Loading is not the measurement: each independent answer is also checked against named requirements —
+union across all three months, the March spelling reconciled, the join key, the filter threshold, the
+Result Step, the positions. 26 of 26 met.
+
+The limits are named there too: one of the two assistants shares this session's vendor, and no run
+ever produced a refusal, so FR-28's correction loop is unexercised. One limit is now addressed —
+the annotation probe left the March rename visible in the Pipeline it handed over, so
+`prompt-block-empty-pipeline.txt` hides both the annotations and the Pipeline. Rendered, unrun; it is
+the sharpest test the apparatus can pose.
 
 ## Explicitly out of scope
 

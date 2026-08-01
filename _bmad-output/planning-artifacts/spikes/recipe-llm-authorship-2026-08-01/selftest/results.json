@@ -11,6 +11,8 @@
     "stillOpenByDecision": 2,
     "independentCases": 4,
     "independentAcceptedFirstRound": 4,
+    "requirementsChecked": 26,
+    "requirementsMet": 26,
     "failures": 0,
     "evidenceClass": "t*/x*/s* weak — same model authored the format, the documentation and those cases. i* independent: gemini r1, sonnet5 r1, gemini r1, gemini r1."
   },
@@ -35,7 +37,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": true,
@@ -49,7 +52,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "pass": true
     },
@@ -74,7 +78,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": true,
@@ -89,7 +94,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "pass": true
     },
@@ -116,7 +122,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": true,
@@ -133,7 +140,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "pass": true
     },
@@ -163,7 +171,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": true,
@@ -183,7 +192,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "pass": true
     },
@@ -212,7 +222,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": true,
@@ -231,7 +242,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "pass": true
     },
@@ -435,7 +447,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": false,
@@ -468,7 +481,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": true,
@@ -484,7 +498,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "stillOpen": "Deliberately still accepted. The Editor marks orphans in the UI rather than refusing them, and an author mid-build always has some; FR-28 is being amended to drop \"disconnected\" rather than the loader changed.",
       "pass": true
@@ -512,7 +527,8 @@
         "allAtOrigin": true,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": true,
@@ -529,7 +545,8 @@
         "allAtOrigin": false,
         "laidOut": true,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "closedGap": "Silent acceptance. Every Step landed on 0,0; the fallback layout now places them.",
       "pass": true
@@ -554,7 +571,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": false,
@@ -586,7 +604,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": false,
@@ -618,7 +637,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": false,
@@ -650,7 +670,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": false,
@@ -680,7 +701,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "proposed": {
         "accepted": true,
@@ -694,7 +716,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "stillOpen": "No Input Contract, so no schema and no check — silence here is correct, not a gap.",
       "pass": true
@@ -724,7 +747,41 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": [
+          {
+            "name": "Union über alle drei Monatsdateien",
+            "met": true
+          },
+          {
+            "name": "März-Spalte „Kunden-Nr“ vereinheitlicht",
+            "met": true
+          },
+          {
+            "name": "Join über KundenNr = Nr",
+            "met": true
+          },
+          {
+            "name": "Left Join, damit keine Bestellung verlorengeht",
+            "met": true
+          },
+          {
+            "name": "Filter Betrag > 1000",
+            "met": true
+          },
+          {
+            "name": "Ergebnis-Step ist der Filter",
+            "met": true
+          },
+          {
+            "name": "Positionen gesetzt, nichts liegt auf 0,0",
+            "met": true
+          },
+          {
+            "name": "Die vorgegebene Union unverändert übernommen",
+            "met": true
+          }
+        ]
       },
       "proposed": {
         "accepted": true,
@@ -743,7 +800,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "independent": "gemini",
       "round": 1,
@@ -776,7 +834,41 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": [
+          {
+            "name": "Union über alle drei Monatsdateien",
+            "met": true
+          },
+          {
+            "name": "März-Spalte „Kunden-Nr“ vereinheitlicht",
+            "met": true
+          },
+          {
+            "name": "Join über KundenNr = Nr",
+            "met": true
+          },
+          {
+            "name": "Left Join, damit keine Bestellung verlorengeht",
+            "met": true
+          },
+          {
+            "name": "Filter Betrag > 1000",
+            "met": true
+          },
+          {
+            "name": "Ergebnis-Step ist der Filter",
+            "met": true
+          },
+          {
+            "name": "Positionen gesetzt, nichts liegt auf 0,0",
+            "met": true
+          },
+          {
+            "name": "Die vorgegebene Union unverändert übernommen",
+            "met": true
+          }
+        ]
       },
       "proposed": {
         "accepted": true,
@@ -795,7 +887,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "independent": "sonnet5",
       "round": 1,
@@ -828,7 +921,41 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": [
+          {
+            "name": "Union über alle drei Monatsdateien",
+            "met": true
+          },
+          {
+            "name": "März-Spalte „Kunden-Nr“ vereinheitlicht",
+            "met": true
+          },
+          {
+            "name": "Join über KundenNr = Nr",
+            "met": true
+          },
+          {
+            "name": "Left Join, damit keine Bestellung verlorengeht",
+            "met": true
+          },
+          {
+            "name": "Filter Betrag > 1000",
+            "met": true
+          },
+          {
+            "name": "Ergebnis-Step ist der Filter",
+            "met": true
+          },
+          {
+            "name": "Positionen gesetzt, nichts liegt auf 0,0",
+            "met": true
+          },
+          {
+            "name": "Die vorgegebene Union unverändert übernommen",
+            "met": true
+          }
+        ]
       },
       "proposed": {
         "accepted": true,
@@ -847,7 +974,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "independent": "gemini",
       "round": 1,
@@ -878,7 +1006,17 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": [
+          {
+            "name": "Die vorgegebene Union unverändert übernommen",
+            "met": true
+          },
+          {
+            "name": "März-Spalte „Kunden-Nr“ vereinheitlicht",
+            "met": true
+          }
+        ]
       },
       "proposed": {
         "accepted": true,
@@ -895,7 +1033,8 @@
         "allAtOrigin": false,
         "laidOut": false,
         "notes": [],
-        "roundTrip": true
+        "roundTrip": true,
+        "requirements": []
       },
       "independent": "gemini",
       "round": 1,

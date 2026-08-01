@@ -96,19 +96,85 @@ const CASES = [
   // repository, from prompt-block-example.txt and nothing else. These are the
   // only cases in this file that are evidence about machine authorship rather
   // than about the documentation's self-consistency.
-  { file: 'i1-gemini.json', task: 'Unabhängig, Gemini: prompt-block-example.txt, sonst nichts.', measured: 'ok', independent: 'gemini', round: 1, block: 'example' },
-  { file: 'i2-sonnet5.json', task: 'Unabhängig, Sonnet 5: derselbe Block, anderer Anbieter.', measured: 'ok', independent: 'sonnet5', round: 1, block: 'example' },
-  { file: 'i3-gemini-noannotations.json', task: 'Unabhängig, Gemini: derselbe Block ohne Spaltennotizen — findet es den Join-Schlüssel ohne Wegweiser?', measured: 'ok', independent: 'gemini', round: 1, block: 'no-annotations' },
+  { file: 'i1-gemini.json', task: 'Unabhängig, Gemini: prompt-block-example.txt, sonst nichts.', measured: 'ok', independent: 'gemini', round: 1, block: 'example', requires: () => [...FULL_TASK, REQ.unionPreserved] },
+  { file: 'i2-sonnet5.json', task: 'Unabhängig, Sonnet 5: derselbe Block, anderer Anbieter.', measured: 'ok', independent: 'sonnet5', round: 1, block: 'example', requires: () => [...FULL_TASK, REQ.unionPreserved] },
+  { file: 'i3-gemini-noannotations.json', task: 'Unabhängig, Gemini: derselbe Block ohne Spaltennotizen — findet es den Join-Schlüssel ohne Wegweiser?', measured: 'ok', independent: 'gemini', round: 1, block: 'no-annotations', requires: () => [...FULL_TASK, REQ.unionPreserved] },
   // The aggregate probe is not about the JSON. Its question needs a Step kind
   // that does not exist, so the pass condition lives in the prose: say so
   // rather than invent a kind. The Recipe it returned is the unchanged Union.
-  { file: 'i4-gemini-block-aggregate.json', task: 'Unabhängig, Gemini: eine Frage, die die drei Step-Arten nicht beantworten können.', measured: 'ok', independent: 'gemini', round: 1, block: 'aggregate' },
+  { file: 'i4-gemini-block-aggregate.json', task: 'Unabhängig, Gemini: eine Frage, die die drei Step-Arten nicht beantworten können.', measured: 'ok', independent: 'gemini', round: 1, block: 'aggregate', requires: () => [REQ.unionPreserved, REQ.marchColumnReconciled] },
 ]
 
 // A foreign assistant must not invent a Step kind — the block forbids it and
 // `x5` proves the loader catches it, but instruction-following is the thing
 // under test in the aggregate probe.
 const IMPLEMENTED_KINDS = ['union', 'join', 'filter']
+
+// --- did the answer actually solve the task? -----------------------------
+//
+// "It loads" is a weak thing to measure. A Recipe can be structurally perfect
+// and answer a different question — and for a model-authored Recipe that is the
+// interesting failure, not a malformed one. So each independent case carries
+// named requirements evaluated against the loaded graph.
+//
+// They are deliberately loose about *how*: the March column can be reconciled by
+// mapping either spelling onto the other, and the Join may take its inputs in
+// either order. What they are strict about is *that* it happened.
+//
+// A missed requirement does not fail the run. It is a research finding — the
+// model may have chosen differently and still be right — so it is reported
+// loudly and counted, while pass/fail keeps meaning "loads / does not load".
+
+const of = (g, kind) => g.nodes.filter((n) => n.kind === kind)
+const wired = (g, id) => g.nodes.find((n) => n.id === id)
+
+const REQ = {
+  unionOverThreeMonths: [
+    'Union über alle drei Monatsdateien',
+    (g) => of(g, 'union').some((u) => u.inputs.filter(Boolean).length >= 3),
+  ],
+  marchColumnReconciled: [
+    'März-Spalte „Kunden-Nr“ vereinheitlicht',
+    (g) =>
+      of(g, 'union').some((u) =>
+        (u.config?.mappings || []).some((m) => [m?.from, m?.target].includes('Kunden-Nr')),
+      ),
+  ],
+  joinOnCustomerKey: [
+    'Join über KundenNr = Nr',
+    (g) =>
+      of(g, 'join').some((j) =>
+        (j.config?.keys || []).some((k) => {
+          const pair = [k?.left, k?.right].sort().join('|')
+          return pair === 'KundenNr|Nr'
+        }),
+      ),
+  ],
+  joinIsLeft: ['Left Join, damit keine Bestellung verlorengeht', (g) => of(g, 'join').some((j) => j.config?.type === 'left')],
+  filterAboveThousand: [
+    'Filter Betrag > 1000',
+    (g) =>
+      of(g, 'filter').some((f) =>
+        (f.config?.conditions || []).some(
+          (c) => c?.column === 'Betrag' && c.op === 'gt' && String(c.value) === '1000',
+        ),
+      ),
+  ],
+  resultIsTheFilter: ['Ergebnis-Step ist der Filter', (g) => wired(g, g.resultId)?.kind === 'filter'],
+  everythingPlaced: ['Positionen gesetzt, nichts liegt auf 0,0', (g) => !g.nodes.every((n) => n.x === 0 && n.y === 0)],
+  unionPreserved: ['Die vorgegebene Union unverändert übernommen', (g) => of(g, 'union').some((u) => u.id === 'u1')],
+}
+
+// The full task both the worked example and the empty-Pipeline probe ask for.
+const FULL_TASK = [
+  REQ.unionOverThreeMonths,
+  REQ.marchColumnReconciled,
+  REQ.joinOnCustomerKey,
+  REQ.joinIsLeft,
+  REQ.filterAboveThousand,
+  REQ.resultIsTheFilter,
+  REQ.everythingPlaced,
+]
 
 function shape(graph) {
   return {
@@ -122,8 +188,11 @@ function positions(graph) {
   return graph.nodes.map((n) => `${n.id}@${n.x},${n.y}`).sort()
 }
 
-// One case through one load path.
-function run(load, text, raw) {
+// One case through one load path. `requires` is evaluated against the graph the
+// load produced, so it belongs on the *measured* path: `loadRecipe` would apply
+// the fallback layout first and `everythingPlaced` would then credit the tool
+// for placement the model never did.
+function run(load, text, raw, requires) {
   const parsed = load(raw ? text : JSON.parse(text))
   if (!parsed.ok) return { accepted: false, errors: parsed.errors }
   const s = shape(parsed.graph)
@@ -137,6 +206,7 @@ function run(load, text, raw) {
     laidOut: parsed.laidOut === true,
     notes: parsed.notes || [],
     roundTrip: back.ok && JSON.stringify(shape(back.graph)) === JSON.stringify(s),
+    requirements: (requires ? requires() : []).map(([name, test]) => ({ name, met: !!test(parsed.graph) })),
   }
 }
 
@@ -150,7 +220,7 @@ for (const c of CASES) {
     task: c.task,
     bytes: Buffer.byteLength(text),
     expect: { measured: c.measured, proposed: c.proposed || c.measured },
-    measured: run(fromRecipe, text, c.raw),
+    measured: run(fromRecipe, text, c.raw, c.requires),
     proposed: run(loadRecipe, text, c.raw),
   }
   if (c.was) row.closedGap = c.was
@@ -200,6 +270,8 @@ const summary = {
   stillOpenByDecision: results.filter((r) => r.stillOpen).length,
   independentCases: independent.length,
   independentAcceptedFirstRound: independent.filter((r) => r.round === 1 && r.pass).length,
+  requirementsChecked: independent.reduce((n, r) => n + (r.measured.requirements || []).length, 0),
+  requirementsMet: independent.reduce((n, r) => n + (r.measured.requirements || []).filter((q) => q.met).length, 0),
   failures,
   evidenceClass: independent.length
     ? `t*/x*/s* weak — same model authored the format, the documentation and those cases. i* independent: ${independent.map((r) => `${r.independent} r${r.round}`).join(', ')}.`
@@ -214,17 +286,19 @@ if (!quiet) {
 
   if (independent.length) {
     console.log('\nTHE INDEPENDENT TEST — written without access to this repository\n')
-    show(
-      independent,
-      (r) =>
-        `${r.independent} / ${r.block}, Runde ${r.round}: ` +
-        (r.proposed.accepted
-          ? `angenommen — ${r.proposed.nodes} Steps, ${r.proposed.edges} Kanten, result=${r.proposed.result}, ` +
-            `round trip ${r.proposed.roundTrip ? 'identisch' : 'ABWEICHEND'}` +
-            (r.proposed.laidOut ? ', ohne ui (Layout gesetzt)' : '') +
-            (r.invented.length ? `, ERFUNDENE ART: ${r.invented.join(', ')}` : '')
-          : `abgelehnt — ${r.proposed.errors[0]}`),
-    )
+    for (const r of independent) {
+      console.log(
+        `  [${mark(r)}] ${r.case.padEnd(38)}${r.independent} / ${r.block}, Runde ${r.round}: ` +
+          (r.proposed.accepted
+            ? `angenommen — ${r.proposed.nodes} Steps, ${r.proposed.edges} Kanten, result=${r.proposed.result}, ` +
+              `round trip ${r.proposed.roundTrip ? 'identisch' : 'ABWEICHEND'}` +
+              (r.proposed.laidOut ? ', ohne ui (Layout gesetzt)' : '') +
+              (r.invented.length ? `, ERFUNDENE ART: ${r.invented.join(', ')}` : '')
+            : `abgelehnt — ${r.proposed.errors[0]}`),
+      )
+      for (const q of r.measured.requirements || [])
+        console.log(`         ${q.met ? '·' : '✗ VERFEHLT'} ${q.name}`)
+    }
   }
 
   console.log('\nAuthored from the block — must load on both paths\n')

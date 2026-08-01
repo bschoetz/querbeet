@@ -70,6 +70,7 @@ const PAIRS = [
   ['example-context.json', 'prompt-block-example.txt'],
   ['context-no-annotations.json', 'prompt-block-no-annotations.txt'],
   ['context-aggregate.json', 'prompt-block-aggregate.txt'],
+  ['context-empty-pipeline.json', 'prompt-block-empty-pipeline.txt'],
 ]
 
 const template = readFileSync(resolve(here, 'block-template.txt'), 'utf8')

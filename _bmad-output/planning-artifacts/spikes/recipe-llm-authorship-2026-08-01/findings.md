@@ -116,8 +116,9 @@ route the user out of querbeet.
    pointer to the join key — and Gemini still matched `KundenNr` against `Nr`, which are different
    strings, so that inference is real. But the *other* hard decision, the March column named
    `Kunden-Nr`, was never actually hidden: section 3 of the block hands over the current Pipeline, and
-   that Pipeline contains the mapping. To test the rename, the probe needs a block whose Pipeline is
-   empty.
+   that Pipeline contains the mapping. **`prompt-block-empty-pipeline.txt` closes that hole** —
+   annotations cleared *and* no Pipeline, so the model must find the join key, notice the March
+   spelling and build the whole graph. Rendered and unrun.
 3. **No refusal, so no correction loop.** Everything passed round one. How a model behaves when handed
    *„„Nur Süd“ filtert auf die Spalte „Abteilung“ …"* is unmeasured, and that loop is what FR-28's
    paste-back requirement exists for. The cheapest way to reach it is probe 2 above with an empty
@@ -125,6 +126,33 @@ route the user out of querbeet.
 4. **Nobody asked a Probe Query.** All four resolved the `gt`/`gte` ambiguity by assuming and saying
    so, which is reasonable — but it means the Probe Query section of the block is written and
    unexercised. A question that cannot be answered by assumption would be needed to reach it.
+
+### Loading is not the measurement
+
+"It loads" is weak. A Recipe can be structurally perfect and answer a different question, and for a
+machine-authored Recipe that is the interesting failure — not a malformed one. So each independent
+case now carries **named requirements evaluated against the graph the model itself wrote** (the
+measured path, deliberately: on the proposed path the fallback layout would credit the tool for
+placement the model never did).
+
+| Requirement | i1 | i2 | i3 | i4 |
+| --- | --- | --- | --- | --- |
+| Union across all three monthly files | · | · | · | — |
+| March column `Kunden-Nr` reconciled | · | · | · | · |
+| Join on `KundenNr = Nr` | · | · | · | — |
+| Left join, so no order is lost | · | · | · | — |
+| Filter `Betrag > 1000` | · | · | · | — |
+| Result Step is the filter | · | · | · | — |
+| Positions set, nothing left on 0,0 | · | · | · | — |
+| The given Union preserved unchanged | · | · | · | · |
+
+**26 of 26 met.** The predicates are loose about *how* — the March column may be reconciled by mapping
+either spelling onto the other, and the Join may take its inputs in either order — and strict about
+*that*. They are not vacuous: run against a Recipe that solves a different task, four of the five
+task-specific ones fail.
+
+A missed requirement does not fail the run. The model may have chosen differently and still be right,
+so a miss is reported loudly and counted while pass/fail keeps meaning *loads / does not load*.
 
 ### One ambiguity all four authors shared
 
@@ -279,8 +307,10 @@ Four are done and written up above. Each further run is the same five minutes:
    the one part of the design nothing has reached yet — and record how many rounds it takes. **The
    number of rounds is the finding.** Save each round as its own case.
 
-The two probes most likely to produce something new, in order: **a block whose Pipeline is empty**, so
-the March rename is genuinely hidden rather than handed over in section 3; and **a third vendor**.
+The two probes most likely to produce something new, in order:
+**`prompt-block-empty-pipeline.txt`**, where the March rename is genuinely hidden rather than handed
+over in section 3 — this is the sharpest test the apparatus can currently pose; and **a third
+vendor**.
 
 ## The four gaps, and what was done about them
 
@@ -358,6 +388,7 @@ FR-26 fixes the fields, not the layout.
 | `prompt-block-example.txt` | Generated. The worked example — this is what run 1 used. |
 | `context-no-annotations.json`, `prompt-block-no-annotations.txt` | Probe 2: the same task with every Column Annotation cleared. |
 | `context-aggregate.json`, `prompt-block-aggregate.txt` | Probe 3: a question the three Step kinds cannot answer. |
+| `context-empty-pipeline.json`, `prompt-block-empty-pipeline.txt` | Probe 4, the sharpest: annotations cleared *and* no Pipeline, so the March rename is genuinely hidden. Rendered, not yet run. |
 | `proposed/columns.js` | Schema propagation per Step kind, and the column check with its named refusals. |
 | `proposed/layout.js` | Fallback layout for a Recipe with no positions. |
 | `proposed/load-recipe.mjs` | The composed load path: `fromRecipe` plus the three new checks. |

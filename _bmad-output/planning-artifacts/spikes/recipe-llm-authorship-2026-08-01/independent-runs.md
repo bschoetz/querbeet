@@ -15,6 +15,11 @@ Analysis is in `findings.md`, section *The independent test*.
 | i2 | Sonnet 5 | `prompt-block-example.txt` | accepted, round 1, both paths |
 | i3 | Gemini | `prompt-block-no-annotations.txt` | accepted, round 1, both paths |
 | i4 | Gemini | `prompt-block-aggregate.txt` | refused the task in prose, invented no kind |
+| — | *unrun* | `prompt-block-empty-pipeline.txt` | the sharpest probe: annotations cleared *and* no Pipeline |
+
+Every accepted Recipe is also checked against named requirements — did it union all three months,
+reconcile the March spelling, join on the right key, filter at the right threshold, place its Steps.
+26 of 26 met so far. The requirement sets live beside the cases in `run-selftest.mjs`.
 
 ---
 
