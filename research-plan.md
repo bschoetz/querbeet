@@ -331,10 +331,37 @@ lead-browser decision above.
   recompute-all is plausible but no longer obviously free — settle it by measurement);
   full-dataset search; graph-canvas versus table-rendering contention; and progress/cancellation
   for the export.
-- **Carried over from D2, small:** in a DAG a Step may have several consumers, so intermediate
-  outputs stay alive. D2's sharing result says this is cheap for view-verbs and expensive only
-  at `join`/`concat` — but the multi-consumer case itself was measured on a linear chain, not a
-  graph. One short measurement, not a dimension.
+**Checkpoint D2-a — does the graph stay affordable when a Step has several consumers?**
+*Carried over from D2. Not a dimension: one short measurement, to run with D3/D4.*
+
+D2 established by object identity that `select`, `filter`, `orderby` and `derive` share the
+parent's backing arrays, so a chain of them costs one copy of the data plus small per-step
+structures. **That result was measured on a linear chain.** The PRD's graph (FR-12) differs in
+two ways that the linear case cannot exhibit: one Step may feed several consumers, and a Step's
+output must stay alive as long as *any* consumer needs it, so nothing can be released early.
+
+*Hypothesis to falsify:* a DAG of ~5–30 Steps over the half-million-row target costs
+approximately **one copy of the source data plus one full-length array per derived column plus
+one materialisation per `join`/`concat`**, and fan-out itself is free because consumers share
+the same backing arrays.
+
+*Measure, in the browser, holding every Step output alive simultaneously:*
+- **Fan-out is free.** One source → N view-verb consumers (N = 1, 3, 10). Heap should be flat in
+  N. If it is not, the sharing result does not survive fan-out and the graph model needs a
+  memory budget of its own.
+- **The materialising verbs are where cost lives.** A diamond — one source, two branches, rejoined
+  by `join` — against the same shape with `filter` only. The delta is the real price of a graph.
+- **Retention.** With all Step outputs held, drop one leaf and confirm nothing is reclaimed
+  (expected: a shared parent is pinned by its other consumers), then drop the whole graph and
+  confirm the heap returns to baseline. A leak here is worse than a cost.
+- **`reify()` becomes a judgement call rather than a rule.** D2's rule was "reify after a
+  selective filter and release the parent" — in a graph the parent usually *cannot* be released,
+  because the Editor can re-run from any Step. Measure whether reifying a narrow Step still pays
+  when its parent stays alive anyway. It plausibly does not, which would overturn a D2
+  recommendation.
+
+*Cheap to run:* the harness exists (`imports/arquero-browser-probe.html` plus
+`run-arquero-probe.mjs`); this is one more probe section, not a new setup.
 
 **Inputs already settled by R2** — do not re-research these:
 - A Web Worker *can* be created from a `file://` page: classic workers from a `blob:` URL or a
