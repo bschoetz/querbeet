@@ -888,10 +888,27 @@ behind the canvas-prints-blank folklore.
 **The strongest argument against the pick, and the tripwire:** the probe built the easy parts of a
 chart and skipped the tedious ones — no tooltips, no legend, and no tick algorithm exercised against
 an all-zero column, negative values, a single category, an empty result or a 60-character label.
-Before building more than the bar and line tiles, build those five cases. **PROJECT DECISION PENDING:**
-R1 and R6 both overrode a hand-built research verdict on the reasoning that a complete, widely used
-library is more battle-tested than fresh bespoke code. That reasoning applies here unchanged, and the
-shape it would take is ECharts 6.1.0 in SVG mode.
+Before building more than the bar and line tiles, build those five cases.
+
+**PROJECT DECISION: Apache ECharts 6.1.0 in SVG mode** — overrides the research recommendation, on
+the same reasoning that decided R1 in Arquero's favour and R6 in Vue Flow's: a complete, widely used
+library is more battle-tested than freshly written bespoke code. The third override in three runs,
+and the one where it is cheapest to justify, because the report's own strongest counter-argument —
+tooltips, legends and the tick algorithm's edge cases — is exactly what the library brings. The
+tripwire above survives the decision and now tests it: if ECharts has *not* absorbed those five
+cases, the justification is gone and the 184-line fallback is still in `imports/chart-probe/`.
+
+**Seven consequences, none of them preferences** (full derivation in the report's section "Adopting
+ECharts — what the measurements require"): register `SVGRenderer` and nothing else, because canvas
+mode makes `getDataURL({type:'svg'})` return a PNG **silently**; import through `echarts/core`, never
+the package root; never pass `width`/`height` to `echarts.init`, which pins the instance and turns
+`resize()` into a no-op; call `resize()` on every tile size change, since ECharts does not observe its
+container — 66 ms, lands exactly; do **not** enable `sampling`, which is unnecessary at this scale and
+whose `lttb` mode renders null-gapped lines "sparse and disordered" (closed as "not planned");
+keep chart fills out of CSS backgrounds; and keep the `(rows, config, width, height) → DOM node` tile
+seam, which is now the exit *from* ECharts. **One constraint relaxes:** ECharts writes pure inline
+attributes, so the unstyled-snapshot trap does not apply and R5's CSS choice is unconstrained by the
+chart.
 
 **The hedge, unusually cheap here:** keep every tile behind a `(rows, config, width, height) → DOM
 node` interface with the aggregation done before the tile is called, so a tile never sees the Result
@@ -1075,7 +1092,8 @@ portable file, from a `file://` page?
 7. ~~**R7**~~ Done (2026-08-01), run in parallel with R5. Research verdict: hand-written SVG;
    runner-up ECharts 6.1.0 in SVG mode. The deciding criterion turned out to be the printed page:
    SVG prints as vector plus selectable text, canvas as a `devicePixelRatio`-bound raster. Volume
-   needs no decimation from anyone. Project decision on hand-built-versus-library still open.
+   needs no decimation from anyone. **Project decision: ECharts 6.1.0 in SVG mode**, overriding the
+   verdict as in R1 and R6.
    **R8** – export documents. Still presentation-layer and still non-blocking, but R7 already
    half-answered it: the zero-library answer (print stylesheet plus the browser's own print-to-PDF)
    produced correct pagination and selectable German axis labels, and should be tried before any PDF

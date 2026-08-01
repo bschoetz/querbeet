@@ -18,10 +18,14 @@ line, Top-N/Bottom-N, key figure) under single-file offline constraints — or h
 
 ## Executive summary
 
-**Recommendation: hand-written SVG, with Apache ECharts 6.1.0 in SVG mode as the named runner-up**
-(93 against 84 on the weighted matrix). Five candidates were built as real single-file Vite
-artefacts and opened from a `file://` URL in Chromium 151 and Firefox 153 — measured, not compared
-on paper.
+**Research recommendation: hand-written SVG, with Apache ECharts 6.1.0 in SVG mode as the named
+runner-up** (93 against 84 on the weighted matrix). **PROJECT DECISION 2026-08-01: ECharts 6.1.0 in
+SVG mode**, overriding it — the third such override in three runs, after R1 chose Arquero and R6
+chose Vue Flow on the same reasoning. What adopting it requires is a section of its own below, and
+seven of those requirements come straight out of the measurements.
+
+Five candidates were built as real single-file Vite artefacts and opened from a `file://` URL in
+Chromium 151 and Firefox 153 — measured, not compared on paper.
 
 **The gate that was expected to separate the field separated nothing, again.** All six artefacts
 build to exactly one HTML file, contain zero occurrences of `import(`, `fetch(`, `new Worker`,
@@ -75,8 +79,8 @@ where a chart library earns its size.
 hand-written SVG carries `class` references whose styling lives in the document stylesheet, so a
 naively serialized snapshot arrives in the export document **unstyled**. ECharts writes pure inline
 attributes and Observable Plot emits a `<style>` child inside the SVG; both are self-contained by
-construction. Whoever builds this must inline the chart's styling into the SVG node — a constraint on
-the CSS approach R5 is deciding, not a CSS decision made here.
+construction. Under the research verdict this would have been a constraint on the CSS approach R5 is
+deciding; **the project decision retires it**, which is one of the quieter things the override buys.
 
 ## Requirements frame
 
@@ -449,6 +453,58 @@ core and R6 for the graph model, and it costs nothing to install now.
    graphics" setting the page cannot set — the printing API's own default is off — and when it is off
    the fill is absent from the printed document, which is the actual mechanism behind the
    canvas-prints-blank folklore [11]. Fills go in attributes or inline styles.
+
+## Adopting ECharts — what the measurements require
+
+**PROJECT DECISION 2026-08-01: Apache ECharts 6.1.0 in SVG mode**, overriding the research
+recommendation. Same reasoning that decided R1 in Arquero's favour and R6 in Vue Flow's: a complete,
+widely used library is more battle-tested than freshly written bespoke code. The third such override
+in three runs, and the one where it is cheapest to justify — the report's strongest argument against
+hand-building was tooltips, legends and the tick algorithm's edge cases, and all three arrive with
+the library. The two hand-built tiles are now a fallback, not a plan.
+
+Seven consequences follow from the measurements, and none of them is a preference.
+
+1. **Register `SVGRenderer` and nothing else.** The canvas renderer is what loses FR-37, and it loses
+   it silently: in canvas mode `getDataURL({type: 'svg'})` returns `data:image/png;base64` with no
+   error and no warning. If both renderers are ever registered, an export can degrade from vector to
+   raster without anything failing. Registering one renderer makes that unrepresentable — and the
+   export path should still assert its own output begins with `<svg` or `data:image/svg+xml`.
+2. **Import through `echarts/core`, never the package root.** The measured build registers
+   `BarChart`, `LineChart`, `GridComponent`, `TooltipComponent` and `SVGRenderer`, and comes to
+   592,693 B — 178.3 KB gzipped for ECharts' own share. `import * as echarts from 'echarts'` pulls
+   everything.
+3. **Never pass `width`/`height` to `echarts.init`.** An explicit size pins the instance and turns
+   `resize()` into a silent no-op. This cost this run its first resize measurement, which reported
+   ECharts ignoring every size change.
+4. **A tile size change must call `resize()`.** ECharts does not observe its container — measured in
+   both engines, at every step, where the pre-call width is always the *previous* step's. The call
+   costs 66 ms and lands exactly. FR-35's three preset size steps therefore each need one.
+5. **Do not enable `sampling`.** It is unnecessary — 500,000 raw points draw in 197–316 ms without it
+   — and `sampling: 'lttb'` combined with null gaps renders lines "increasingly sparse and disordered"
+   under zoom, reported in 2023 and closed as "not planned" [5]. A Result column with nulls is
+   ordinary in querbeet.
+6. **Chart fills go in attributes or inline styles, never in a CSS background.** Unchanged by this
+   decision and it applies to the surrounding tile chrome too.
+7. **Keep the tile seam.** `(rows, config, width, height) → DOM node`, with aggregation done before
+   the tile is called so a tile never sees the Result table. The hedge now points the other way — it
+   is the exit *from* ECharts, and it is what keeps the Recipe format, the Dashboard definition and
+   the export path out of this decision entirely.
+
+**One constraint relaxes.** ECharts writes pure inline attributes into its SVG — no class references,
+no `<style>` child needed — so the unstyled-snapshot trap that the hand-built path walks into does
+not apply. R5's CSS choice is now unconstrained by the chart, which it would not have been under the
+research verdict.
+
+**What the decision costs, stated plainly:** the artefact goes from 70,795 B to 592,693 B, and
+ECharts becomes the largest single dependency in the project by more than a factor of two over
+Arquero. R2 and R6 both ruled footprint out as a criterion; this is the point at which that rule was
+knowingly applied to a number an order of magnitude larger than the one it was written for.
+
+**The tripwire that tests this pick,** in the shape R6 used: before more than the bar and line tiles
+exist, render both against an all-zero column, a single category, negative values, an empty result
+and a 60-character label. The pick is justified by ECharts having absorbed those cases already — if it
+has not, the justification is gone and the 184-line fallback is still in `imports/chart-probe/`.
 
 ## What this run hands to other work
 
