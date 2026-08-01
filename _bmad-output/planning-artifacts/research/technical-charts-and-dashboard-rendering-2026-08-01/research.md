@@ -21,20 +21,19 @@ line, Top-N/Bottom-N, key figure) under single-file offline constraints — or h
 **Research recommendation: hand-written SVG, with Apache ECharts 6.1.0 in SVG mode as the named
 runner-up** (93 against 84 on the weighted matrix). **PROJECT DECISION 2026-08-01: ECharts 6.1.0 in
 SVG mode**, overriding it — the third such override in three runs, after R1 chose Arquero and R6
-chose Vue Flow on the same reasoning. What adopting it requires is a section of its own below, and
-seven of those requirements come straight out of the measurements.
+chose Vue Flow on the same reasoning. Adopting ECharts requires a section of its own below; nine
+consequences follow, seven of them straight out of the measurements.
 
-Five candidates were built as real single-file Vite artefacts and opened from a `file://` URL in
-Chromium 151 and Firefox 153 — measured, not compared on paper.
+Six artefacts across five candidates — ECharts was built twice, once per renderer — were built as
+real single-file Vite bundles and opened from a `file://` URL in Chromium 151 and Firefox 153:
+measured, not compared on paper.
 
 **The gate that was expected to separate the field separated nothing, again.** All six artefacts
 build to exactly one HTML file, contain zero occurrences of `import(`, `fetch(`, `new Worker`,
 `importScripts`, `@font-face` or a non-`data:` `url()`, and issue **zero network requests beyond the
 document** in both engines with no page errors. R6 found the same thing about graph editors. The
 lazy-loading hazard is real — R6 measured `@maxgraph/core` fetching four `.gif` files by relative
-URL — but nothing in *this* field was caught doing it: every published bundle round 1 grepped came
-back with zero `fetch(`, zero dynamic `import(` and zero `wasm`, at medium confidence, since the grep
-covered UMD/IIFE builds rather than the ESM entry points Vite consumes.
+URL — but nothing in *this* field was caught doing it.
 
 **What decides it is the printed page, and the answer is sharper than the folklore.** No canvas chart
 printed blank — the canonical Firefox bug behind that belief was closed as INVALID, its actual cause
@@ -58,20 +57,20 @@ resolution. FR-37 weights this at 25 and it is the criterion the two canvas cand
   output held 50–56 DOM nodes at *every* rung from 1,000 to 500,000 points. The handbook's "canvas
   above roughly 1k elements" guidance counts elements, and a line series does not produce one per
   point.
-- **No candidate mutates frozen input and none throws on it.** Round 1 could evidence this for none
-  of the five; gate G5 is passed by all. One conditional survives: Chart.js's decimation plugin is
-  documented to redefine `data` on the dataset, and it is off by default and was not enabled.
+- **No candidate mutates frozen input and none throws on it.** Round 1 could not evidence this for any of
+  the five; all six artefacts pass gate G5. One conditional survives: Chart.js's decimation plugin is
+  documented to redefine `data` on the dataset, but it is off by default and was not enabled.
 
-**Two ECharts traps, both measured.** `renderToSVGString()` works on an ordinary non-SSR instance in
-SVG mode, contradicting the handbook — but in canvas mode **`getDataURL({type: 'svg'})` silently
-returns a PNG**, same call, no error, no warning. And the 2019 hidden-container complaint **does not
-reproduce against 6.1.0**: all six candidates recovered full width after being shown, in both
+**Three ECharts beliefs, all measured, and one of them is a real trap.** `renderToSVGString()` works
+on an ordinary non-SSR instance in SVG mode, contradicting the handbook. In canvas mode
+**`getDataURL({type: 'svg'})` silently returns a PNG** — same call, no error, no warning, and that
+one is the trap. And the 2019 hidden-container complaint **does not reproduce against 6.1.0**: all six artefacts recovered full width after being shown, in both
 engines, under an explicit pixel size.
 
 **The strongest argument against the recommendation is scope, and it cuts both ways.** FR-35 asks for
 exactly **two** chart kinds — a Top-N list is a table and a key figure is a number — configured
 through one small form with no stacking, no dual axes, no log scales and no zoom. That is what makes
-hand-building affordable. What the probe did *not* build is tooltips, legends, and the edge cases of
+hand-building affordable. What the probe did *not* build are tooltips, legends, and the edge cases of
 a tick algorithm: all-zero columns, negative values, a single category, very long labels. Those are
 where a chart library earns its size.
 
@@ -115,13 +114,13 @@ supplied by the app — every one does, so R5's answer plugs into any of them.
 
 ## The candidate screen
 
-The field is fifteen packages: the plan gate's own list, plus three wildcards an npm keyword search
-added that nobody had named — `lightweight-charts`, `ag-charts-community` and `apexcharts` [1]. That
+The field is fifteen packages: the plan gate's own list, plus three wildcards that nobody had named and an npm
+keyword search surfaced — `lightweight-charts`, `ag-charts-community` and `apexcharts` [1]. That
 search is a discoverability finding in its own right: of the briefed names only chart.js, echarts,
 highcharts and amCharts rank under `keywords:charts` at all, while uPlot, Observable Plot, vega-lite,
 frappe-charts, billboard.js, `@unovis/vue`, chartist and layerchart do not [1].
 
-**Cut on G2, licence, all three confirmed by reading the LICENSE inside the published package rather
+**Cut on G2, licence — all three confirmed by reading the LICENSE inside the published package rather
 than the repository** [4]:
 
 - **Highcharts 13.0.0** — `LICENSE.txt` places commercial use under the Highsoft Standard License
@@ -143,26 +142,33 @@ than the repository** [4]:
   zero issues closed in the last twelve months [2][8]. Note a discoverability trap: GitHub's latest
   release is v1.6.3 from 2022, a tag **never published to npm**, so anyone quoting "1.6.3" is quoting
   something not installable.
-**Cut on vitality rather than on a gate**, recorded separately because it passes G3 as written:
+
+**Cut on vitality rather than on a gate**, recorded separately because chartist passes G3 as written:
 
 - **chartist 1.5.0** (2025-09-30) sits inside the twelve-month window, so G3 does not touch it. What
   cuts it is throughput — **one issue closed against 244 open** in twelve months [8] — plus a licence
   declared `MIT OR WTFPL` in npm metadata that could not be verified against a LICENSE file.
 
-**Cut on structure, reason recorded:**
+**Cut on framework:**
+
+- **layerchart 2.0.4** — Svelte-native; no evidence found that it works in Vue 3 [8].
+- **`@mui/x-charts`, `visx`, `nivo`, Recharts** — React.
+
+**Cut on unresolved fit or architecture:**
 
 - **Vega-Lite 6.4.3** — declares a peer dependency on `vega ^6`, so the measured 79.4 KB gzip is the
   compiler alone and the render-time cost is that plus the entire Vega runtime [7]. Combined with
   secondary reports of interactive charts becoming unusable "into the thousands" of points [3], it is
   a large bet for two chart types.
-- **layerchart 2.0.4** — Svelte-native; no evidence found that it works in Vue 3 [8].
-- **`@mui/x-charts`, `visx`, `nivo`, Recharts** — React.
 - **`lightweight-charts` 5.2.0** — Apache-2.0, 61.6 KB gzip, no runtime fetches, genuinely alive, and
   financial-series oriented — **whether it draws a categorical bar chart at all was raised in round 1
   and never answered**, so this is a cut on unresolved fit rather than on a demonstrated gap.
+
+**Not measured, for budget** — neither of the two below was cut on a criterion:
+
 - **billboard.js 4.0.3** — MIT, NAVER, 17 releases in twelve months, second only to layerchart's 39
-  and well ahead of ECharts' 3, whose vitality shows in issue throughput rather than in cadence. Not measured for budget reasons, and one finding is recorded so a later run
-  does not have to repeat it: **the single `XMLHttpRequest` occurrence round 1 flagged as
+  and well ahead of ECharts' 3 — ECharts' vitality shows in issue throughput rather than in cadence.
+  One finding is recorded so a later run does not have to repeat it: **the single `XMLHttpRequest` occurrence round 1 flagged as
   disqualifier-shaped is benign.** It sits in billboard.js's `data.url` loader — a documented feature
   that fetches CSV/TSV/JSON from a URL, reachable but inert unless the application configures a URL.
   Verified by unpacking the published 4.0.3 tarball and reading the call site. What remains against it
@@ -200,15 +206,19 @@ All six artefacts pass G1, G4 and G5. Full detail:
 Byte counts are the built `dist/index.html` as recorded by the probe; gzip is `gzipSync` at level 9
 over that same file, computed for this table rather than taken from the build tool's own report.
 
+Round 1's own grep of the published bundles agrees, at medium confidence: zero `fetch(`, zero
+dynamic `import(` and zero `wasm` across every package it could reach — though it covered the
+UMD/IIFE builds rather than the ESM entry points Vite actually consumes.
+
 Each figure is the whole app including Vue, so a library's own share is the delta against the
-handbuilt baseline: uPlot ~50 KB, Chart.js ~199 KB **including its mandatory date adapter**, Plot
-~270 KB, ECharts tree-shaken ~514–522 KB raw.
+handbuilt baseline, in raw bytes: uPlot ~50 KB, Chart.js ~199 KB **including its mandatory date
+adapter**, Plot ~270 KB, ECharts tree-shaken ~514–522 KB.
 
 **The ECharts figure is the number nobody had.** Round 1 could only offer the whole library at
 367.9 KB gzip and the vendor's `echarts.simple` subset at 168.9 KB (candidate-field digest, row [6]).
 Tree-shaking `echarts/core` down to two chart types and two components lands the *entire app* at
 206,286 B gzip; against the hand-built baseline that puts ECharts' own share at **178.3 KB gzip**, so
-tree shaking beats the vendor's prebuilt subset only slightly and the whole-library figure overstates
+tree-shaking lands close to the vendor's prebuilt subset, and the whole-library figure overstates
 the real cost by roughly **52 %**.
 
 **Chart.js's footprint is not optional.** Chart.js ships **no date adapter**, and a time axis without
@@ -219,7 +229,7 @@ which is why a canvas library with a reputation for being small measures 269 KB 
 
 FR-37 requires the Dashboard as a self-contained static HTML file *and* as a PDF. Both were measured.
 
-**In the snapshot**, three of six produce vector output and it is genuinely self-contained:
+**In the snapshot**, three of six produce vector output:
 
 | Candidate | Snapshot | Bytes | External refs | Carries its own styling |
 | --- | --- | --- | --- | --- |
@@ -270,7 +280,7 @@ worth naming, because the folklore's own bug was a Firefox one and Playwright of
 for Firefox** — so this is one-engine evidence against a two-engine claim. The real cost of canvas is
 resolution and text, not blankness.
 
-Two consequences reach past this run. **The browser's own print-to-PDF is a live partial answer
+Three consequences reach past this run. **The browser's own print-to-PDF is a live partial answer
 for FR-37's PDF half** — it produced selectable, searchable text from an SVG chart at zero library
 cost, which is what R8 was told to try before researching properly. **Pagination was not exercised
 and must not be read into this:** all six artefacts printed to a single page, because the probe
@@ -322,7 +332,7 @@ renderer affordable and therefore what makes the print result reachable.
 
 **Frozen input — the question round 1 left open for four of five candidates.** Data `Object.freeze`d
 at both levels, checksummed before and after a full re-render: **no candidate threw and no candidate
-mutated the input.** Gate G5 is passed by all six.
+mutated the input.** All six artefacts pass gate G5.
 
 One conditional survives, and it is Chart.js's alone. The clean result holds for Chart.js *without
 decimation*; the plugin is off by default and was not enabled, and it is documented to store the
@@ -330,7 +340,7 @@ original as `dataset._data` and redefine `data` on the dataset [2] — a write t
 Since the volume measurement shows decimation is unnecessary here, this is a constraint to record
 rather than a defect to weigh.
 
-Incidental and settling a contradiction round 1 flagged against itself: **`uPlot.setSize()` exists.**
+Incidental, and it settles a contradiction round 1 flagged against itself: **`uPlot.setSize()` exists.**
 The documentation never mentions it; the method is there.
 
 **Resize through the three preset steps FR-35 defines:**
@@ -348,7 +358,7 @@ Chart.js's `responsive: true` genuinely observes the container; nothing else doe
 lag is visible in the raw data — at each step the pre-call width is the *previous* step's — so a tile
 grid must call `resize()` after a size change. This is cheap and mechanical, not a defect.
 
-**The 2019 hidden-container complaint does not reproduce.** All six candidates recovered full width
+**The 2019 hidden-container complaint does not reproduce.** All six artefacts recovered full width
 after being shown from `display: none`, in both engines, with no explicit resize call. The ECharts
 issue behind that reputation was filed against v4.2.1 and closed as stale rather than fixed [7]; it
 does not hold against 6.1.0. *Scope, stated because it matters:* the hidden element carried an
@@ -357,12 +367,12 @@ querbeet's tile grid uses preset sizes, so the tested condition is the product's
 
 **Formatter hooks — every candidate accepts one and calls it.** `axisLabel.formatter` (ECharts),
 `ticks.callback` (Chart.js), axis `values` (uPlot), scale `tickFormat` (Plot). The differentiator is
-not whether the hook exists but *where its output lands*: on the three SVG candidates it becomes
+not whether the hook exists but *where its output lands*: on the three SVG artefacts it becomes
 text — 32–35 marker occurrences in the DOM and 21–35 in the printed PDF — while on the canvas
 candidates it becomes pixels. R5 can settle what German formatting is without any of this being
 re-litigated, and its answer plugs into any candidate.
 
-One bundling consequence is worth carrying: Plot depends on the **d3 umbrella package** [10], so
+Two bundling consequences are worth carrying: Plot depends on the **d3 umbrella package** [10], so
 d3-format and d3-time-format arrive whether used or not, and Chart.js needs a **separate date library
 and adapter** [9]. Neither is a lazy-load hazard — both inline — but both are why these two measure
 larger than their reputations.
@@ -383,7 +393,7 @@ Scores 1–5 against the frame above. Shown per cell so the weighting can be re-
 | **Total** | | **93** | **84** | **72** | **67** | **64** |
 
 Where the contested cells come from. *Static export*: hand-built scores 4 rather than 5 only because
-of the unstyled-snapshot bug, which is its own code and fixable; the canvas pair score 2 because
+of the unstyled-snapshot bug, which lives in code the project owns and is fixable; the canvas pair score 2 because
 their output is a dpr-bound raster without text. *Ecosystem*: ECharts is the only *measured* candidate with
 an organisation behind it, and closed 818 issues in twelve months [8]; Chart.js scores 2 on 18 closed
 against 575 open; Plot and uPlot score 2 on zero releases in twelve months and, for uPlot, a bus
@@ -396,36 +406,38 @@ export and 2 on ecosystem, and ties on the formatter — a net of −1 across si
 whole margin is **footprint, worth +8 on its own**. And footprint is exactly what R2 ruled out ("do
 not spend design effort on bundle size") and R6 ruled out again ("footprint is explicitly *not* a
 criterion — do not let size decide this"). **Drop it and renormalise to 90: hand-built 92, ECharts
-91 — a tie.**
+91 — effectively a tie.**
 
 Whether the earlier rule should hold here is a real question rather than a rhetorical one. R6
 dismissed footprint because a 50 KB graph editor is noise beside Arquero's 236 KB. ECharts' own
 share is **178 KB gzipped**, more than twice the largest dependency the project has taken so far, and
 it takes the artefact from 70,795 B to 592,693 B. That is a different order of magnitude from the
 case the rule was written for, which is the argument for letting it count — but it is an argument,
-and whoever takes the project decision should take it knowing the matrix rests on this one cell.
+and whoever takes the project decision should do so knowing that the matrix rests on this one cell.
 
-## Verdict
+## Research verdict — overridden, retained for the record
+
+*This section records what the research concluded. The project decided otherwise; the operative
+section is "Project decision" below, and its rules are the ones to build against.*
 
 **Hand-written SVG, 93.** It is top or joint-top on five of seven criteria — outright on footprint
 and Vue ergonomics, tied with uPlot on volume, Chart.js on resize and ECharts on the formatter — and
 loses decisively on none. The reason
 it is affordable is scope: **FR-35 asks for exactly two chart kinds.** A Top-N/Bottom-N list is a
 table and a key figure is a number — neither is a chart — and the tile configuration is one small
-form with a grouping column, a measured column, an aggregation and a row limit. No stacking, no dual
-axes, no log scales and no zoom — none of which FR-35 asks for — while cross-tile filtering is an
-explicit PRD non-goal. The distinction matters: one is excluded, the rest are merely absent, and
+form with a grouping column, a measured column, an aggregation and a row limit. FR-35 asks for no stacking, no dual axes, no log scales and no
+zoom, while cross-tile filtering is an explicit PRD non-goal. The distinction matters: one is excluded, the rest are merely absent, and
 absent is the easier of the two to change. The
-probe's bar and line tiles came to roughly 200 lines between them, render 500,000 points in 118 ms,
+probe's bar and line tiles come to roughly 200 lines between them, render 500,000 points in 118 ms,
 and print as vector with selectable German axis labels.
 
 **Runner-up: Apache ECharts 6.1.0 in SVG mode, 84**, and the conditions under which it wins instead
 are concrete rather than rhetorical. It wins if the Dashboard grows past two chart kinds, if tooltips
 and legends turn out to be wanted rather than optional, or if the tick algorithm's edge cases prove
 to be a running cost rather than a one-off. It is also the only *measured* candidate with an
-organisation behind it — billboard.js (NAVER) and `@unovis/vue` (F5), both screened out, are the
-others — and its SVG output is the most self-contained of all six — pure inline
-attributes, three independent snapshot APIs, and 15.6 KB for a 730-point chart.
+organisation behind it; billboard.js (NAVER) and `@unovis/vue` (F5) have one too, but both were
+screened out. Its SVG output is the most self-contained of the six: pure inline attributes, three
+independent snapshot APIs, and 15.6 KB for a 730-point chart.
 
 **The strongest argument against the pick.** The probe built the parts of a chart that are easy and
 skipped the parts that are tedious: no tooltips, no legend, and no exercise of a tick algorithm
@@ -436,34 +448,21 @@ widely used library is more battle-tested than freshly written bespoke code — 
 applies here unchanged. **This verdict is research; the same override would be a defensible project
 decision, and ECharts in SVG mode is the shape it should take.**
 
-**The cheapest reversibility hedge, and it is unusually cheap here.** Keep every tile behind a
-component interface that takes `(rows, config, width, height)` and returns a DOM node, with the
-aggregation done before the tile is called — the tile never sees the Result table, only its own tens
-of rows. Then a switch to ECharts rewrites two components and touches neither the Recipe format, nor
-the Dashboard definition, nor the export path. This is the same seam R2 mandated for the pipeline
-core and R6 for the graph model, and it costs nothing to install now.
+**The reversibility hedge, and it is unusually cheap here.** Keep every tile behind a
+`(rows, config, width, height) → DOM node` interface, with the aggregation done before the tile is
+called. Under the project decision this hedge survives and reverses direction — see consequence 7
+below.
 
-**Two rules the implementation does not get to choose**, both from measurement:
+## Project decision: Apache ECharts 6.1.0 in SVG mode
 
-1. **Inline the chart's styling into the SVG node.** Scoped classes whose CSS lives in the document
-   produce a snapshot that arrives unstyled in the export document. ECharts and Plot are
-   self-contained by construction; hand-built code is not, unless it is made so. This is a constraint
-   on whatever R5 picks for CSS, not a CSS decision taken here.
-2. **Never put a chart's fill in a CSS background.** A background fill depends on a "print background
-   graphics" setting the page cannot set — the printing API's own default is off — and when it is off
-   the fill is absent from the printed document, which is the actual mechanism behind the
-   canvas-prints-blank folklore [11]. Fills go in attributes or inline styles.
-
-## Adopting ECharts — what the measurements require
-
-**PROJECT DECISION 2026-08-01: Apache ECharts 6.1.0 in SVG mode**, overriding the research
-recommendation. Same reasoning that decided R1 in Arquero's favour and R6 in Vue Flow's: a complete,
+**Taken 2026-08-01, overriding the research recommendation above.** Same reasoning that decided R1 in Arquero's favour and R6 in Vue Flow's: a complete,
 widely used library is more battle-tested than freshly written bespoke code. The third such override
 in three runs, and the one where it is cheapest to justify — the report's strongest argument against
 hand-building was tooltips, legends and the tick algorithm's edge cases, and all three arrive with
 the library. The two hand-built tiles are now a fallback, not a plan.
 
-Seven consequences follow from the measurements, and none of them is a preference.
+Nine consequences follow from the measurements, and none of them is a preference. Items 8 and 9
+come from the edge-case tripwire below and bind exactly as the rest do.
 
 1. **Register `SVGRenderer` and nothing else.** The canvas renderer is what loses FR-37, and it loses
    it silently: in canvas mode `getDataURL({type: 'svg'})` returns `data:image/png;base64` with no
@@ -480,8 +479,8 @@ Seven consequences follow from the measurements, and none of them is a preferenc
 4. **A tile size change must call `resize()`.** ECharts does not observe its container — measured in
    both engines, at every step, where the pre-call width is always the *previous* step's. The call
    costs 66 ms and lands exactly. FR-35's three preset size steps therefore each need one.
-5. **Do not enable `sampling`.** It is unnecessary — 500,000 raw points draw in 197–316 ms without it
-   — and `sampling: 'lttb'` combined with null gaps renders lines "increasingly sparse and disordered"
+5. **Do not enable `sampling`.** It is unnecessary: 500,000 raw points draw in 197–316 ms without it.
+   And `sampling: 'lttb'` combined with null gaps renders lines "increasingly sparse and disordered"
    under zoom, reported in 2023 and closed as "not planned" [5]. A Result column with nulls is
    ordinary in querbeet.
 6. **Chart fills go in attributes or inline styles, never in a CSS background.** Unchanged by this
@@ -491,20 +490,28 @@ Seven consequences follow from the measurements, and none of them is a preferenc
    is the exit *from* ECharts, and it is what keeps the Recipe format, the Dashboard definition and
    the export path out of this decision entirely.
 
+8. **Every tile needs a long-label strategy** — `axisLabel.width` with `overflow: 'truncate'`, or a
+   shortening formatter, which querbeet already owns since the formatter is application-supplied. A
+   60-character category label escapes the SVG by 15.2 px in Chromium and 21 px in Firefox, and
+   FR-35's grouping column carries arbitrary user text.
+9. **Set `barMaxWidth`.** Without it a single-category tile renders as a 237 px slab in a 346 px plot.
+
 **One constraint relaxes.** ECharts writes pure inline attributes into its SVG — no class references,
 no `<style>` child needed — so the unstyled-snapshot trap that the hand-built path walks into does
 not apply. R5's CSS choice is now unconstrained by the chart, which it would not have been under the
 research verdict.
 
-**What the decision costs, stated plainly:** the artefact goes from 70,795 B to 592,693 B, and
-ECharts becomes the largest single dependency in the project by more than a factor of two over
-Arquero. R2 and R6 both ruled footprint out as a criterion; this is the point at which that rule was
-knowingly applied to a number an order of magnitude larger than the one it was written for.
+**The matrix flagged the footprint rule as a real question rather than a rhetorical one, and this
+decision answers it against the report's own argument.** R2 and R6 both ruled footprint out as a
+criterion; this is the point at which that rule was knowingly applied to a number an order of
+magnitude larger than the one it was written for. The artefact goes from 70,795 B to 592,693 B, and
+ECharts becomes the largest single dependency in the project, more than twice
+the size of Arquero.
 
 **The tripwire that tests this pick — run 2026-08-01, and it passes.**
 `imports/edge-case-tripwire-2026-08-01.md`. Eight cases against the chosen registration in both
 engines: an all-zero column, a single category, mixed negatives, all-negatives, an empty result, a
-60-character label, a line with null gaps, and a flat line. **Seven pass outright; none threw; and
+60-character label, a line with null gaps, and a flat line. **Seven pass outright; none throws; and
 the serialized SVG of every case contains zero occurrences of `NaN`, `Infinity` or `undefined`** —
 the failure the tripwire was aimed at. All-zero synthesises a 0–1 range rather than collapsing;
 negatives get a real zero baseline with bars on both sides of it; an empty result draws an empty plot
@@ -514,11 +521,9 @@ nulls correctly.
 
 **The one failure is the long label, and it is a layout limit rather than a defect.** A 60-character
 rotated category label escapes the SVG's left edge by **15.2 px in Chromium and 21 px in Firefox**;
-ECharts shrinks the plot and shifts the y-axis to accommodate it, and that is not enough. **Two tile
-settings follow and are not optional**, because FR-35's grouping column carries arbitrary user text:
-a long-label strategy — `axisLabel.width` with `overflow: 'truncate'`, or a shortening formatter,
-which querbeet already owns since the formatter is application-supplied — and `barMaxWidth`, without
-which a single-category tile renders as a 237 px slab in a 346 px plot.
+ECharts shrinks the plot and shifts the y-axis to accommodate it, but not by enough. The two
+settings this obliges are consequences 8 and 9 above; both are binding, because FR-35's grouping
+column carries arbitrary user text.
 
 The 184-line hand-built fallback stays in `imports/chart-probe/handbuilt/`. It was never exercised
 against any of these cases, and a tick algorithm that gets `0…0`, an empty array and a zero-width
@@ -543,8 +548,35 @@ Boxchecker can copy out of the document.
 
 **To the project's licence discipline.** ApexCharts is the second library in two research runs to
 relicense mid-flight after PrimeVue [5]. The rule of reading the LICENSE in the published package
-rather than the repository has now paid twice, and it caught a third case here — Highcharts' npm
-`license` field is a bare URL.
+rather than the repository has now caught two relicensings, and a third case of a different kind
+here: Highcharts' npm `license` field is a bare URL.
+
+
+## Open questions
+
+- **`@unovis/vue` 1.6.7 was never measured.** Apache-2.0, F5-backed, Vue 3 first-class, seven releases
+  in twelve months. It is the strongest unexamined candidate and the first thing to add if this
+  selection is revisited.
+- **billboard.js 4.0.3 was screened out, not measured.** Its XHR is benign (verified here); what
+  stands against it is 149.4 KB and a separate stylesheet.
+- **The hidden-container test used an explicit pixel width.** The percentage-width case that the
+  original ECharts report described is untested.
+- **Tooltips and legends remain unexercised**, on ECharts and on every other candidate — the part of
+  the counter-argument that is still only an expectation. The tick-algorithm edge cases beside them
+  were closed for ECharts on 2026-08-01; see the tripwire above and
+  `imports/edge-case-tripwire-2026-08-01.md`.
+- **LICENSE files could not be retrieved** from the published packages of vega-lite, chartist,
+  layerchart and ag-charts-community; only the npm-declared fields are known for those four. All are
+  cut candidates, so this blocks nothing.
+- **Weekly download figures are absent** from this report: npmjs.com returns 403 to the fetcher used,
+  so all npm evidence comes from the registry API.
+
+## Staleness
+
+A selection report older than two quarters should be refreshed before anyone acts on it. Re-run the
+probe (`imports/chart-probe/`, commands in the measurement note) on a browser major-version change,
+and re-read the LICENSE of whatever is chosen at each upgrade — this field has produced two
+mid-flight relicensings in two research runs.
 
 ## Sources
 
@@ -569,30 +601,3 @@ Round 1 digests, with the source tables that back every bracketed reference:
 | [13] | jsPDF `addSvgAsImage` (unofficial doc mirror, low confidence) | — | 2026-08-01 |
 | [14] | pdf-lib `embedFont`; WinAnsi coverage (low confidence) | pdf-lib / DEV | 2026-08-01 |
 | [M] | **This run's own measurement** — six single-file artefacts, Chromium 151 and Firefox 153, from `file://` | `imports/chart-probe-measurement-2026-08-01.md` | 2026-08-01 |
-
-## Open questions
-
-- **`@unovis/vue` 1.6.7 was never measured.** Apache-2.0, F5-backed, Vue 3 first-class, seven releases
-  in twelve months. It is the strongest unexamined candidate and the first thing to add if this
-  selection is revisited.
-- **billboard.js 4.0.3 was screened out, not measured.** Its XHR is benign (verified here); what
-  stands against it is 149.4 KB and a separate stylesheet.
-- **The hidden-container test used an explicit pixel width.** The percentage-width case that the
-  original ECharts report described is untested.
-- ~~**Tooltips, legends and tick-algorithm edge cases were not built** on any candidate.~~ The edge
-  cases were closed for the chosen library on 2026-08-01 — see the tripwire above and
-  `imports/edge-case-tripwire-2026-08-01.md`. **Tooltips and legends remain unexercised**, on ECharts
-  and on every other candidate; they are the part of the counter-argument that is still only an
-  expectation.
-- **LICENSE files could not be retrieved** from the published packages of vega-lite, chartist,
-  layerchart and ag-charts-community; only the npm-declared fields are known for those four. All are
-  cut candidates, so this blocks nothing.
-- **Weekly download figures are absent** from this report: npmjs.com returns 403 to the fetcher used,
-  so all npm evidence comes from the registry API.
-
-## Staleness
-
-A selection report older than two quarters should be refreshed before anyone acts on it. Re-run the
-probe (`imports/chart-probe/`, commands in the measurement note) on a browser major-version change,
-and re-read the LICENSE of whatever is chosen at each upgrade — this field has produced two
-mid-flight relicensings in two research runs.
