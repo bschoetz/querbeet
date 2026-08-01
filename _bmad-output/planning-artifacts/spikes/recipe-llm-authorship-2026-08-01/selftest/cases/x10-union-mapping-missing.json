@@ -1,0 +1,17 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Zuordnung auf eine Spalte, die kein Eingang hat",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen Januar", "file": "b1.csv", "columns": ["Bestellnr", "KundenNr", "Betrag"], "ui": { "x": 0, "y": 0 } },
+    { "id": "b2", "name": "Bestellungen Februar", "file": "b2.csv", "columns": ["Bestellnr", "KundenNr", "Betrag"], "ui": { "x": 0, "y": 140 } }
+  ],
+  "steps": [
+    { "id": "u1", "name": "Beide Monate", "kind": "union", "inputs": ["b1", "b2"],
+      "config": { "mappings": [{ "target": "KundenNr", "from": "KdNr" }], "unmatched": "keep" },
+      "ui": { "x": 260, "y": 70 } },
+    { "id": "f1", "name": "Über 1000", "kind": "filter", "inputs": "u1",
+      "config": { "conditions": [{ "column": "Betrag", "op": "gt", "value": "1000" }], "combine": "and" },
+      "ui": { "x": 520, "y": 70 } }
+  ],
+  "result": "f1"
+}

@@ -131,9 +131,11 @@ filter — Zeilen behalten:
 `op` ist `equals`, `contains` oder `gt`. `combine` ist `and` oder `or`.
 
 Spaltennamen schreibst du wörtlich so, wie sie unter „Meine Quellen“ stehen —
-mit Groß- und Kleinschreibung, Umlauten und Leerzeichen. querbeet prüft
-Spaltennamen beim Laden nicht; ein Tippfehler fällt erst auf, wenn das Ergebnis
-falsch ist.
+mit Groß- und Kleinschreibung, Umlauten und Leerzeichen. querbeet prüft jeden
+Spaltennamen gegen die Spalten, die an diesem Step tatsächlich anliegen, und
+lehnt das Rezept sonst ab. Denk dabei den Weg mit: nach einer Union mit
+`"unmatched": "drop"` gibt es nur noch die Spalten, die alle Eingänge haben,
+und nach einer Zuordnung heißt die Spalte so, wie `target` sagt.
 
 Fehlt `config`, setzt querbeet die Voreinstellung der Art ein.
 
@@ -144,10 +146,11 @@ Genau einer. Er muss in `steps` stehen — eine Quelle kann nie das Ergebnis sei
 
 ### ui
 
-`ui` ist die Position im Editor. Ohne `ui` liegen alle Steps übereinander auf
-Position 0,0 und ich muss sie von Hand auseinanderziehen. Setz die Quellen
-links untereinander (x = 0, y in Schritten von 140) und staffle die Steps in
-Flussrichtung nach rechts (x in Schritten von 260).
+`ui` ist die Position im Editor. Setz die Quellen links untereinander (x = 0,
+y in Schritten von 140) und staffle die Steps in Flussrichtung nach rechts
+(x in Schritten von 260). Lässt du `ui` ganz weg, ordnet querbeet die Steps
+selbst von links nach rechts an — gib es trotzdem an, du weißt besser als das
+Werkzeug, was nebeneinander gehört.
 
 ### Was querbeet ablehnt
 
@@ -162,6 +165,9 @@ Abgelehnt wird:
     fehlendes Ergebnis         Das Rezept weist keinen Ergebnis-Step aus.
     Ergebnis ist eine Quelle   Der ausgewiesene Ergebnis-Step „q1“ ist eine Quelle.
     Kreis im Graphen           Der Graph enthält einen Kreis: Filter → Filter 2 → Filter.
+    Quelle unter steps         „B“ ist eine Quelle und gehört unter „sources“, nicht unter „steps“.
+    Spalte gibt es nicht       „F“ filtert auf die Spalte „Abteilung“ (Bedingung 1), aber sein
+                               Eingang hat sie nicht. Verfügbar: Bestellnr, Datum, Betrag.
 
 Geh dein Rezept gegen diese Liste durch, bevor du antwortest. Schicke ich dir
 eine dieser Meldungen zurück, korrigier genau das und gib mir das ganze Rezept

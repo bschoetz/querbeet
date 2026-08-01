@@ -1,0 +1,14 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Schlüssel rechts gibt es nicht",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen", "file": "b.csv", "columns": ["Bestellnr", "KundenNr", "Betrag"], "ui": { "x": 0, "y": 0 } },
+    { "id": "kd", "name": "Kundenliste", "file": "k.csv", "columns": ["Nr", "Name", "Ort"], "ui": { "x": 0, "y": 140 } }
+  ],
+  "steps": [
+    { "id": "j1", "name": "Kundenname dran", "kind": "join", "inputs": ["b1", "kd"],
+      "config": { "keys": [{ "left": "KundenNr", "right": "Kundennummer" }], "type": "left", "nullsMatch": false, "duplicateAudit": false },
+      "ui": { "x": 260, "y": 70 } }
+  ],
+  "result": "j1"
+}

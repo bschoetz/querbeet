@@ -1,12 +1,14 @@
 {
   "summary": {
-    "cases": 17,
+    "cases": 21,
     "authored": 5,
-    "authoredAccepted": 5,
+    "authoredAcceptedBoth": 5,
     "roundTripped": 5,
-    "rejections": 8,
-    "rejectionsNamed": 8,
-    "gaps": 4,
+    "refusals": 8,
+    "refusalsNamed": 8,
+    "gapsClosedByProposed": 3,
+    "newRefusalsFromProposed": 5,
+    "stillOpenByDecision": 2,
     "failures": 0,
     "evidenceClass": "weak — same model authored the format, the documentation and these cases"
   },
@@ -14,229 +16,686 @@
     {
       "case": "t1-linear.json",
       "task": "Aus der Januar-Datei nur die Zeilen der Region Süd.",
-      "expect": "ok",
       "bytes": 526,
-      "accepted": true,
-      "nodes": 2,
-      "edges": 1,
-      "result": "f1",
-      "allAtOrigin": false,
-      "roundTrip": true,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 2,
+        "edges": 1,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "f1@260,0"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 2,
+        "edges": 1,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "f1@260,0"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
       "pass": true
     },
     {
       "case": "t2-join.json",
       "task": "An jede Bestellung den Kundennamen aus der Kundenliste hängen.",
-      "expect": "ok",
       "bytes": 701,
-      "accepted": true,
-      "nodes": 3,
-      "edges": 2,
-      "result": "j1",
-      "allAtOrigin": false,
-      "roundTrip": true,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 3,
+        "edges": 2,
+        "result": "j1",
+        "positions": [
+          "b1@0,0",
+          "j1@260,70",
+          "kd@0,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 3,
+        "edges": 2,
+        "result": "j1",
+        "positions": [
+          "b1@0,0",
+          "j1@260,70",
+          "kd@0,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
       "pass": true
     },
     {
       "case": "t3-union-filter.json",
       "task": "Drei Monatsdateien zusammenhängen — die Kundennummer heißt im März anders — und nur Bestellungen über 1000 Euro behalten.",
-      "expect": "ok",
       "bytes": 1119,
-      "accepted": true,
-      "nodes": 5,
-      "edges": 4,
-      "result": "f1",
-      "allAtOrigin": false,
-      "roundTrip": true,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 5,
+        "edges": 4,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@520,140",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 5,
+        "edges": 4,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@520,140",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
       "pass": true
     },
     {
       "case": "t4-two-unions.json",
       "task": "Zwei Monate und zwei Kundenlisten je zusammenhängen, verbinden, dann auf Süd über 500 filtern.",
-      "expect": "ok",
       "bytes": 1764,
-      "accepted": true,
-      "nodes": 8,
-      "edges": 7,
-      "result": "f1",
-      "allAtOrigin": false,
-      "roundTrip": true,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 8,
+        "edges": 7,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "f1@780,210",
+          "j1@520,210",
+          "kd-aus@0,420",
+          "kd-in@0,280",
+          "u-best@260,70",
+          "u-kd@260,350"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 8,
+        "edges": 7,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "f1@780,210",
+          "j1@520,210",
+          "kd-aus@0,420",
+          "kd-in@0,280",
+          "u-best@260,70",
+          "u-kd@260,350"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
       "pass": true
     },
     {
       "case": "t5-modify.json",
       "task": "Die Aufgabe aus prompt-block-example.txt: bestehende Pipeline erweitern, nicht neu bauen.",
-      "expect": "ok",
       "bytes": 1539,
-      "accepted": true,
-      "nodes": 7,
-      "edges": 6,
-      "result": "f1",
-      "allAtOrigin": false,
-      "roundTrip": true,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 7,
+        "edges": 6,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@780,280",
+          "j1@520,280",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 7,
+        "edges": 6,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@780,280",
+          "j1@520,280",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
       "pass": true
     },
     {
       "case": "x1-cycle.json",
       "task": "Zwei Filter, die sich gegenseitig als Eingang nennen.",
-      "expect": "reject",
       "bytes": 440,
-      "accepted": false,
-      "errors": [
-        "Der Graph enthält einen Kreis: Filter A → Filter B → Filter A."
-      ],
-      "matched": true,
-      "expectedSubstring": "enthält einen Kreis",
+      "expect": {
+        "measured": "reject",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": false,
+        "errors": [
+          "Der Graph enthält einen Kreis: Filter A → Filter B → Filter A."
+        ]
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "Der Graph enthält einen Kreis: Filter A → Filter B → Filter A."
+        ]
+      },
       "pass": true
     },
     {
       "case": "x2-join-arity.json",
       "task": "Drei Tabellen in einem Join verbinden.",
-      "expect": "reject",
       "bytes": 660,
-      "accepted": false,
-      "errors": [
-        "„Alles verbinden“ ist ein Join und nimmt genau 2 Eingänge, das Rezept nennt 3.",
-        "Der ausgewiesene Ergebnis-Step „j1“ kommt im Rezept nicht vor."
-      ],
-      "matched": true,
-      "expectedSubstring": "nimmt genau 2 Eingänge",
+      "expect": {
+        "measured": "reject",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": false,
+        "errors": [
+          "„Alles verbinden“ ist ein Join und nimmt genau 2 Eingänge, das Rezept nennt 3.",
+          "Der ausgewiesene Ergebnis-Step „j1“ kommt im Rezept nicht vor."
+        ]
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "„Alles verbinden“ ist ein Join und nimmt genau 2 Eingänge, das Rezept nennt 3.",
+          "Der ausgewiesene Ergebnis-Step „j1“ kommt im Rezept nicht vor."
+        ]
+      },
       "pass": true
     },
     {
       "case": "x3-result-is-source.json",
       "task": "Eine Quelle als Ergebnis-Step ausweisen.",
-      "expect": "reject",
       "bytes": 457,
-      "accepted": false,
-      "errors": [
-        "Der ausgewiesene Ergebnis-Step „b1“ ist eine Quelle."
-      ],
-      "matched": true,
-      "expectedSubstring": "ist eine Quelle",
+      "expect": {
+        "measured": "reject",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": false,
+        "errors": [
+          "Der ausgewiesene Ergebnis-Step „b1“ ist eine Quelle."
+        ]
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "Der ausgewiesene Ergebnis-Step „b1“ ist eine Quelle."
+        ]
+      },
       "pass": true
     },
     {
       "case": "x4-dangling.json",
       "task": "Auf eine Kundenliste verweisen, die nicht geladen ist.",
-      "expect": "reject",
       "bytes": 444,
-      "accepted": false,
-      "errors": [
-        "„Kundenname dran“ verweist an Eingang 2 auf „kunden“, das es nicht gibt."
-      ],
-      "matched": true,
-      "expectedSubstring": "das es nicht gibt",
+      "expect": {
+        "measured": "reject",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": false,
+        "errors": [
+          "„Kundenname dran“ verweist an Eingang 2 auf „kunden“, das es nicht gibt."
+        ]
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "„Kundenname dran“ verweist an Eingang 2 auf „kunden“, das es nicht gibt."
+        ]
+      },
       "pass": true
     },
     {
       "case": "x5-unknown-kind.json",
       "task": "Summe je Region — braucht eine Step-Art, die es nicht gibt.",
-      "expect": "reject",
       "bytes": 451,
-      "accepted": false,
-      "errors": [
-        "„Summe je Region“ hat die unbekannte Step-Art „aggregate“.",
-        "Der ausgewiesene Ergebnis-Step „a1“ kommt im Rezept nicht vor."
-      ],
-      "matched": true,
-      "expectedSubstring": "unbekannte Step-Art",
+      "expect": {
+        "measured": "reject",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": false,
+        "errors": [
+          "„Summe je Region“ hat die unbekannte Step-Art „aggregate“.",
+          "Der ausgewiesene Ergebnis-Step „a1“ kommt im Rezept nicht vor."
+        ]
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "„Summe je Region“ hat die unbekannte Step-Art „aggregate“.",
+          "Der ausgewiesene Ergebnis-Step „a1“ kommt im Rezept nicht vor."
+        ]
+      },
       "pass": true
     },
     {
       "case": "x6-no-result.json",
       "task": "Rezept ohne \"result\".",
-      "expect": "reject",
       "bytes": 433,
-      "accepted": false,
-      "errors": [
-        "Das Rezept weist keinen Ergebnis-Step aus."
-      ],
-      "matched": true,
-      "expectedSubstring": "keinen Ergebnis-Step",
+      "expect": {
+        "measured": "reject",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": false,
+        "errors": [
+          "Das Rezept weist keinen Ergebnis-Step aus."
+        ]
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "Das Rezept weist keinen Ergebnis-Step aus."
+        ]
+      },
       "pass": true
     },
     {
       "case": "x7-duplicate-id.json",
       "task": "Zwei Quellen mit derselben Kennung.",
-      "expect": "reject",
       "bytes": 531,
-      "accepted": false,
-      "errors": [
-        "Die Kennung „b1“ kommt mehrfach vor."
-      ],
-      "matched": true,
-      "expectedSubstring": "kommt mehrfach vor",
+      "expect": {
+        "measured": "reject",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": false,
+        "errors": [
+          "Die Kennung „b1“ kommt mehrfach vor."
+        ]
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "Die Kennung „b1“ kommt mehrfach vor."
+        ]
+      },
       "pass": true
     },
     {
       "case": "x8-broken-json.txt",
       "task": "Abgeschnittene Antwort mit Komma vor der schließenden Klammer.",
-      "expect": "reject",
       "bytes": 193,
-      "accepted": false,
-      "errors": [
-        "Das ist kein gültiges JSON: Expected double-quoted property name in JSON at position 171 (line 1 column 172)"
-      ],
-      "matched": true,
-      "expectedSubstring": "kein gültiges JSON",
+      "expect": {
+        "measured": "reject",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": false,
+        "errors": [
+          "Das ist kein gültiges JSON: Expected double-quoted property name in JSON at position 171 (line 1 column 172)"
+        ]
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "Das ist kein gültiges JSON: Expected double-quoted property name in JSON at position 171 (line 1 column 172)"
+        ]
+      },
       "pass": true
     },
     {
       "case": "s1-unknown-column.json",
       "task": "Auf eine Spalte filtern, die keine Quelle hat.",
-      "expect": "ok",
       "bytes": 529,
-      "accepted": true,
-      "nodes": 2,
-      "edges": 1,
-      "result": "f1",
-      "allAtOrigin": false,
-      "roundTrip": true,
-      "pass": true,
-      "gap": "FR-28 requires a Recipe referencing a column that does not exist to be rejected naming the reference. Column names are never checked."
+      "expect": {
+        "measured": "ok",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 2,
+        "edges": 1,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "f1@260,0"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "„Nur Vertrieb“ filtert auf die Spalte „Abteilung“ (Bedingung 1), aber sein Eingang hat sie nicht. Verfügbar: Bestellnr, Datum, KundenNr, Betrag, Region."
+        ]
+      },
+      "closedGap": "Silent acceptance. FR-28 requires a Recipe naming a column that does not exist to be refused naming it.",
+      "pass": true
     },
     {
       "case": "s2-orphan.json",
       "task": "Ein zweiter Zweig, der nicht zum Ergebnis beiträgt.",
-      "expect": "ok",
-      "bytes": 806,
-      "accepted": true,
-      "nodes": 4,
-      "edges": 2,
-      "result": "f1",
-      "allAtOrigin": false,
-      "roundTrip": true,
-      "pass": true,
-      "gap": "FR-28 requires a disconnected graph to be rejected naming the defect. orphans() exists but validate() does not call it."
+      "bytes": 813,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 4,
+        "edges": 2,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "f1@260,0",
+          "f2@260,140",
+          "kd@0,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 4,
+        "edges": 2,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "f1@260,0",
+          "f2@260,140",
+          "kd@0,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "stillOpen": "Deliberately still accepted. The Editor marks orphans in the UI rather than refusing them, and an author mid-build always has some; FR-28 is being amended to drop \"disconnected\" rather than the loader changed.",
+      "pass": true
     },
     {
       "case": "s3-no-ui.json",
       "task": "Rezept ohne \"ui\" — der häufigste Fall, wenn ein Modell die Positionen weglässt.",
-      "expect": "ok",
       "bytes": 712,
-      "accepted": true,
-      "nodes": 5,
-      "edges": 4,
-      "result": "j1",
-      "allAtOrigin": true,
-      "roundTrip": true,
-      "pass": true,
-      "gap": "Every node lands on 0,0. Accepted, and unusable until dragged apart by hand; there is no auto-layout."
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 5,
+        "edges": 4,
+        "result": "j1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,0",
+          "j1@0,0",
+          "kd@0,0",
+          "u1@0,0"
+        ],
+        "allAtOrigin": true,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 5,
+        "edges": 4,
+        "result": "j1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "j1@520,0",
+          "kd@0,280",
+          "u1@260,0"
+        ],
+        "allAtOrigin": false,
+        "laidOut": true,
+        "notes": [],
+        "roundTrip": true
+      },
+      "closedGap": "Silent acceptance. Every Step landed on 0,0; the fallback layout now places them.",
+      "pass": true
     },
     {
       "case": "s4-source-in-steps.json",
       "task": "Eine Quelle im Abschnitt \"steps\" statt in \"sources\".",
-      "expect": "ok",
       "bytes": 491,
-      "accepted": true,
-      "nodes": 2,
-      "edges": 1,
-      "result": "f1",
-      "allAtOrigin": false,
-      "roundTrip": true,
-      "pass": true,
-      "gap": "The block says sources live only in `sources`. The loader accepts them in `steps` too, so one graph has two encodings."
+      "expect": {
+        "measured": "ok",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 2,
+        "edges": 1,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "f1@260,0"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "„Bestellungen“ ist eine Quelle und gehört unter „sources“, nicht unter „steps“."
+        ]
+      },
+      "closedGap": "Silent acceptance. One graph had two encodings and the block documents one of them.",
+      "pass": true
+    },
+    {
+      "case": "x9-join-key-missing.json",
+      "task": "Join über einen Schlüssel, den die rechte Tabelle nicht hat.",
+      "bytes": 655,
+      "expect": {
+        "measured": "ok",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 3,
+        "edges": 2,
+        "result": "j1",
+        "positions": [
+          "b1@0,0",
+          "j1@260,70",
+          "kd@0,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "„Kundenname dran“ verbindet über die Spalte „Kundennummer“ (Schlüssel 1 rechts), aber die rechte Tabelle hat sie nicht. Verfügbar: Nr, Name, Ort."
+        ]
+      },
+      "pass": true
+    },
+    {
+      "case": "x10-union-mapping-missing.json",
+      "task": "Union ordnet eine Spalte zu, die kein Eingang führt.",
+      "bytes": 875,
+      "expect": {
+        "measured": "ok",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 4,
+        "edges": 3,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "f1@520,70",
+          "u1@260,70"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "„Beide Monate“ ordnet die Spalte „KdNr“ zu (Zuordnung 1), aber keiner seiner Eingänge hat sie. Verfügbar: Bestellnr, KundenNr, Betrag."
+        ]
+      },
+      "pass": true
+    },
+    {
+      "case": "x11-filter-after-union-drop.json",
+      "task": "Filter auf eine Spalte, die die Union mit unmatched:drop verworfen hat.",
+      "bytes": 851,
+      "expect": {
+        "measured": "ok",
+        "proposed": "reject"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 4,
+        "edges": 3,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "f1@520,70",
+          "u1@260,70"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": false,
+        "errors": [
+          "„Nur Süd“ filtert auf die Spalte „Region“ (Bedingung 1), aber sein Eingang hat sie nicht. Verfügbar: Bestellnr, KundenNr, Betrag."
+        ]
+      },
+      "pass": true
+    },
+    {
+      "case": "s5-source-without-columns.json",
+      "task": "Quelle ohne Spaltenangabe, Filter darauf.",
+      "bytes": 450,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 2,
+        "edges": 1,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "f1@260,0"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 2,
+        "edges": 1,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "f1@260,0"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "stillOpen": "No Input Contract, so no schema and no check — silence here is correct, not a gap.",
+      "pass": true
     }
   ]
 }

@@ -3,7 +3,7 @@
   "name": "Ein Zweig, der nirgends ankommt",
   "sources": [
     { "id": "b1", "name": "Bestellungen", "file": "b.csv", "columns": ["Region", "Betrag"], "ui": { "x": 0, "y": 0 } },
-    { "id": "kd", "name": "Kunden", "file": "k.csv", "columns": ["Nr", "Name"], "ui": { "x": 0, "y": 140 } }
+    { "id": "kd", "name": "Kunden", "file": "k.csv", "columns": ["Nr", "Name", "Ort"], "ui": { "x": 0, "y": 140 } }
   ],
   "steps": [
     { "id": "f1", "name": "Nur Süd", "kind": "filter", "inputs": "b1",
