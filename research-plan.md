@@ -324,17 +324,50 @@ lead-browser decision above.
 - **A graph editor now sits on the same main thread** (R6). Whether canvas interaction and
   table rendering compete is a D3/D4 question.
 
-**Sub-questions still open:**
-- **D3 — Off-main-thread work and transfer cost.** What actually belongs in a worker, and
-  what structured-clone or transfer costs at these row counts. **The scale change makes this
-  sharper:** R3 measured xlsx export at ~3.3 s for 100k rows, so half a million projects to
-  roughly 16 s — export is no longer "long enough to freeze a tab", it is long enough to look
-  broken. The worker is now required rather than advisable.
-- **D4 — Responsiveness patterns.** Recompute-all versus memoize-per-Step for live preview
-  (R1 measured the full pipeline at 10.5 ms and D2 measured Arquero's at 263–446 ms, so
-  recompute-all is plausible but no longer obviously free — settle it by measurement);
-  full-dataset search; graph-canvas versus table-rendering contention; and progress/cancellation
-  for the export.
+**Sub-questions still open — the brief for the final R4 run:**
+
+**D3 — Off-main-thread work and transfer cost.** *What actually belongs in a worker.*
+
+The candidate list is now four operations, and three of them have measured or projected costs:
+
+| Operation | Cost | Source |
+| --- | --- | --- |
+| xlsx export | ~3.3 s at 100k (Node) → **~16 s projected at 500k** | R3 |
+| IndexedDB persist (FR-25) | 305 ms / 731 ms at 100k → **~1.5 s / ~3.7 s projected at 500k** | R9 |
+| Parquet export | 273 ms at 100k (Node) | R3 |
+| Arquero pipeline | **263 ms / 446 ms measured in the browser at 200k** | R4/D2 |
+
+- **The load-bearing measurement is the transfer, not the work.** Measure `postMessage` structured
+  clone for 100k and 500k rows in **both shapes** — array of frozen objects, and Arquero column
+  arrays. R9's IDB `put` suggests hundreds of ms; if that holds, a worker is worth it only for the
+  seconds-long operations and is a net loss for the pipeline.
+- Confirm the browser cost of the two exports, since **every R3 figure is Node**.
+- Settle R3's leftover: does `read-excel-file`'s internal worker (dependency `worker-f`) survive
+  `file://`? Fallback is the `read-excel-file/web-worker` export.
+- Worker construction is **settled, do not re-research**: classic script from a `blob:` URL,
+  library inlined; under Vite, `./w.js?worker&inline` with `worker: { format: 'iife' }` (R2).
+  Re-check the one-file build gate after adding the first worker — the spike's build currently
+  contains zero `new Worker` occurrences.
+
+**D4 — Responsiveness patterns.** *Four questions, all measurable against artefacts that exist.*
+
+1. **Recompute-all versus memoize-per-Step.** D2-a changed this trade: holding every Step output
+   alive is cheap (fan-out free, ~0.4 MB per derived column, joins the only real cost), so
+   memoization is **affordable**. The open half is whether recompute is even a problem at
+   263–446 ms per full run, and what a 30-Step graph costs. Cache location is settled by the spike:
+   the `shallowRef` table registry, never the graph model.
+2. **Editor / table contention at 30 Steps.** Measure against the spike build
+   (`spikes/editor-vueflow-2026-08-01/app/`), which already runs from `file://` in both engines.
+   The mechanism to watch is the per-node `ResizeObserver`. This also closes R6's open question 2.
+3. **Full-dataset search (FR-33)** over 500k rows while staying interactive. D2 supplies the
+   primitive: `values(name)` iterates a column with **zero object allocation**.
+4. **Progress and cancellation** for whatever D3 puts in a worker.
+
+*Method note:* the spike's `run-keyboard-check.mjs` is a reusable NFR-7 regression driver and runs
+in about a minute across both engines. If the table's own keyboard story is ever revisited — D1
+recorded Ctrl+End landing on the last *rendered* row as accepted rather than solved — that is the
+tool, and it need not be rebuilt.
+
 **Checkpoint D2-a — does the graph stay affordable when a Step has several consumers?**
 **Status:** [x] done 2026-08-01. Measurement: `imports/arquero-graph-measurement-2026-08-01.md`.
 
@@ -367,6 +400,59 @@ count, invisible on a sample and catastrophic at scale. At 100,000 source rows t
 which is worse. Either exclude sentinel rows from the join and re-attach afterwards, give each
 side a distinct sentinel so they cannot match, or refuse the join. A Join Step must warn when
 both inputs carry nulls in the key column — a UX requirement, not only an implementation detail.
+
+**Inputs added by R6, R9 and the Editor spike (2026-08-01) — read this before running D3/D4.**
+
+*The Editor is no longer hypothetical.* R6 chose **Vue Flow 1.48.2** and the spike built it. R4's
+remaining dimensions now measure against a real co-tenant rather than a planned one.
+
+- **The main thread now has three tenants, not two:** the table window, the Arquero pipeline, and
+  a Vue Flow canvas. Measured cost of the canvas alone: mount **62.4 ms (Chromium) / 61 ms
+  (Firefox)** and **2.76 MB heap** — but only at 3–4 nodes (R6 [M9]), and the spike ran 6–7 Steps.
+  **The PRD's range is 5–30 and the upper half is unmeasured** (R6 open question 2, still open
+  after the spike). D3/D4 should measure contention at 30 Steps, not at 6.
+- **The contention mechanism is concrete: every Vue Flow node carries a `ResizeObserver`.** That is
+  what keeps connection anchors correct across variable-height bodies (spike Q1, 0 px drift). At 30
+  Steps that is 30 observers that can fire during layout — the same layout the table window swap
+  needs. This is the thing to measure, not "does the canvas feel slow".
+- **Datasets never enter the graph model** (spike rule 6). Tables live in a `shallowRef` registry
+  keyed by Source id (`editor.js`), outside the graph; the graph itself is small and deeply
+  reactive. This confirms Checkpoint D2-a's premise and settles where a per-Step result cache must
+  live: **the same `shallowRef` registry shape, never in the graph model.**
+- **Design B is authoritative** (`applyDefault: false`, model owns state, projection pushed with
+  `setNodes`/`setEdges` from one watcher). Any D4 recommendation about recompute or memoization has
+  to fit that: the model is the trigger, and re-projection is a separate cost from re-rendering.
+
+*R9's gate added a long operation that did not exist when D3 was scoped.*
+
+- **IndexedDB persistence is a new worker candidate.** FR-25 stores Recipe *and* source data every
+  session. Measured at 100,000 × 20: `put` **304.6 ms (Chromium) / 731.0 ms (Firefox)**, `get`
+  **194.9 / 825.0 ms**. Linear projection to half a million rows — an extrapolation from one point,
+  not a measurement — gives ~1.5 s (Chromium) and **~3.7 s (Firefox), which lands on R3's ~3.3 s
+  tab-freeze threshold**. IndexedDB is available inside workers, so this path can move off-thread
+  wholesale.
+- **R9 also supplies D3's first transfer-cost data point, and it points against the obvious
+  answer.** An IndexedDB `put` is a structured clone plus serialization plus a write, so 304.6 ms
+  for 100k × 20 in Chromium is a loose *upper* bound on what `postMessage` of the same data costs.
+  If moving 100k rows across a thread boundary costs on that order, **moving the 263–446 ms Arquero
+  pipeline into a worker is a net loss.** Measure the clone directly before recommending any worker
+  for transformation — and measure **both shapes**, because an Arquero table is column arrays of
+  primitives while the parsed source is an array of objects, and structured clone may price them
+  very differently. That comparison is non-obvious and it is D3's most valuable single measurement.
+- **Never `await navigator.storage.persist()` on the startup path** — it never settles in Firefox
+  from `file://` and cost R9's own probe 180 s. Relevant to D3 only as an ordering hazard if a
+  worker handshake shares that path.
+
+*One number to keep straight across reports.* Three different heap figures for "100k × 20" are all
+correct and all measure different things: **94.4 MB** (R6, frozen plain objects, 20 short-string
+columns), **102.8 MB** (R4/D2, frozen plain objects, 21 columns with longer strings), and
+**80.2 MB** (R4/D2, the same data as an **Arquero table**). querbeet holds Arquero tables, so
+**80.2 MB per 100k × 20 source is the number the memory budget uses.** R9's "IndexedDB stores them
+an order of magnitude more compactly" compares its 8.9 MB against R6's 94 MB; against the Arquero
+figure the ratio is ~9×, which does not change its conclusion.
+
+*Unchanged by all of this:* D1's verdict and row-height budget, D2's sharing semantics and memory
+totals, and Checkpoint D2-a. Nothing in R6, R9 or the spike contradicts a measurement in this run.
 
 **Inputs already settled by R2** — do not re-research these:
 - A Web Worker *can* be created from a `file://` page: classic workers from a `blob:` URL or a

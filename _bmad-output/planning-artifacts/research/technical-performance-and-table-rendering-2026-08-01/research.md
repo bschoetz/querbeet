@@ -37,6 +37,31 @@ single-file Vue 3 + Arquero app.
 > free, joins are the whole price, and a half-million-row graph costs 447 MB. It also **corrected
 > one D2 rule** and turned up a Cartesian trap in R1's sentinel recommendation.
 
+> **Cross-run inputs, 2026-08-01 — R6, R9's gate and the Editor spike.** Reviewed against this
+> report: **nothing in them contradicts a measurement here.** D1's verdict and row-height budget,
+> D2's sharing semantics and memory totals, and Checkpoint D2-a all stand unchanged. Three things
+> change the *remaining* work, and the full brief lives in `research-plan.md` R4:
+>
+> - **The Editor is now a measured co-tenant of the main thread.** R6 chose Vue Flow 1.48.2 and the
+>   spike built it; the canvas costs 62.4 ms / 61 ms to mount and 2.76 MB of heap — but only at 3–4
+>   nodes, and the PRD's range is 5–30. Every node carries a `ResizeObserver`, which is the concrete
+>   contention mechanism against the table's window swap. D3/D4 measure at 30 Steps.
+> - **IndexedDB persistence is a new long operation** that did not exist when D3 was scoped: R9
+>   measured `put` of 100k × 20 at 305 ms (Chromium) / 731 ms (Firefox), projecting to ~1.5 s /
+>   ~3.7 s at half a million — the Firefox figure lands on R3's tab-freeze threshold. It also gives
+>   D3 its first transfer-cost data point, and it **points against putting the pipeline in a
+>   worker**: if moving 100k rows costs hundreds of milliseconds, a 263–446 ms pipeline does not
+>   profit from crossing the boundary.
+> - **The spike settles where a per-Step result cache belongs.** Datasets never enter the graph
+>   model; tables live in a `shallowRef` registry keyed by Source id. That confirms D2-a's premise
+>   and removes a design question from D4.
+>
+> **One number to keep straight.** Three heap figures for "100k × 20" circulate and all three are
+> correct about different things: **94.4 MB** (R6 — frozen plain objects, 20 short-string columns),
+> **102.8 MB** (D2 below — frozen plain objects, 21 columns, longer strings) and **80.2 MB** (D2 —
+> the same data as an *Arquero table*). querbeet holds Arquero tables, so **80.2 MB per source is
+> the budget figure.**
+
 ---
 
 ## D1 — Table rendering: virtualize, and with what?
