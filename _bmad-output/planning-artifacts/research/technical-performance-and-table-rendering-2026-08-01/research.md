@@ -265,12 +265,12 @@ resolved a 1 px step [24].
 **At the rescoped half-million target it is no longer comfortable.** Because the spacer is
 `rowCount × rowHeight`, the ceiling is best read as a **row-height budget**:
 
-| px per row | Firefox (measured-safe, 16.0M px) | Firefox (bug 1527883, 17.19M px) | Chromium (clamp, 33,554,428 px) |
+| Row height | Firefox (measured-safe, 16.0M px) | Firefox (bug 1527883, 17.19M px) | Chromium (clamp, 33,554,428 px) |
 | --- | --- | --- | --- |
-| 24 | 666,000 rows | 716,000 rows | 1,398,000 rows |
-| 28 | 571,000 rows | 614,000 rows | 1,198,000 rows |
-| 32 | **500,000 rows** | 537,000 rows | 1,048,000 rows |
-| 40 | 400,000 rows | 430,000 rows | 839,000 rows |
+| 24 px | 666,000 rows | 716,000 rows | 1,398,000 rows |
+| 28 px | 571,000 rows | 614,000 rows | 1,198,000 rows |
+| 32 px | **500,000 rows** | 537,000 rows | 1,048,000 rows |
+| 40 px | 400,000 rows | 430,000 rows | 839,000 rows |
 
 **At half a million rows the maximum safe row height in Firefox is about 32 px** — and a
 comfortable table row with padding is easily 36–40 px, which is already over the cliff. Row
