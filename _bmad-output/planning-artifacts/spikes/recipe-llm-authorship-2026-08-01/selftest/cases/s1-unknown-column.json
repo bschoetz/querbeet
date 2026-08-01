@@ -1,0 +1,13 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Filter auf eine Spalte, die es nicht gibt",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen", "file": "b.csv", "columns": ["Bestellnr", "Datum", "KundenNr", "Betrag", "Region"], "ui": { "x": 0, "y": 0 } }
+  ],
+  "steps": [
+    { "id": "f1", "name": "Nur Vertrieb", "kind": "filter", "inputs": "b1",
+      "config": { "conditions": [{ "column": "Abteilung", "op": "equals", "value": "Vertrieb" }], "combine": "and" },
+      "ui": { "x": 260, "y": 0 } }
+  ],
+  "result": "f1"
+}

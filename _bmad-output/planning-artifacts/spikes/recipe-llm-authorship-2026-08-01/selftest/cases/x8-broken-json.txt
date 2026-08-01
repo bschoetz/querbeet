@@ -1,0 +1,1 @@
+{ "format": "querbeet/recipe@1", "name": "Abgeschnitten", "sources": [ { "id": "b1", "columns": ["Region"] } ], "steps": [ { "id": "f1", "kind": "filter", "inputs": "b1", } ], "result": "f1" }

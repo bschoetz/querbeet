@@ -1,0 +1,15 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Join mit drei Eingängen",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen", "file": "b.csv", "columns": ["KundenNr"], "ui": { "x": 0, "y": 0 } },
+    { "id": "kd", "name": "Kunden", "file": "k.csv", "columns": ["Nr"], "ui": { "x": 0, "y": 140 } },
+    { "id": "rg", "name": "Regionen", "file": "r.csv", "columns": ["Nr"], "ui": { "x": 0, "y": 280 } }
+  ],
+  "steps": [
+    { "id": "j1", "name": "Alles verbinden", "kind": "join", "inputs": ["b1", "kd", "rg"],
+      "config": { "keys": [{ "left": "KundenNr", "right": "Nr" }], "type": "left" },
+      "ui": { "x": 260, "y": 140 } }
+  ],
+  "result": "j1"
+}

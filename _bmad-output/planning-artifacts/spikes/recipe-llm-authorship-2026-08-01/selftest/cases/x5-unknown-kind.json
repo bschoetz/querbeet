@@ -1,0 +1,13 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Summe je Region",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen", "file": "b.csv", "columns": ["Region", "Betrag"], "ui": { "x": 0, "y": 0 } }
+  ],
+  "steps": [
+    { "id": "a1", "name": "Summe je Region", "kind": "aggregate", "inputs": "b1",
+      "config": { "groupBy": ["Region"], "measures": [{ "column": "Betrag", "fn": "sum" }] },
+      "ui": { "x": 260, "y": 0 } }
+  ],
+  "result": "a1"
+}

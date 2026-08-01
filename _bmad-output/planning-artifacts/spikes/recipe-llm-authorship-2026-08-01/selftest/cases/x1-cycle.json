@@ -1,0 +1,12 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Kreis",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen Januar", "file": "b.csv", "columns": ["Region", "Betrag"], "ui": { "x": 0, "y": 0 } }
+  ],
+  "steps": [
+    { "id": "f1", "name": "Filter A", "kind": "filter", "inputs": "f2", "ui": { "x": 260, "y": 0 } },
+    { "id": "f2", "name": "Filter B", "kind": "filter", "inputs": "f1", "ui": { "x": 520, "y": 0 } }
+  ],
+  "result": "f2"
+}

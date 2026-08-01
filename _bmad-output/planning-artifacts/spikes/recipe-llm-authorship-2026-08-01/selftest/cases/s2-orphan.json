@@ -1,0 +1,17 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Ein Zweig, der nirgends ankommt",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen", "file": "b.csv", "columns": ["Region", "Betrag"], "ui": { "x": 0, "y": 0 } },
+    { "id": "kd", "name": "Kunden", "file": "k.csv", "columns": ["Nr", "Name"], "ui": { "x": 0, "y": 140 } }
+  ],
+  "steps": [
+    { "id": "f1", "name": "Nur Süd", "kind": "filter", "inputs": "b1",
+      "config": { "conditions": [{ "column": "Region", "op": "equals", "value": "Süd" }], "combine": "and" },
+      "ui": { "x": 260, "y": 0 } },
+    { "id": "f2", "name": "Nur Berlin", "kind": "filter", "inputs": "kd",
+      "config": { "conditions": [{ "column": "Ort", "op": "equals", "value": "Berlin" }], "combine": "and" },
+      "ui": { "x": 260, "y": 140 } }
+  ],
+  "result": "f1"
+}

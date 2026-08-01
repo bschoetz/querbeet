@@ -1,0 +1,13 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Verweis ins Leere",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen", "file": "b.csv", "columns": ["KundenNr"], "ui": { "x": 0, "y": 0 } }
+  ],
+  "steps": [
+    { "id": "j1", "name": "Kundenname dran", "kind": "join", "inputs": ["b1", "kunden"],
+      "config": { "keys": [{ "left": "KundenNr", "right": "Nr" }], "type": "left" },
+      "ui": { "x": 260, "y": 70 } }
+  ],
+  "result": "j1"
+}

@@ -1,0 +1,14 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Kennung doppelt",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen Januar", "file": "b1.csv", "columns": ["Region"], "ui": { "x": 0, "y": 0 } },
+    { "id": "b1", "name": "Bestellungen Februar", "file": "b2.csv", "columns": ["Region"], "ui": { "x": 0, "y": 140 } }
+  ],
+  "steps": [
+    { "id": "u1", "name": "Zusammen", "kind": "union", "inputs": ["b1", "b1"],
+      "config": { "mappings": [], "unmatched": "keep" },
+      "ui": { "x": 260, "y": 70 } }
+  ],
+  "result": "u1"
+}

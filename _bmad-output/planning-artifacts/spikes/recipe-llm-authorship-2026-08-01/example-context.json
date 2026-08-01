@@ -1,0 +1,78 @@
+{
+  "_comment": "The three variable parts of the FR-27 block for the worked example. Sources carry an FR-26 Column Profile: structure only, no cell values.",
+  "question": "Ich habe drei Monatsdateien mit Bestellungen und dazu eine Kundenliste. Die drei Monate hänge ich schon zusammen. Jetzt will ich den Kundennamen an jede Bestellung dranhängen und am Ende nur die Bestellungen über 1000 Euro sehen.",
+  "sources": [
+    {
+      "id": "b1",
+      "name": "Bestellungen Januar",
+      "file": "bestellungen-2026-01.csv",
+      "rows": 12480,
+      "columns": [
+        { "name": "Bestellnr", "type": "Text", "locale": "—", "distinct": 12480, "nullShare": 0, "annotation": "eindeutig je Zeile" },
+        { "name": "Datum", "type": "Datum", "locale": "TT.MM.JJJJ", "distinct": 31, "nullShare": 0, "annotation": "" },
+        { "name": "KundenNr", "type": "Text", "locale": "—", "distinct": 842, "nullShare": 0.004, "annotation": "zeigt auf Kundenliste.Nr" },
+        { "name": "Betrag", "type": "Zahl", "locale": "1.234,56", "distinct": 9310, "nullShare": 0, "annotation": "Euro, netto" },
+        { "name": "Region", "type": "Text", "locale": "—", "distinct": 4, "nullShare": 0.011, "annotation": "" }
+      ]
+    },
+    {
+      "id": "b2",
+      "name": "Bestellungen Februar",
+      "file": "bestellungen-2026-02.csv",
+      "rows": 11907,
+      "columns": [
+        { "name": "Bestellnr", "type": "Text", "locale": "—", "distinct": 11907, "nullShare": 0, "annotation": "eindeutig je Zeile" },
+        { "name": "Datum", "type": "Datum", "locale": "TT.MM.JJJJ", "distinct": 28, "nullShare": 0, "annotation": "" },
+        { "name": "KundenNr", "type": "Text", "locale": "—", "distinct": 815, "nullShare": 0.002, "annotation": "zeigt auf Kundenliste.Nr" },
+        { "name": "Betrag", "type": "Zahl", "locale": "1.234,56", "distinct": 8977, "nullShare": 0, "annotation": "Euro, netto" },
+        { "name": "Region", "type": "Text", "locale": "—", "distinct": 4, "nullShare": 0.009, "annotation": "" }
+      ]
+    },
+    {
+      "id": "b3",
+      "name": "Bestellungen März",
+      "file": "bestellungen-2026-03.csv",
+      "rows": 13204,
+      "columns": [
+        { "name": "Bestellnr", "type": "Text", "locale": "—", "distinct": 13204, "nullShare": 0, "annotation": "eindeutig je Zeile" },
+        { "name": "Datum", "type": "Datum", "locale": "TT.MM.JJJJ", "distinct": 31, "nullShare": 0, "annotation": "" },
+        { "name": "Kunden-Nr", "type": "Text", "locale": "—", "distinct": 869, "nullShare": 0.003, "annotation": "heißt hier anders als im Januar und Februar" },
+        { "name": "Betrag", "type": "Zahl", "locale": "1.234,56", "distinct": 10022, "nullShare": 0, "annotation": "Euro, netto" },
+        { "name": "Region", "type": "Text", "locale": "—", "distinct": 4, "nullShare": 0.014, "annotation": "" }
+      ]
+    },
+    {
+      "id": "kd",
+      "name": "Kundenliste",
+      "file": "kunden.csv",
+      "rows": 1103,
+      "columns": [
+        { "name": "Nr", "type": "Text", "locale": "—", "distinct": 1103, "nullShare": 0, "annotation": "eindeutig" },
+        { "name": "Name", "type": "Text", "locale": "—", "distinct": 1098, "nullShare": 0, "annotation": "" },
+        { "name": "Branche", "type": "Text", "locale": "—", "distinct": 17, "nullShare": 0.062, "annotation": "" },
+        { "name": "Ort", "type": "Text", "locale": "—", "distinct": 391, "nullShare": 0.008, "annotation": "" }
+      ]
+    }
+  ],
+  "pipeline": {
+    "format": "querbeet/recipe@1",
+    "name": "Bestellungen Q1",
+    "sources": [
+      { "id": "b1", "name": "Bestellungen Januar", "file": "bestellungen-2026-01.csv", "columns": ["Bestellnr", "Datum", "KundenNr", "Betrag", "Region"], "ui": { "x": 0, "y": 0 } },
+      { "id": "b2", "name": "Bestellungen Februar", "file": "bestellungen-2026-02.csv", "columns": ["Bestellnr", "Datum", "KundenNr", "Betrag", "Region"], "ui": { "x": 0, "y": 140 } },
+      { "id": "b3", "name": "Bestellungen März", "file": "bestellungen-2026-03.csv", "columns": ["Bestellnr", "Datum", "Kunden-Nr", "Betrag", "Region"], "ui": { "x": 0, "y": 280 } },
+      { "id": "kd", "name": "Kundenliste", "file": "kunden.csv", "columns": ["Nr", "Name", "Branche", "Ort"], "ui": { "x": 0, "y": 420 } }
+    ],
+    "steps": [
+      {
+        "id": "u1",
+        "name": "Q1 zusammen",
+        "kind": "union",
+        "inputs": ["b1", "b2", "b3"],
+        "config": { "mappings": [{ "target": "KundenNr", "from": "Kunden-Nr" }], "unmatched": "keep" },
+        "ui": { "x": 260, "y": 140 }
+      }
+    ],
+    "result": "u1"
+  }
+}

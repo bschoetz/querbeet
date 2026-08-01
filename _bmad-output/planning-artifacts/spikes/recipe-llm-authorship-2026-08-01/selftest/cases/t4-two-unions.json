@@ -1,0 +1,25 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Bestellungen und Kunden aus zwei Listen",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen Januar", "file": "bestellungen-2026-01.csv", "columns": ["Bestellnr", "Datum", "KundenNr", "Betrag", "Region"], "ui": { "x": 0, "y": 0 } },
+    { "id": "b2", "name": "Bestellungen Februar", "file": "bestellungen-2026-02.csv", "columns": ["Bestellnr", "Datum", "KundenNr", "Betrag", "Region"], "ui": { "x": 0, "y": 140 } },
+    { "id": "kd-in", "name": "Kunden Inland", "file": "kunden-inland.csv", "columns": ["Nr", "Name", "Branche", "Ort"], "ui": { "x": 0, "y": 280 } },
+    { "id": "kd-aus", "name": "Kunden Ausland", "file": "kunden-ausland.csv", "columns": ["Nummer", "Name", "Branche", "Ort"], "ui": { "x": 0, "y": 420 } }
+  ],
+  "steps": [
+    { "id": "u-best", "name": "Beide Monate", "kind": "union", "inputs": ["b1", "b2"],
+      "config": { "mappings": [], "unmatched": "keep" },
+      "ui": { "x": 260, "y": 70 } },
+    { "id": "u-kd", "name": "Alle Kunden", "kind": "union", "inputs": ["kd-in", "kd-aus"],
+      "config": { "mappings": [{ "target": "Nr", "from": "Nummer" }], "unmatched": "keep" },
+      "ui": { "x": 260, "y": 350 } },
+    { "id": "j1", "name": "Bestellung plus Kunde", "kind": "join", "inputs": ["u-best", "u-kd"],
+      "config": { "keys": [{ "left": "KundenNr", "right": "Nr" }], "type": "left", "nullsMatch": false, "duplicateAudit": true },
+      "ui": { "x": 520, "y": 210 } },
+    { "id": "f1", "name": "Nur Süd über 500", "kind": "filter", "inputs": "j1",
+      "config": { "conditions": [{ "column": "Region", "op": "equals", "value": "Süd" }, { "column": "Betrag", "op": "gt", "value": "500" }], "combine": "and" },
+      "ui": { "x": 780, "y": 210 } }
+  ],
+  "result": "f1"
+}

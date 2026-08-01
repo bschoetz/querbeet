@@ -1,0 +1,317 @@
+Du hilfst mir, eine Datenaufbereitung im Werkzeug „querbeet“ zu bauen. querbeet
+läuft offline in meinem Browser. Du bekommst keine Daten — nur die Struktur
+meiner Dateien. Antworte mit einem Rezept in dem Format, das weiter unten
+vollständig beschrieben ist.
+
+
+## 1. Was ich erreichen will
+
+Ich habe drei Monatsdateien mit Bestellungen und dazu eine Kundenliste. Die drei Monate hänge ich schon zusammen. Jetzt will ich den Kundennamen an jede Bestellung dranhängen und am Ende nur die Bestellungen über 1000 Euro sehen.
+
+
+## 2. Meine Quellen — Struktur, keine Werte
+
+### Bestellungen Januar — id: b1, Datei: bestellungen-2026-01.csv, 12.480 Zeilen
+
+    Spalte     Typ    Format      verschiedene  leer   Notiz
+    Bestellnr  Text   —           12.480        0 %    eindeutig je Zeile
+    Datum      Datum  TT.MM.JJJJ  31            0 %    —
+    KundenNr   Text   —           842           0,4 %  zeigt auf Kundenliste.Nr
+    Betrag     Zahl   1.234,56    9.310         0 %    Euro, netto
+    Region     Text   —           4             1,1 %  —
+
+### Bestellungen Februar — id: b2, Datei: bestellungen-2026-02.csv, 11.907 Zeilen
+
+    Spalte     Typ    Format      verschiedene  leer   Notiz
+    Bestellnr  Text   —           11.907        0 %    eindeutig je Zeile
+    Datum      Datum  TT.MM.JJJJ  28            0 %    —
+    KundenNr   Text   —           815           0,2 %  zeigt auf Kundenliste.Nr
+    Betrag     Zahl   1.234,56    8.977         0 %    Euro, netto
+    Region     Text   —           4             0,9 %  —
+
+### Bestellungen März — id: b3, Datei: bestellungen-2026-03.csv, 13.204 Zeilen
+
+    Spalte     Typ    Format      verschiedene  leer   Notiz
+    Bestellnr  Text   —           13.204        0 %    eindeutig je Zeile
+    Datum      Datum  TT.MM.JJJJ  31            0 %    —
+    Kunden-Nr  Text   —           869           0,3 %  heißt hier anders als im Januar und Februar
+    Betrag     Zahl   1.234,56    10.022        0 %    Euro, netto
+    Region     Text   —           4             1,4 %  —
+
+### Kundenliste — id: kd, Datei: kunden.csv, 1.103 Zeilen
+
+    Spalte   Typ   Format  verschiedene  leer   Notiz
+    Nr       Text  —       1.103         0 %    eindeutig
+    Name     Text  —       1.098         0 %    —
+    Branche  Text  —       17            6,2 %  —
+    Ort      Text  —       391           0,8 %  —
+
+
+## 3. Die Pipeline, wie sie gerade aussieht
+
+Das ist das Rezept, das gerade geladen ist. Bau darauf auf und gib mir das
+ganze geänderte Rezept zurück, nicht nur die neuen Steps.
+
+```json
+{
+  "format": "querbeet/recipe@1",
+  "name": "Bestellungen Q1",
+  "sources": [
+    {
+      "id": "b1",
+      "name": "Bestellungen Januar",
+      "file": "bestellungen-2026-01.csv",
+      "columns": [
+        "Bestellnr",
+        "Datum",
+        "KundenNr",
+        "Betrag",
+        "Region"
+      ],
+      "ui": {
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": "b2",
+      "name": "Bestellungen Februar",
+      "file": "bestellungen-2026-02.csv",
+      "columns": [
+        "Bestellnr",
+        "Datum",
+        "KundenNr",
+        "Betrag",
+        "Region"
+      ],
+      "ui": {
+        "x": 0,
+        "y": 140
+      }
+    },
+    {
+      "id": "b3",
+      "name": "Bestellungen März",
+      "file": "bestellungen-2026-03.csv",
+      "columns": [
+        "Bestellnr",
+        "Datum",
+        "Kunden-Nr",
+        "Betrag",
+        "Region"
+      ],
+      "ui": {
+        "x": 0,
+        "y": 280
+      }
+    },
+    {
+      "id": "kd",
+      "name": "Kundenliste",
+      "file": "kunden.csv",
+      "columns": [
+        "Nr",
+        "Name",
+        "Branche",
+        "Ort"
+      ],
+      "ui": {
+        "x": 0,
+        "y": 420
+      }
+    }
+  ],
+  "steps": [
+    {
+      "id": "u1",
+      "name": "Q1 zusammen",
+      "kind": "union",
+      "inputs": [
+        "b1",
+        "b2",
+        "b3"
+      ],
+      "config": {
+        "mappings": [
+          {
+            "target": "KundenNr",
+            "from": "Kunden-Nr"
+          }
+        ],
+        "unmatched": "keep"
+      },
+      "ui": {
+        "x": 260,
+        "y": 140
+      }
+    }
+  ],
+  "result": "u1"
+}
+```
+
+
+## 4. Das Rezept-Format: querbeet/recipe@1
+
+### Der Rahmen
+
+Ein Rezept ist genau ein JSON-Objekt:
+
+    {
+      "format": "querbeet/recipe@1",
+      "name":   "Kurzer Name des Rezepts",
+      "sources": [ ... ],
+      "steps":   [ ... ],
+      "result":  "kennung-eines-steps"
+    }
+
+Diese fünf Felder sind Pflicht. Zusätzliche Felder werden ignoriert.
+
+Ein Rezept enthält niemals Daten: keine Zeilen, keine Zellwerte. Nur Struktur.
+
+### Kennungen
+
+Jede Quelle und jeder Step hat eine `id` — ein kurzes Kürzel aus Buchstaben,
+Ziffern und Bindestrichen: `q1`, `umsatz`, `f-region`. Kennungen sind über
+`sources` und `steps` hinweg eindeutig; keine darf zweimal vorkommen. Verwiesen
+wird immer über die `id`, nie über den Namen.
+
+Die Reihenfolge der Einträge ist egal. Ein Step darf einen Step nennen, der
+weiter unten steht.
+
+### Quellen
+
+Eine Quelle ist eine Datei, die ich lade. Du erfindest keine Quellen — es gibt
+genau die, die unter „Meine Quellen“ stehen, mit genau diesen Kennungen und
+Spaltennamen.
+
+    {
+      "id": "umsatz",
+      "name": "Umsätze 2026",
+      "file": "umsatz-2026.csv",
+      "columns": ["Datum", "Kunde", "Betrag"],
+      "ui": { "x": 0, "y": 0 }
+    }
+
+Quellen stehen ausschließlich in `sources`, nie in `steps`. Sie haben keine
+Eingänge.
+
+### Steps
+
+    {
+      "id": "f1",
+      "name": "Nur Region Süd",
+      "kind": "filter",
+      "inputs": "umsatz",
+      "config": { "conditions": [ { "column": "Region", "op": "equals", "value": "Süd" } ],
+                  "combine": "and" },
+      "ui": { "x": 260, "y": 0 }
+    }
+
+`kind` ist genau eine dieser drei Arten:
+
+    kind     Eingänge       wofür
+    union    2 oder mehr    gleichartige Tabellen untereinander hängen
+    join     genau 2        zwei Tabellen über Schlüsselspalten verbinden
+    filter   genau 1        Zeilen behalten, die Bedingungen erfüllen
+
+Andere Arten gibt es nicht. Wenn meine Frage etwas verlangt, das keine dieser
+drei kann — gruppieren, summieren, rechnen, sortieren, Spalten umbenennen oder
+löschen —, dann schreib mir das hin, statt eine Art zu erfinden. Ein Rezept mit
+einer erfundenen Art wird abgelehnt und hilft mir nicht.
+
+### inputs
+
+`inputs` nennt die Kennungen der Vorgänger in fester Reihenfolge:
+
+    ein Eingang:   "inputs": "umsatz"
+    mehrere:       "inputs": ["umsatz", "kunden"]
+
+Beim Join ist die Reihenfolge bedeutungstragend: der erste Eintrag ist die
+linke, der zweite die rechte Tabelle.
+
+### config je Art
+
+union — Tabellen untereinander hängen:
+
+    { "mappings":  [ { "target": "Zielspalte", "from": "Quellspalte" } ],
+      "unmatched": "keep" }
+
+`mappings` benennt Spalten um, die in den Eingängen unterschiedlich heißen.
+Heißen sie überall gleich, ist `"mappings": []` richtig. `unmatched` ist `keep`
+(Spalte, die ein Eingang nicht hat, bleibt leer) oder `drop` (solche Spalten
+verwerfen).
+
+join — zwei Tabellen über Schlüsselspalten verbinden:
+
+    { "keys": [ { "left": "Kundennr", "right": "Nr" } ],
+      "type": "left",
+      "nullsMatch": false,
+      "duplicateAudit": false }
+
+`left` ist eine Spalte des ersten Eingangs, `right` eine des zweiten. `type` ist
+`left` (alle Zeilen links behalten) oder `inner` (nur Treffer). `nullsMatch`
+entscheidet, ob leer auf leer passt — normalerweise `false`. `duplicateAudit`
+meldet, wenn ein Schlüssel rechts mehrfach vorkommt und Zeilen dadurch
+vervielfacht werden.
+
+filter — Zeilen behalten:
+
+    { "conditions": [ { "column": "Region", "op": "equals", "value": "Süd" } ],
+      "combine": "and" }
+
+`op` ist `equals`, `contains` oder `gt`. `combine` ist `and` oder `or`.
+
+Spaltennamen schreibst du wörtlich so, wie sie unter „Meine Quellen“ stehen —
+mit Groß- und Kleinschreibung, Umlauten und Leerzeichen. querbeet prüft
+Spaltennamen beim Laden nicht; ein Tippfehler fällt erst auf, wenn das Ergebnis
+falsch ist.
+
+Fehlt `config`, setzt querbeet die Voreinstellung der Art ein.
+
+### result
+
+`result` nennt die Kennung des einen Steps, dessen Tabelle das Ergebnis ist.
+Genau einer. Er muss in `steps` stehen — eine Quelle kann nie das Ergebnis sein.
+
+### ui
+
+`ui` ist die Position im Editor. Ohne `ui` liegen alle Steps übereinander auf
+Position 0,0 und ich muss sie von Hand auseinanderziehen. Setz die Quellen
+links untereinander (x = 0, y in Schritten von 140) und staffle die Steps in
+Flussrichtung nach rechts (x in Schritten von 260).
+
+### Was querbeet ablehnt
+
+Ein Rezept wird ganz angenommen oder ganz abgelehnt. Nichts wird halb geladen.
+Abgelehnt wird:
+
+    ungültiges JSON            Das ist kein gültiges JSON: ...
+    doppelte Kennung           Die Kennung „q1“ kommt mehrfach vor.
+    Verweis ins Leere          „F“ verweist an Eingang 1 auf „gibtsnicht“, das es nicht gibt.
+    falsche Anzahl Eingänge    „J“ ist ein Join und nimmt genau 2 Eingänge, das Rezept nennt 1.
+    unbekannte Art             „P“ hat die unbekannte Step-Art „pivot“.
+    fehlendes Ergebnis         Das Rezept weist keinen Ergebnis-Step aus.
+    Ergebnis ist eine Quelle   Der ausgewiesene Ergebnis-Step „q1“ ist eine Quelle.
+    Kreis im Graphen           Der Graph enthält einen Kreis: Filter → Filter 2 → Filter.
+
+Geh dein Rezept gegen diese Liste durch, bevor du antwortest. Schicke ich dir
+eine dieser Meldungen zurück, korrigier genau das und gib mir das ganze Rezept
+neu — nicht nur den geänderten Teil.
+
+### Wenn du erst Werte sehen musst
+
+Du bekommst keine Daten. Musst du vorher etwas wissen — welche Regionen
+vorkommen, ob eine Spalte eindeutig ist, wie ein Datum geschrieben ist —, dann
+antworte statt eines Rezepts mit einer Probe-Abfrage: dasselbe Format, aber
+zusätzlich `"purpose": "probe"`, und der Ergebnis-Step zeigt genau das, was du
+wissen willst. Ich lasse sie lokal laufen, sehe das Ergebnis selbst und schicke
+dir nur dieses Ergebnis zurück.
+
+
+## 5. So antwortest du
+
+Höchstens drei Sätze dazu, was du gebaut hast und was du dabei angenommen hast.
+Danach genau ein ```json-Block mit dem vollständigen Rezept. Keine Kommentare im
+JSON, keine Auslassungen wie „…“ oder „usw.“ — ich füge den Block unverändert in
+querbeet ein.

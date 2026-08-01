@@ -1,0 +1,13 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Januar, nur Süd",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen Januar", "file": "bestellungen-2026-01.csv", "columns": ["Bestellnr", "Datum", "KundenNr", "Betrag", "Region"], "ui": { "x": 0, "y": 0 } }
+  ],
+  "steps": [
+    { "id": "f1", "name": "Nur Region Süd", "kind": "filter", "inputs": "b1",
+      "config": { "conditions": [{ "column": "Region", "op": "equals", "value": "Süd" }], "combine": "and" },
+      "ui": { "x": 260, "y": 0 } }
+  ],
+  "result": "f1"
+}

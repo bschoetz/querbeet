@@ -1,0 +1,242 @@
+{
+  "summary": {
+    "cases": 17,
+    "authored": 5,
+    "authoredAccepted": 5,
+    "roundTripped": 5,
+    "rejections": 8,
+    "rejectionsNamed": 8,
+    "gaps": 4,
+    "failures": 0,
+    "evidenceClass": "weak — same model authored the format, the documentation and these cases"
+  },
+  "results": [
+    {
+      "case": "t1-linear.json",
+      "task": "Aus der Januar-Datei nur die Zeilen der Region Süd.",
+      "expect": "ok",
+      "bytes": 526,
+      "accepted": true,
+      "nodes": 2,
+      "edges": 1,
+      "result": "f1",
+      "allAtOrigin": false,
+      "roundTrip": true,
+      "pass": true
+    },
+    {
+      "case": "t2-join.json",
+      "task": "An jede Bestellung den Kundennamen aus der Kundenliste hängen.",
+      "expect": "ok",
+      "bytes": 701,
+      "accepted": true,
+      "nodes": 3,
+      "edges": 2,
+      "result": "j1",
+      "allAtOrigin": false,
+      "roundTrip": true,
+      "pass": true
+    },
+    {
+      "case": "t3-union-filter.json",
+      "task": "Drei Monatsdateien zusammenhängen — die Kundennummer heißt im März anders — und nur Bestellungen über 1000 Euro behalten.",
+      "expect": "ok",
+      "bytes": 1119,
+      "accepted": true,
+      "nodes": 5,
+      "edges": 4,
+      "result": "f1",
+      "allAtOrigin": false,
+      "roundTrip": true,
+      "pass": true
+    },
+    {
+      "case": "t4-two-unions.json",
+      "task": "Zwei Monate und zwei Kundenlisten je zusammenhängen, verbinden, dann auf Süd über 500 filtern.",
+      "expect": "ok",
+      "bytes": 1764,
+      "accepted": true,
+      "nodes": 8,
+      "edges": 7,
+      "result": "f1",
+      "allAtOrigin": false,
+      "roundTrip": true,
+      "pass": true
+    },
+    {
+      "case": "t5-modify.json",
+      "task": "Die Aufgabe aus prompt-block-example.txt: bestehende Pipeline erweitern, nicht neu bauen.",
+      "expect": "ok",
+      "bytes": 1539,
+      "accepted": true,
+      "nodes": 7,
+      "edges": 6,
+      "result": "f1",
+      "allAtOrigin": false,
+      "roundTrip": true,
+      "pass": true
+    },
+    {
+      "case": "x1-cycle.json",
+      "task": "Zwei Filter, die sich gegenseitig als Eingang nennen.",
+      "expect": "reject",
+      "bytes": 440,
+      "accepted": false,
+      "errors": [
+        "Der Graph enthält einen Kreis: Filter A → Filter B → Filter A."
+      ],
+      "matched": true,
+      "expectedSubstring": "enthält einen Kreis",
+      "pass": true
+    },
+    {
+      "case": "x2-join-arity.json",
+      "task": "Drei Tabellen in einem Join verbinden.",
+      "expect": "reject",
+      "bytes": 660,
+      "accepted": false,
+      "errors": [
+        "„Alles verbinden“ ist ein Join und nimmt genau 2 Eingänge, das Rezept nennt 3.",
+        "Der ausgewiesene Ergebnis-Step „j1“ kommt im Rezept nicht vor."
+      ],
+      "matched": true,
+      "expectedSubstring": "nimmt genau 2 Eingänge",
+      "pass": true
+    },
+    {
+      "case": "x3-result-is-source.json",
+      "task": "Eine Quelle als Ergebnis-Step ausweisen.",
+      "expect": "reject",
+      "bytes": 457,
+      "accepted": false,
+      "errors": [
+        "Der ausgewiesene Ergebnis-Step „b1“ ist eine Quelle."
+      ],
+      "matched": true,
+      "expectedSubstring": "ist eine Quelle",
+      "pass": true
+    },
+    {
+      "case": "x4-dangling.json",
+      "task": "Auf eine Kundenliste verweisen, die nicht geladen ist.",
+      "expect": "reject",
+      "bytes": 444,
+      "accepted": false,
+      "errors": [
+        "„Kundenname dran“ verweist an Eingang 2 auf „kunden“, das es nicht gibt."
+      ],
+      "matched": true,
+      "expectedSubstring": "das es nicht gibt",
+      "pass": true
+    },
+    {
+      "case": "x5-unknown-kind.json",
+      "task": "Summe je Region — braucht eine Step-Art, die es nicht gibt.",
+      "expect": "reject",
+      "bytes": 451,
+      "accepted": false,
+      "errors": [
+        "„Summe je Region“ hat die unbekannte Step-Art „aggregate“.",
+        "Der ausgewiesene Ergebnis-Step „a1“ kommt im Rezept nicht vor."
+      ],
+      "matched": true,
+      "expectedSubstring": "unbekannte Step-Art",
+      "pass": true
+    },
+    {
+      "case": "x6-no-result.json",
+      "task": "Rezept ohne \"result\".",
+      "expect": "reject",
+      "bytes": 433,
+      "accepted": false,
+      "errors": [
+        "Das Rezept weist keinen Ergebnis-Step aus."
+      ],
+      "matched": true,
+      "expectedSubstring": "keinen Ergebnis-Step",
+      "pass": true
+    },
+    {
+      "case": "x7-duplicate-id.json",
+      "task": "Zwei Quellen mit derselben Kennung.",
+      "expect": "reject",
+      "bytes": 531,
+      "accepted": false,
+      "errors": [
+        "Die Kennung „b1“ kommt mehrfach vor."
+      ],
+      "matched": true,
+      "expectedSubstring": "kommt mehrfach vor",
+      "pass": true
+    },
+    {
+      "case": "x8-broken-json.txt",
+      "task": "Abgeschnittene Antwort mit Komma vor der schließenden Klammer.",
+      "expect": "reject",
+      "bytes": 193,
+      "accepted": false,
+      "errors": [
+        "Das ist kein gültiges JSON: Expected double-quoted property name in JSON at position 171 (line 1 column 172)"
+      ],
+      "matched": true,
+      "expectedSubstring": "kein gültiges JSON",
+      "pass": true
+    },
+    {
+      "case": "s1-unknown-column.json",
+      "task": "Auf eine Spalte filtern, die keine Quelle hat.",
+      "expect": "ok",
+      "bytes": 529,
+      "accepted": true,
+      "nodes": 2,
+      "edges": 1,
+      "result": "f1",
+      "allAtOrigin": false,
+      "roundTrip": true,
+      "pass": true,
+      "gap": "FR-28 requires a Recipe referencing a column that does not exist to be rejected naming the reference. Column names are never checked."
+    },
+    {
+      "case": "s2-orphan.json",
+      "task": "Ein zweiter Zweig, der nicht zum Ergebnis beiträgt.",
+      "expect": "ok",
+      "bytes": 806,
+      "accepted": true,
+      "nodes": 4,
+      "edges": 2,
+      "result": "f1",
+      "allAtOrigin": false,
+      "roundTrip": true,
+      "pass": true,
+      "gap": "FR-28 requires a disconnected graph to be rejected naming the defect. orphans() exists but validate() does not call it."
+    },
+    {
+      "case": "s3-no-ui.json",
+      "task": "Rezept ohne \"ui\" — der häufigste Fall, wenn ein Modell die Positionen weglässt.",
+      "expect": "ok",
+      "bytes": 712,
+      "accepted": true,
+      "nodes": 5,
+      "edges": 4,
+      "result": "j1",
+      "allAtOrigin": true,
+      "roundTrip": true,
+      "pass": true,
+      "gap": "Every node lands on 0,0. Accepted, and unusable until dragged apart by hand; there is no auto-layout."
+    },
+    {
+      "case": "s4-source-in-steps.json",
+      "task": "Eine Quelle im Abschnitt \"steps\" statt in \"sources\".",
+      "expect": "ok",
+      "bytes": 491,
+      "accepted": true,
+      "nodes": 2,
+      "edges": 1,
+      "result": "f1",
+      "allAtOrigin": false,
+      "roundTrip": true,
+      "pass": true,
+      "gap": "The block says sources live only in `sources`. The loader accepts them in `steps` too, so one graph has two encodings."
+    }
+  ]
+}

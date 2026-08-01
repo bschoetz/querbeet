@@ -1,0 +1,14 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Ohne Positionen",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen Januar", "file": "b1.csv", "columns": ["KundenNr", "Betrag"] },
+    { "id": "b2", "name": "Bestellungen Februar", "file": "b2.csv", "columns": ["KundenNr", "Betrag"] },
+    { "id": "kd", "name": "Kunden", "file": "k.csv", "columns": ["Nr", "Name"] }
+  ],
+  "steps": [
+    { "id": "u1", "name": "Beide Monate", "kind": "union", "inputs": ["b1", "b2"], "config": { "mappings": [], "unmatched": "keep" } },
+    { "id": "j1", "name": "Kundenname dran", "kind": "join", "inputs": ["u1", "kd"], "config": { "keys": [{ "left": "KundenNr", "right": "Nr" }], "type": "left" } }
+  ],
+  "result": "j1"
+}

@@ -1,0 +1,14 @@
+{
+  "format": "querbeet/recipe@1",
+  "name": "Bestellungen mit Kundenname",
+  "sources": [
+    { "id": "b1", "name": "Bestellungen Januar", "file": "bestellungen-2026-01.csv", "columns": ["Bestellnr", "Datum", "KundenNr", "Betrag", "Region"], "ui": { "x": 0, "y": 0 } },
+    { "id": "kd", "name": "Kundenliste", "file": "kunden.csv", "columns": ["Nr", "Name", "Branche", "Ort"], "ui": { "x": 0, "y": 140 } }
+  ],
+  "steps": [
+    { "id": "j1", "name": "Kundenname dran", "kind": "join", "inputs": ["b1", "kd"],
+      "config": { "keys": [{ "left": "KundenNr", "right": "Nr" }], "type": "left", "nullsMatch": false, "duplicateAudit": true },
+      "ui": { "x": 260, "y": 70 } }
+  ],
+  "result": "j1"
+}
