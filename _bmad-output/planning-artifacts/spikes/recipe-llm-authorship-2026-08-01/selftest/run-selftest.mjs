@@ -91,6 +91,12 @@ const CASES = [
   { file: 'x10-union-mapping-missing.json', task: 'Union ordnet eine Spalte zu, die kein Eingang führt.', measured: 'ok', proposed: 'reject', proposedMatch: 'keiner seiner Eingänge hat sie' },
   { file: 'x11-filter-after-union-drop.json', task: 'Filter auf eine Spalte, die die Union mit unmatched:drop verworfen hat.', measured: 'ok', proposed: 'reject', proposedMatch: '„Region“' },
   { file: 's5-source-without-columns.json', task: 'Quelle ohne Spaltenangabe, Filter darauf.', measured: 'ok', open: 'No Input Contract, so no schema and no check — silence here is correct, not a gap.' },
+
+  // The independent test. Written by an assistant with no access to this
+  // repository, from prompt-block-example.txt and nothing else. These are the
+  // only cases in this file that are evidence about machine authorship rather
+  // than about the documentation's self-consistency.
+  { file: 'i1-gemini.json', task: 'Unabhängig, Gemini, Runde 1: prompt-block-example.txt, sonst nichts.', measured: 'ok', independent: 'gemini', round: 1 },
 ]
 
 function shape(graph) {
@@ -138,6 +144,10 @@ for (const c of CASES) {
   }
   if (c.was) row.closedGap = c.was
   if (c.open) row.stillOpen = c.open
+  if (c.independent) {
+    row.independent = c.independent
+    row.round = c.round
+  }
 
   const verdict = (want, got, match) => {
     if (want === 'ok') return got.accepted && got.roundTrip
@@ -160,6 +170,7 @@ if (unpropagated.length) {
 }
 
 const authored = results.filter((r) => r.case.startsWith('t'))
+const independent = results.filter((r) => r.independent)
 const refusals = results.filter((r) => r.expect?.measured === 'reject')
 const closed = results.filter((r) => r.closedGap)
 const summary = {
@@ -172,8 +183,12 @@ const summary = {
   gapsClosedByProposed: closed.length,
   newRefusalsFromProposed: results.filter((r) => r.expect?.measured === 'ok' && r.expect?.proposed === 'reject').length,
   stillOpenByDecision: results.filter((r) => r.stillOpen).length,
+  independentCases: independent.length,
+  independentAcceptedFirstRound: independent.filter((r) => r.round === 1 && r.pass).length,
   failures,
-  evidenceClass: 'weak — same model authored the format, the documentation and these cases',
+  evidenceClass: independent.length
+    ? `t*/x*/s* weak — same model authored the format, the documentation and those cases. i* independent: ${independent.map((r) => `${r.independent} r${r.round}`).join(', ')}.`
+    : 'weak — same model authored the format, the documentation and these cases',
 }
 
 writeFileSync(resolve(here, 'results.json'), JSON.stringify({ summary, results }, null, 2) + '\n')
@@ -181,6 +196,20 @@ writeFileSync(resolve(here, 'results.json'), JSON.stringify({ summary, results }
 if (!quiet) {
   const mark = (r) => (r.pass ? ' ok ' : 'FAIL')
   const show = (rows, line) => rows.forEach((r) => console.log(`  [${mark(r)}] ${r.case.padEnd(38)}${line(r)}`))
+
+  if (independent.length) {
+    console.log('\nTHE INDEPENDENT TEST — written without access to this repository\n')
+    show(
+      independent,
+      (r) =>
+        `${r.independent}, Runde ${r.round}: ` +
+        (r.proposed.accepted
+          ? `angenommen — ${r.proposed.nodes} Steps, ${r.proposed.edges} Kanten, result=${r.proposed.result}, ` +
+            `round trip ${r.proposed.roundTrip ? 'identisch' : 'ABWEICHEND'}` +
+            (r.proposed.laidOut ? ', ohne ui (Layout gesetzt)' : '')
+          : `abgelehnt — ${r.proposed.errors[0]}`),
+    )
+  }
 
   console.log('\nAuthored from the block — must load on both paths\n')
   show(authored, (r) => `${r.proposed.nodes} Steps, ${r.proposed.edges} Kanten, result=${r.proposed.result}, round trip ${r.proposed.roundTrip ? 'identisch' : 'ABWEICHEND'}`)

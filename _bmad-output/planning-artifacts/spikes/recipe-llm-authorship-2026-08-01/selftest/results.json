@@ -1,6 +1,6 @@
 {
   "summary": {
-    "cases": 21,
+    "cases": 22,
     "authored": 5,
     "authoredAcceptedBoth": 5,
     "roundTripped": 5,
@@ -9,8 +9,10 @@
     "gapsClosedByProposed": 3,
     "newRefusalsFromProposed": 5,
     "stillOpenByDecision": 2,
+    "independentCases": 1,
+    "independentAcceptedFirstRound": 1,
     "failures": 0,
-    "evidenceClass": "weak — same model authored the format, the documentation and these cases"
+    "evidenceClass": "t*/x*/s* weak — same model authored the format, the documentation and those cases. i* independent: gemini r1."
   },
   "results": [
     {
@@ -695,6 +697,56 @@
         "roundTrip": true
       },
       "stillOpen": "No Input Contract, so no schema and no check — silence here is correct, not a gap.",
+      "pass": true
+    },
+    {
+      "case": "i1-gemini.json",
+      "task": "Unabhängig, Gemini, Runde 1: prompt-block-example.txt, sonst nichts.",
+      "bytes": 2386,
+      "expect": {
+        "measured": "ok",
+        "proposed": "ok"
+      },
+      "measured": {
+        "accepted": true,
+        "nodes": 7,
+        "edges": 6,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@780,140",
+          "j1@520,140",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "proposed": {
+        "accepted": true,
+        "nodes": 7,
+        "edges": 6,
+        "result": "f1",
+        "positions": [
+          "b1@0,0",
+          "b2@0,140",
+          "b3@0,280",
+          "f1@780,140",
+          "j1@520,140",
+          "kd@0,420",
+          "u1@260,140"
+        ],
+        "allAtOrigin": false,
+        "laidOut": false,
+        "notes": [],
+        "roundTrip": true
+      },
+      "independent": "gemini",
+      "round": 1,
       "pass": true
     }
   ]

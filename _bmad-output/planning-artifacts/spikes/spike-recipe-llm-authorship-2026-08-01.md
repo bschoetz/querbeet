@@ -1,6 +1,7 @@
 # Spike: can a model write a Recipe from the documentation alone?
 
-**Status:** [x] apparatus built and self-tested, 2026-08-01 — **the independent test is not yet run**
+**Status:** [x] built, self-tested, and passed by a foreign assistant on the first round, 2026-08-01
+— **one vendor, one task; the generality is one sample deep**
 **Created:** 2026-08-01, unblocked by the Vue Flow Editor spike
 **Kind:** spike. The outcome is a prompt block, a self-test, and one honest caveat.
 **Results:** `recipe-llm-authorship-2026-08-01/findings.md`
@@ -41,9 +42,11 @@ The self-test is **weak evidence**. The format, the documentation and the test R
 same model in the same session, and that session had read the validator first. It can show the
 documentation does not contradict the loader. It cannot show the documentation is sufficient.
 
-The real test is one independent assistant, given nothing but the rendered block. The protocol for
-running it is in `findings.md`, section *How to run the real test*. Until it is run, Open Question 3
-stays open.
+That is why the block was pasted into **Gemini**, cold, and its answer run through the same test:
+accepted on the first round, on both load paths, and identical to this session's own answer Step for
+Step. One vendor, one task — and a task whose two hard decisions the example's Column Annotations
+name outright, so it measures whether a foreign model can *express* a plan, not whether it can *find*
+one. What remains is in `findings.md`, section *The independent test*.
 
 ## Explicitly out of scope
 
