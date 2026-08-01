@@ -1,0 +1,192 @@
+{
+  "meta": {
+    "node": "v26.5.0",
+    "arquero": "8.0.3",
+    "rows_main": 100000,
+    "cols_main": 20,
+    "rows_lookup": 5000,
+    "runs_per_op": 3,
+    "note": "median of 3 runs, Node/V8 as browser proxy"
+  },
+  "memory": {
+    "array_of_objects_mb": 47.2,
+    "arquero_columnar_extra_mb": 17.1,
+    "bytes_per_row_array_of_objects": 471
+  },
+  "ops": {
+    "join_1key": [
+      {
+        "engine": "vanilla",
+        "ms": 37.1,
+        "fingerprint": {
+          "rows": 100000,
+          "sum_limit_eur": 250497943.79,
+          "null_limit_eur": 0
+        }
+      },
+      {
+        "engine": "arquero",
+        "ms": 73,
+        "fingerprint": {
+          "rows": 100000,
+          "sum_limit_eur": 250497943.79,
+          "null_limit_eur": 0
+        }
+      },
+      {
+        "engine": "alasql",
+        "ms": 410,
+        "fingerprint": {
+          "rows": 100000,
+          "sum_limit_eur": 250497943.79,
+          "null_limit_eur": 0
+        }
+      }
+    ],
+    "join_2keys": [
+      {
+        "engine": "vanilla",
+        "ms": 64.3,
+        "fingerprint": {
+          "rows": 100000,
+          "sum_limit_eur": 62456916.27,
+          "null_limit_eur": 75008
+        }
+      },
+      {
+        "engine": "arquero",
+        "ms": 94.8,
+        "fingerprint": {
+          "rows": 100000,
+          "sum_limit_eur": 62456916.27,
+          "null_limit_eur": 75008
+        }
+      },
+      {
+        "engine": "alasql",
+        "ms": 25190.3,
+        "fingerprint": {
+          "rows": 100000,
+          "sum_limit_eur": 62456916.27,
+          "null_limit_eur": 75008
+        }
+      }
+    ],
+    "filter": [
+      {
+        "engine": "vanilla",
+        "ms": 3.8,
+        "fingerprint": {
+          "rows": 12513,
+          "sum_umsatz": 9379265,
+          "null_umsatz": 0
+        }
+      },
+      {
+        "engine": "arquero",
+        "ms": 3.3,
+        "fingerprint": {
+          "rows": 12513,
+          "sum_umsatz": 9379265,
+          "null_umsatz": 0
+        }
+      },
+      {
+        "engine": "alasql",
+        "ms": 32.6,
+        "fingerprint": {
+          "rows": 12513,
+          "sum_umsatz": 9379265,
+          "null_umsatz": 0
+        }
+      }
+    ],
+    "groupby": [
+      {
+        "engine": "vanilla",
+        "ms": 21.4,
+        "fingerprint": {
+          "rows": 25,
+          "sum_umsatz": 49996649.17,
+          "null_umsatz": 0
+        }
+      },
+      {
+        "engine": "arquero",
+        "ms": 35.1,
+        "fingerprint": {
+          "rows": 25,
+          "sum_umsatz": 49996649.17,
+          "null_umsatz": 0
+        }
+      },
+      {
+        "engine": "alasql",
+        "ms": 37.3,
+        "fingerprint": {
+          "rows": 25,
+          "sum_umsatz": 49996649.17,
+          "null_umsatz": 0
+        }
+      }
+    ],
+    "union_mapped": [
+      {
+        "engine": "vanilla",
+        "ms": 10.3,
+        "fingerprint": {
+          "rows": 100000,
+          "sum_umsatz": 49996649.17,
+          "null_umsatz": 0
+        }
+      },
+      {
+        "engine": "arquero",
+        "ms": 33.2,
+        "fingerprint": {
+          "rows": 100000,
+          "sum_umsatz": 49996649.17,
+          "null_umsatz": 0
+        }
+      },
+      {
+        "engine": "alasql",
+        "ms": 51.4,
+        "fingerprint": {
+          "rows": 100000,
+          "sum_umsatz": 49996649.17,
+          "null_umsatz": 0
+        }
+      }
+    ],
+    "full_pipeline": [
+      {
+        "engine": "vanilla",
+        "ms": 10.5,
+        "fingerprint": {
+          "rows": 25,
+          "sum_umsatz": 9379265,
+          "null_umsatz": 0
+        }
+      },
+      {
+        "engine": "arquero",
+        "ms": 28.2,
+        "fingerprint": {
+          "rows": 25,
+          "sum_umsatz": 9379265,
+          "null_umsatz": 0
+        }
+      },
+      {
+        "engine": "alasql",
+        "ms": 59.9,
+        "fingerprint": {
+          "rows": 25,
+          "sum_umsatz": 9379265,
+          "null_umsatz": 0
+        }
+      }
+    ]
+  }
+}
