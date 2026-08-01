@@ -524,6 +524,27 @@ function call on an app-owned model, but **FR-12 must not be assumed satisfied b
    it as a spike, not research. It remains open and is now unblocked, since the Recipe shape this
    report recommends is a plain node/edge list.
 
+> **Status of these questions after the Editor spike, 2026-08-01**
+> (`spikes/editor-vueflow-2026-08-01/findings.md`, measured in Chromium 151 and Firefox 153):
+>
+> - **1 — answered, and the risk did not materialise.** Anchors were measured across five body-height
+>   changes between −40.5 px and +81 px, with handles travelling 27–54 px: the anchor offset changed
+>   by 0 px in Chromium and 0.02 px in Firefox, with no `updateNodeInternals` call in the app. A
+>   newly created handle carrying a new edge landed on the same convention. One residual case is
+>   *not* covered and is now a design rule instead: a handle inside a fixed-height scrolling
+>   container would not fire the ResizeObserver that keeps this correct.
+> - **2 — still open, and barely moved.** The spike ran six Steps, seven after adding one. The PRD's
+>   range is 5–30, so the upper half is as unmeasured as before.
+> - **4 — largely answered.** Real pointer drags were exercised: a connection drag that had to be
+>   refused, a control drag that had to be accepted, and a node drag — which round-tripped through
+>   the model without drift. How connection dragging *feels* remains a judgement, not a measurement.
+> - **8 — half done.** The format now exists and was measured: `querbeet/recipe@1`, a byte-identical
+>   round trip at 1,309 B, and seven rejection classes that each name the defect. Whether a model can
+>   emit one from the documentation alone is still the open half.
+>
+> Recommendation 4 ("run the variable-height tripwire before building more than three Step kinds")
+> is discharged. Recommendation 6 is corrected — see the note at the end of "Adopting Vue Flow".
+
 ---
 
 ## Adopting Vue Flow — what the measurements require
@@ -587,6 +608,20 @@ finding already established above.
 excluded from the selection, and PRD FR-12 and NFR-7 must not be assumed satisfied. Vue Flow does
 not help here — its graph mutations are reachable programmatically, which is the precondition for a
 keyboard path, but no such path exists in the box.
+
+> **Correction, 2026-08-01, from measurement.** The last sentence above is wrong, and it was
+> inferred rather than measured. Vue Flow ships `nodesFocusable` and `edgesFocusable` as `true`,
+> `disableKeyboardA11y` as `false`, `tabIndex: 0` on node and edge wrappers, arrow-key node movement
+> and an `aria-live` region announcing it. Driven keyboard-only from a `file://` build in
+> Chromium 151 and Firefox 153, seven of ten Editor interactions already worked; two small fixes
+> took it to nine of eleven. **Connecting two Steps is the only remaining pointer-only interaction**,
+> and `connectOnClick` defaults to `true`, so even that is a focus affordance rather than missing
+> machinery.
+>
+> The measurement also inverts a cost claim made in the verdict section: adding keyboard access to
+> the hand-built canvas would have meant *writing* focus handling, arrow-key movement and the live
+> region, none of which was in its 164-line count. See
+> `spikes/editor-vueflow-2026-08-01/findings-keyboard.md`.
 
 ---
 

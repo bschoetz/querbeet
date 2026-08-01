@@ -536,6 +536,20 @@ this selection by project decision at the plan gate. **PRD FR-12 and NFR-7 must 
 satisfied by this research.** The hand-built path makes adding it cheaper than either library
 would, since every mutation is already a plain function call on an app-owned model.
 
+> **Checked and corrected 2026-08-01** — `spikes/editor-vueflow-2026-08-01/findings-keyboard.md`.
+> Two things above are now measured rather than assumed, and one of them was wrong.
+>
+> NFR-7 is **not** unsatisfied. Nine of eleven Editor interactions are keyboard-reachable in
+> Chromium 151 and Firefox 153 — reaching the canvas, selecting, multi-selecting, moving (5 px per
+> arrow, 20 px with Shift), adding a Step, designating the Result Step, editing configuration,
+> deleting, and focus pulling the canvas after it. **Connecting two Steps is the one gap left**, and
+> it waits on a UX decision, not on anything technical: `connectOnClick` is already on and its click
+> path ends in the same guarded door as the drag.
+>
+> **And the cost claim inverted.** Vue Flow ships `nodesFocusable`, `edgesFocusable`,
+> `tabIndex: 0` on nodes and edges, arrow-key movement and an `aria-live` region — all of which the
+> hand-built path would have had to write. The two fixes this needed were four and fifteen lines.
+
 **Why this exists:** the PRD replaced the linear step list with a directed acyclic graph of
 named Steps (FR-12), on a project decision taken 2026-08-01. `idea.md` section 6 had
 explicitly excluded a node-based editor from the MVP, so no research covers it, and it is
@@ -563,6 +577,8 @@ published package.
   dragging, hit testing, pan and zoom, auto-layout, undo/redo, keyboard navigation. PRD
   NFR-7 requires every action to have a keyboard-reachable path, and most graph editors are
   pointer-only — check this early, it disqualifies quickly.
+  *Answered 2026-08-01 for the chosen carrier:* Vue Flow is not pointer-only. Nine of eleven
+  interactions are keyboard-reachable; only connecting is not. See the correction above.
 - **Footprint** is explicitly *not* a criterion. Arquero alone is 236 KB raw and the whole
   built file is 280 KB; a graph editor at 50 KB changes nothing. Do not let size decide this.
 - **Node rendering:** can node bodies be arbitrary Vue components? Each Step kind has its own
@@ -580,6 +596,14 @@ from documentation alone, and a graph is materially harder to get right than a l
 the Recipe format for a three-Step graph and have a model produce one from the spec before
 the format is committed. Design the format so a linear pipeline is its trivial case — a graph
 whose every node has one input — so a model asked for something simple can answer simply.
+
+> **Half done 2026-08-01.** The Editor spike drafted and measured the format: `querbeet/recipe@1`,
+> 1,309 B for a six-Step graph, a byte-identical round trip, and seven rejection classes each naming
+> the defect specifically enough to paste back to a model. The design rule holds — `inputs` accepts
+> a bare string, so a linear pipeline really is the trivial case. **What remains is the actual
+> question:** can a model produce one from the documentation alone? That needs the format
+> documentation written as a prompt block (FR-27) and an independent model, not the one that
+> designed the format. Nothing blocks it now.
 
 **Also settles PRD Open Question 4:** R2 chose Vue 3 on the criterion of authoring *a list of
 heterogeneous step kinds*. That criterion is now a graph editor. R2's verdict may well
@@ -731,9 +755,14 @@ portable file, from a `file://` page?
 2. ~~**R3** – biggest risk collection.~~ Done (2026-08-01).
 3. ~~**R6 – graph editor.**~~ Done (2026-08-01). Research verdict: hand-built SVG canvas.
    **Project decision: Vue Flow 1.48.2**, with the graph model kept library-free either way.
-   R2's Vue 3 verdict survived, so PRD Open Question 4 is closed. Two follow-ups, both spikes
+   R2's Vue 3 verdict survived, so PRD Open Question 4 is closed. ~~Two follow-ups, both spikes
    rather than research: the variable-height tripwire before more than three Step kinds are built,
-   and the own-cycle-check-in-front-of-`addEdges` rule, which FR-12 makes non-optional.
+   and the own-cycle-check-in-front-of-`addEdges` rule, which FR-12 makes non-optional.~~
+   **Both follow-ups done 2026-08-01 in one build** (`spikes/editor-vueflow-2026-08-01/`): anchors
+   drift 0 px / 0.02 px across five height changes, and the cycle guard refuses on the pointer path,
+   the programmatic path and the Recipe loader. Two further questions were answered in the same
+   artefact — ownership is decided for design B, and the Recipe round-trips byte-identically.
+   NFR-7 was checked afterwards and stands at nine of eleven interactions.
 4. ~~**R9's first sub-question alone — does IndexedDB work from `file://`?**~~ Done (2026-08-01):
    yes, in both engines, surviving a browser restart. FR-25 holds. Three consequences fell out —
    the shared `file://` bucket, the `persist()` deadlock in Firefox, and a Firefox write time at
@@ -746,3 +775,11 @@ portable file, from a `file://` page?
    plausible zero-library answer (print stylesheet) that should be tried before it is
    researched properly.
 8. **R9's remainder** – package container and storage cost.
+
+**Outside this numbering, because it is a spike rather than research: the FR-28 Recipe-authorship
+spike.** Unblocked since 2026-08-01 — the format exists, round-trips, and rejects malformed input
+with named reasons. It belongs *early* rather than in sequence: a failure changes the Recipe format,
+and the Editor, the Package, the Pre-flight Check and the FR-27 prompt block all inherit that change.
+Running it after more is built on the format is the expensive ordering. It also needs an independent
+model, since the format's author cannot be the one that validates whether the documentation stands
+on its own.
