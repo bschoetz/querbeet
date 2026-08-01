@@ -8,12 +8,13 @@ status: complete
 preset: 'standard'
 validation: 'normal'
 claims:
-  verified: 34
+  verified: 37
   unverified: 3
   disputed: 1
-  overturned: 2
+  overturned: 3
 created: '2026-08-01'
 updated: '2026-08-01'
+deepened: 'build path (Path B), 2026-08-01'
 valid_until: '2027-02-01'
 ---
 
@@ -522,6 +523,105 @@ of real code will tell you more than this report does.
 | Safari/WebKit behaviour on `file://` | No — accepted | Untested — no WebKit engine available on this machine. Safari is optional per the constraints, so this is accepted rather than open. |
 | `Element.moveBefore()` per-browser support table | No | Not pinned this run. Only matters if drag-reorder is built on it, which the recommendation advises against anyway. |
 
+
+## Deepening: the Vite single-file build path (2026-08-01)
+
+**Project decision: Path B — a Vite build emitting one HTML file — overrides this report's Path A
+recommendation.** The verdict above is unchanged as research: Vue 3 still wins the matrix, and the
+reasons Path A was recommended (no toolchain between author and artifact, nothing to rot in five
+years) still hold. The project accepts that cost for better authoring ergonomics — real Single-File
+Components instead of HTML in JavaScript strings. This deepening establishes what that path
+requires. It does not change the framework choice; it changes how the framework is delivered.
+
+### The path works end to end — now measured, not inferred
+
+The report earlier flagged that "a `vite-plugin-singlefile` output runs from `file://`" was an
+inference from two measured facts rather than a built artifact. It has now been built [41]: a Vue
+SFC with scoped CSS, Arquero performing a real filter, frozen rows in a `shallowRef`, and an
+inlined Web Worker, on `vite@8.2.0` / `@vitejs/plugin-vue@6.0.8` / `vite-plugin-singlefile@2.3.3` /
+`vue@3.5.40` / `arquero@8.0.3`.
+
+Output: **one file, 280,519 bytes**, nothing beside it. Opened over a real `file://` URL it behaves
+identically in Chromium 150 and Firefox 153 — Vue mounts, Arquero returns its rows, the frozen rows
+are not proxied, scoped CSS applies, and the worker answers. The inference is now a result.
+
+**And the build is smaller than the no-build path, materially.** Path A would ship 401,889 B before
+any application code (Vue's global build 165,599 + Arquero's UMD 236,290); the built file is
+280,519 B *including* app code, CSS and worker — about **121 KB (30%) less** [41][9]. Two reasons:
+templates compile at build time, so the runtime-only Vue ships automatically — no alias or flag
+needed, since `vue`'s package manifest already points bundlers at `vue.runtime.esm-bundler.js` [39]
+— and Arquero is tree-shaken to what is actually imported. The build path buys ergonomics *and*
+about a third of the bytes.
+
+### The one thing that will bite: workers
+
+This is the sharp edge, and it is sharp because it fails quietly.
+
+Vite's idiomatic worker syntax — `new Worker(new URL('./w.js', import.meta.url), { type: 'module' })`
+— is documented to emit a **separate chunk** in production [37]. Measured with that syntax and
+nothing else changed [41]: the build still reports success with the same inlining log lines, but
+`dist/` contains **two** files, and from `file://` the app is broken — the worker constructor throws
+synchronously in Chromium and takes the rest of the component's mount down with it. Nothing in the
+build output indicates a problem.
+
+The plugin cannot save you here: it has no worker support, and none is imminent — issue #100 was
+closed in 2024 and PR #115 ("add inline web worker support") has been open since 2026-02-04, with
+2.3.3 shipping without it [40]. Reading the plugin's source shows the mechanism behind the silence:
+`generateBundle` pushes every JS chunk onto its delete list but only inlines chunks that have a
+matching `<script src>` tag in the HTML — and a worker chunk has none, so under some conditions it
+is deleted without ever being inlined, while the log still claims it was [39].
+
+**The rule:** import every worker with the inline suffix, per call site —
+`import W from './w.js?worker&inline'` — which embeds it as a classic worker from a blob URL — confirmed in Vite 8.2.0's own bundler
+source, which branches explicitly on a classic worker type [37][38] —
+exactly the form measured to work from `file://` in both engines. `worker.format` already defaults
+to `'iife'`, so no config change is strictly needed; set it explicitly anyway as a guard against a
+future default flip [37].
+
+**The guardrail, and it is not optional:** assert after every build that `dist/` contains exactly
+one file, and fail if not. Build success does not imply a working artifact on this path.
+
+### Configuration checklist
+
+The plugin's `_useRecommendedBuildConfig` sets, and only sets: `build.assetsInlineLimit = () => true`
+(a predicate forcing every asset inline, so there is no size ceiling left to raise),
+`chunkSizeWarningLimit`, `cssCodeSplit = false`, `base = "./"`, `assetsDir = ""`, and code-splitting
+off [39]. Everything else is yours:
+
+| Setting | Do this | Why |
+| --- | --- | --- |
+| `worker.format` | `'iife'` | Classic worker; a module worker from a blob URL fails in Chromium [1][37] |
+| every worker import | `?worker&inline` | The only form that lands in the single file [37][41] |
+| `build.modulePreload` | `{ polyfill: false }` | The polyfill ships otherwise — measured present in the output, containing a `fetch` — and is dead weight in a single file [41][37] |
+| `build.target` | set it deliberately | Not touched by the plugin; Vite 8 defaults to `baseline-widely-available` (chrome111 / firefox114), which is below this project's floor and therefore fine, but it should be a choice [37] |
+| `overrideConfig` | avoid for `build` | It is a shallow top-level `Object.assign` applied *after* the recommended settings, so passing a `build` object silently discards all of them [39] |
+| `removeViteModuleLoader` | treat as optional | Its regex keys on the exact `<script type="module" crossorigin>` string and the source itself calls it fragile [39] |
+| assets in `public/` | do not use it | Vite does not inline `public/`, and the plugin says so plainly — those files are copied beside the HTML and would break the single-file goal [39] |
+| SVG | inline it in the template, or add `vite-svg-loader` | Not inlined by Vite, and not by the plugin either [39] |
+
+### What this path costs over five years
+
+The honest ledger. The plugin's Vite peer range is broad and actively widened (`^5.4.21 || ^6 || ^7
+|| ^8`), and Vite 8 support landed within months of Vite 8 itself [39]. But it branches at runtime
+on `viteMajor >= 8`, so a future Vite 9 silently takes the Vite 8 path whether or not that remains
+correct, and it still writes into `build.rollupOptions`, which Vite 8 documents as deprecated in
+favour of `build.rolldownOptions` [37][39]. That alias is the most likely breakage point at the next
+major.
+
+None of this is alarming today, and all of it is the tax Path A was recommended to avoid. The
+mitigation is unglamorous: commit the lockfile, record the Node and Vite versions that produced a
+known-good build, and keep the built `querbeet.html` in version control so a broken toolchain never
+blocks shipping.
+
+### Corrections to earlier sections
+
+Two claims in D1 do not survive the build [41]. The plugin does **not** strip the `crossorigin`
+attribute — the output tag is `<script type="module" crossorigin>`; it preserves the source tag's
+attributes [39]. And it does **not** strip the modulepreload polyfill, which is present in the
+output as an IIFE containing a `fetch` call. Both are inert in a single file — an inline script is
+never fetched, and there are no preload links to act on — so neither changes any conclusion, but
+D1's description of the output was wrong on both counts.
+
 ## Source appendix
 
 | [n] | Supports | Publisher | Published | Accessed | Confidence |
@@ -563,6 +663,12 @@ of real code will tell you more than this report does.
 | [35] | Vue global-build authoring: `template:` strings, `<script type="text/x-template">`, `<component :is>` with a component object | [vuejs.org documentation](https://vuejs.org/) | undated | 2026-08-01 | high |
 | [36] | htm's dormancy: last release 2022-04-26, last commit 2024-02-01, 49 open issues, not archived | [developit/htm + npm registry](https://github.com/developit/htm) | 2024-02-01 | 2026-08-01 | medium |
 
+| [37] | Vite's worker documentation (`?worker&inline`, `worker.format`), build options and `modulePreload` defaults, and the `build.rollupOptions` deprecation | [Vite official documentation](https://vite.dev/guide/features) | undated (page reports v8.1.5) | 2026-08-01 | high |
+| [38] | Vite 8.2.0's bundler source: inline workers built as a classic blob worker | [vite@8.2.0 published tarball](https://registry.npmjs.org/vite/-/vite-8.2.0.tgz) | 2026-07-30 | 2026-08-01 | high |
+| [39] | `vite-plugin-singlefile` 2.3.3 source and README: what `_useRecommendedBuildConfig` touches, the `generateBundle` delete-without-inline path, `overrideConfig` shallow merge, `public/` and SVG caveats, peer range; and vue's runtime-only manifest default | [vite-plugin-singlefile@2.3.3 tarball + npm registry](https://registry.npmjs.org/vite-plugin-singlefile/-/vite-plugin-singlefile-2.3.3.tgz) | 2026-04-17 | 2026-08-01 | high |
+| [40] | No worker support in the plugin: issue #100 closed 2024, PR #115 open since 2026-02-04 and unmerged | [richardtallent/vite-plugin-singlefile PR #115](https://github.com/richardtallent/vite-plugin-singlefile/pull/115) | 2026-02-04 | 2026-08-01 | high |
+| [41] | The end-to-end build probe: one 280,519 B file, both engines, worker round trip, and the two-file failure under idiomatic worker syntax | [Original build probe, this run](imports/build-path-probe-2026-08-01.md) | 2026-08-01 | 2026-08-01 | high |
+
 ## Staleness map
 
 Computed from the claims ledger against the technical pack's freshness bars, not hand-derived.
@@ -581,6 +687,9 @@ Computed from the claims ledger against the technical pack's freshness bars, not
 | htm is dormant | maintenance | 2024-02-01 | 2024-08-01 | **yes** |
 | Alpine `:key` reuse preserves DOM state (focus inferred, not spiked) | pattern | 2026-08-01 | 2028-08-01 | no |
 | Alpine v2-era complexity complaints | retrospective | 2020-09-04 | 2022-09-04 | **yes** |
+| The single-file build path works end to end | build | 2026-08-01 | 2027-02-01 | no |
+| Plugin has no worker support; PR #115 open | build | 2026-08-01 | 2027-02-01 | no |
+| Vite/plugin config surface as checklisted | config | 2026-08-01 | 2026-09-01 | no |
 
 Three claims are stale, and each is already handled in the text: the Alpine dependency pin is
 tracked through an open PR [33] and the measurement shows the bump changes nothing that matters

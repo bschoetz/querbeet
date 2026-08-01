@@ -95,6 +95,29 @@ kinds mean five `x-if` branches with no way to factor the markup. Vanilla JS 65.
 with no proxy created while the small step array stays fully reactive, and `x-model` writes back
 through `x-for` into nested config objects. It loses on ergonomics, not on capability.
 
+**PROJECT DECISION: the Vite build path (Path B)** — overrides the report's recommendation of the
+no-build path. Framework choice unchanged. Rationale: real Single-File Components instead of HTML
+in JavaScript strings, at the price of a toolchain. A follow-up deepening (same run folder, section
+"Deepening: the Vite single-file build path") built it end to end and found the trade better than
+expected: one file of **280,519 B**, running identically from `file://` in Chromium 150 and
+Firefox 153, which is **~121 KB / 30% smaller** than the no-build path's libraries alone — templates
+compile at build time so runtime-only Vue ships automatically, and Arquero is tree-shaken.
+
+**Three build rules that are not optional:**
+
+1. Import every Web Worker as `./w.js?worker&inline`. With Vite's idiomatic
+   `new Worker(new URL(...), {type:'module'})` the build still reports success but emits **two**
+   files, and from `file://` the worker constructor throws synchronously in Chromium and takes the
+   rest of the component mount with it. Measured.
+2. **Gate the build on "`dist/` contains exactly one file."** On this path, build success does not
+   imply a working artifact.
+3. Set `worker: { format: 'iife' }` and `build.modulePreload: { polyfill: false }`; never pass a
+   `build` object through the plugin's `overrideConfig` (shallow merge — it discards the plugin's
+   own settings); keep nothing in `public/`.
+
+Commit the lockfile and the built `querbeet.html`, and record the Node and Vite versions of a
+known-good build — the toolchain is now a dependency with a five-year horizon.
+
 **Architecture constraints this sets:** freeze every dataset at the boundary and hold results in
 `shallowRef`; never render more than a ~50-row window; construct any worker as a classic script
 from a blob URL; inline everything, since nothing is fetchable at runtime; and keep the pipeline

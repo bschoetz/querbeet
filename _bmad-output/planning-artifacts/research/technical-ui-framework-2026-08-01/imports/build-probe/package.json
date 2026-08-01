@@ -1,0 +1,17 @@
+{
+  "name": "querbeet-buildpath-probe",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "arquero": "^8.0.3",
+    "vue": "^3.5.40"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.8",
+    "vite": "^8.2.0",
+    "vite-plugin-singlefile": "^2.3.3"
+  }
+}
