@@ -1,0 +1,127 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Alpine + frozen 100k rows, from file://</title>
+<body>
+<pre id="out">pending</pre>
+<div id="app" x-data="app()">
+  <!-- the preview pane: a 50-row window over a frozen 100k-row array -->
+  <template x-for="(row, i) in windowRows" :key="i">
+    <div class="prow" x-text="row.col0 + '|' + row.col1"></div>
+  </template>
+
+  <!-- the step list: heterogeneous kinds, each with its own config form -->
+  <template x-for="(step, i) in steps" :key="step.id">
+    <div class="step">
+      <span class="kind" x-text="step.kind"></span>
+      <template x-if="step.kind === 'filter'">
+        <input class="cfg-filter" x-model="step.config.value">
+      </template>
+      <template x-if="step.kind === 'join'">
+        <input class="cfg-join" x-model="step.config.key">
+      </template>
+      <template x-if="step.kind === 'union'">
+        <select class="cfg-union" x-model="step.config.mode">
+          <option value="a">a</option><option value="b">b</option>
+        </select>
+      </template>
+    </div>
+  </template>
+</div>
+
+<script>
+// Build the dataset BEFORE Alpine loads, and freeze it. This is the pattern under test:
+// 100k rows live inside x-data, but frozen, so @vue/reactivity refuses to proxy them.
+const ROWS = 100000, COLS = 20;
+window.__rows = new Array(ROWS);
+for (let i = 0; i < ROWS; i++) {
+  const r = {};
+  for (let c = 0; c < COLS; c++) r['col' + c] = c % 3 === 0 ? i * c : 'v-' + i + '-' + c;
+  window.__rows[i] = Object.freeze(r);
+}
+Object.freeze(window.__rows);
+
+window.app = function () {
+  return {
+    rows: window.__rows,
+    steps: [
+      { id: 1, kind: 'filter', config: { value: 'initial-filter' } },
+      { id: 2, kind: 'join',   config: { key: 'initial-key' } },
+      { id: 3, kind: 'union',  config: { mode: 'a' } },
+    ],
+    get windowRows() { return this.rows.slice(0, 50); },
+  };
+};
+</script>
+<!-- Reproduce: either drop alpinejs@3.15.12 dist/cdn.min.js (46,346 B) next to this file as
+     alpine.min.js, or leave the CDN URL below and open it with network access. A classic
+     script from an https URL loads fine from a file:// page; a module would not. -->
+<script src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.12/dist/cdn.min.js"></script>
+<script>
+const out = {};
+function log(k, v) { out[k] = v; }
+
+function whenReady(fn) {
+  const el = document.getElementById('app');
+  if (window.Alpine && el && el._x_dataStack) return setTimeout(fn, 50);
+  setTimeout(() => whenReady(fn), 50);
+}
+whenReady(() => {
+  {
+    try {
+      const el = document.getElementById('app');
+      // Alpine 3 keeps the merged component scope here.
+      const scope = Alpine.mergeProxies(el._x_dataStack);
+
+      log('rows_rendered', document.querySelectorAll('.prow').length);
+      log('steps_rendered', document.querySelectorAll('.step').length);
+      log('kinds', [...document.querySelectorAll('.kind')].map(n => n.textContent).join(','));
+      log('first_row_text', document.querySelector('.prow')?.textContent ?? null);
+
+      // Is the row array / are the rows proxied inside x-data?
+      const rowsInScope = scope.rows;
+      log('rows_array_is_proxy', Alpine.raw(rowsInScope) !== rowsInScope);
+      log('row0_is_proxy', Alpine.raw(rowsInScope[0]) !== rowsInScope[0]);
+      log('row0_identity_holds', Alpine.raw(rowsInScope[0]) === window.__rows[0]);
+      log('row0_is_frozen', Object.isFrozen(rowsInScope[0]));
+
+      // The step list must stay fully reactive — it is small and mutable.
+      log('steps_array_is_proxy', Alpine.raw(scope.steps) !== scope.steps);
+
+      // x-model write-back through an x-for iteration variable into a NESTED object.
+      const fi = document.querySelector('.cfg-filter');
+      log('filter_input_initial_value', fi ? fi.value : null);
+      if (fi) {
+        fi.value = 'typed-by-user';
+        fi.dispatchEvent(new Event('input'));
+      }
+      const sel = document.querySelector('.cfg-union');
+      if (sel) { sel.value = 'b'; sel.dispatchEvent(new Event('change')); }
+
+      setTimeout(() => {
+        log('writeback_nested_x_for', Alpine.raw(scope.steps)[0].config.value);
+        log('writeback_select', Alpine.raw(scope.steps)[2].config.mode);
+
+        // Does replacing the whole frozen array re-render the window?
+        const t0 = performance.now();
+        const next = Object.freeze(window.__rows.slice(0, 100).map(r =>
+          Object.freeze({ ...r, col0: 'REPLACED' })));
+        scope.rows = next;
+        setTimeout(() => {
+          log('rerender_ms_after_array_replace', +(performance.now() - t0).toFixed(1));
+          log('first_row_after_replace', document.querySelector('.prow')?.textContent ?? null);
+          log('rows_after_replace_is_proxy', (() => {
+            const r = Alpine.mergeProxies(document.getElementById('app')._x_dataStack).rows;
+            return Alpine.raw(r[0]) !== r[0];
+          })());
+          if (performance.memory) log('used_heap_mb', +(performance.memory.usedJSHeapSize / 1048576).toFixed(1));
+          document.getElementById('out').textContent = 'RESULT ' + JSON.stringify(out);
+          if (typeof dump === 'function') dump('RESULT ' + JSON.stringify(out) + '\n');
+        }, 120);
+      }, 60);
+    } catch (e) {
+      document.getElementById('out').textContent = 'RESULT ' + JSON.stringify({ error: String(e && e.stack || e) });
+    }
+  }
+});
+</script>
+</body>

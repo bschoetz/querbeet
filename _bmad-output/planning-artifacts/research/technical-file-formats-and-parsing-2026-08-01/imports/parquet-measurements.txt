@@ -1,0 +1,94 @@
+Parquet browser-export measurements — D5
+Run date: 2026-08-01. FRESHLY MEASURED (full re-run on 2026-08-01); output below is the raw
+stdout of the harness in parquet-roundtrip-harness.md, unedited except for section headers.
+All gzip sizes are gzip -9. All byte counts are bytes.
+
+### environment
+Linux 7.1.5-arch1-2 x86_64 GNU/Linux
+model name	: AMD Ryzen AI 9 365 w/ Radeon 880M
+MemTotal:       24199004 kB
+node v26.5.0  npm 12.0.1  python Python 3.14.6
+esbuild 0.28.1  gzip gzip 1.14-modified
+hyparquet 1.27.1  hyparquet-writer 0.16.3  fflate 0.8.3  apache-arrow 21.2.0
+pyarrow 25.0.0   duckdb 1.5.5   polars 1.43.2
+
+### bundle sizes (esbuild --bundle --minify --format=iife --platform=browser, gzip -9)
+entry-writer  min=57703  gzip9=17239  unminified=122802     # hyparquet-writer 0.16.3 alone
+entry-reader  min=58921  gzip9=18426  unminified=130910     # hyparquet 1.27.1 alone
+entry-both    min=111525 gzip9=33439  unminified=243158     # writer + reader, deduped
+e-fflate      min=7036   gzip9=3570   unminified=15452      # fflate gzipSync only (GZIP codec)
+
+(An earlier build of e-fflate without --platform=browser measured min=7035 gzip9=3569;
+ 1-byte drift, noted for completeness.)
+
+### parquet-wasm 0.7.2 payload
+esm/parquet_wasm_bg.wasm  raw=6494208  gzip9=1813165  base64=8658944  base64+gzip9=2680916
+esm/parquet_wasm.js       raw=100770   gzip9=17480
+jsDelivr over-the-wire gzip transfer for the .wasm: 1808240
+
+### DuckDB-WASM for comparison (@duckdb/duckdb-wasm 1.33.1-dev57.0, jsDelivr file listing)
+dist/duckdb-mvp.wasm  41325187
+dist/duckdb-eh.wasm   35913747
+dist/duckdb-coi.wasm  35644774
+dist/duckdb-browser.mjs   32000
+
+### write + read timings (node v26.5.0, 100,000 rows)
+SNAPPY write 100k x5cols: ms= 273 bytes= 2321579 heapDelta MB= 54.2
+UNCOMPRESSED write ms= 157 bytes= 3600536
+hyparquet read-back ms= 116 rows= 100000 first= {"id":0,"value":0,"name":"row_0_0","ts":"2023-11-14T22:13:20.000Z","flag":null}
+createdBy= hyparquet
+GZIP-codec write ms= 354 bytes= 1180560        # 3 columns only, not comparable to the 5-column files
+
+file sizes on disk:
+test_snappy.parquet 2321579
+test_uncompressed.parquet 3600536
+test_gzip.parquet 1180560
+
+(First run on the same machine, for variance: SNAPPY 258 ms / heapDelta 54.4 MB,
+ UNCOMPRESSED 159 ms, read-back 115 ms, GZIP 351 ms — byte sizes identical.)
+
+### pyarrow 25.0.0
+pyarrow 25.0.0 rows 100000
+id: int32
+value: double
+name: string
+ts: timestamp[ms, tz=UTC]
+flag: bool
+flag null_count 33334
+first two rows: {'id': [0, 1], 'value': [0.0, 841.4709848078965], 'name': ['row_0_0', 'row_1_1'], 'ts': [datetime.datetime(2023, 11, 14, 22, 13, 20, tzinfo=zoneinfo.ZoneInfo(key='UTC')), datetime.datetime(2023, 11, 14, 22, 13, 21, tzinfo=zoneinfo.ZoneInfo(key='UTC'))], 'flag': [None, False]}
+uncompressed rows 100000
+gzip rows 100000 codec col0 GZIP row_groups 2
+snappy codec col0 SNAPPY created_by hyparquet
+
+### duckdb 1.5.5
+duckdb 1.5.5
+[(100000, 0, 99999, 1812.028, 66666)]
+  -- select count(*) n, min(id) mn, max(id) mx, round(sum(value),3) s, count(flag) nonnull_flag from 'test_snappy.parquet'
+[(0, 0.0, 'row_0_0', datetime.datetime(2023, 11, 14, 22, 13, 20), None), (1, 841.4709848078965, 'row_1_1', datetime.datetime(2023, 11, 14, 22, 13, 21), False)]
+  -- select * from 'test_uncompressed.parquet' limit 2
+[(100000, 99999)]
+  -- select count(*), max(id) from 'test_gzip.parquet'
+
+### polars 1.43.2
+polars 1.43.2 shape (100000, 5)
+dtypes {'id': 'Int32', 'value': 'Float64', 'name': 'String', 'ts': "Datetime(time_unit='ms', time_zone=None)", 'flag': 'Boolean'}
+shape: (2, 5)
+┌─────┬────────────┬─────────┬─────────────────────┬───────┐
+│ id  ┆ value      ┆ name    ┆ ts                  ┆ flag  │
+│ --- ┆ ---        ┆ ---     ┆ ---                 ┆ ---   │
+│ i32 ┆ f64        ┆ str     ┆ datetime[ms]        ┆ bool  │
+╞═════╪════════════╪═════════╪═════════════════════╪═══════╡
+│ 0   ┆ 0.0        ┆ row_0_0 ┆ 2023-11-14 22:13:20 ┆ null  │
+│ 1   ┆ 841.470985 ┆ row_1_1 ┆ 2023-11-14 22:13:21 ┆ false │
+└─────┴────────────┴─────────┴─────────────────────┴───────┘
+gzip file shape (100000, 3)
+
+### apache-arrow 21.2.0 Parquet support check
+grep -ril "parquet" node_modules/apache-arrow/*.d.ts node_modules/apache-arrow/*.js  -> (no matches)
+grep -c "parquet" node_modules/apache-arrow/Arrow.dom.d.ts                           -> 0
+
+### caveats
+- All timings are Node.js on the CPU above; no real-browser (Firefox 145 / Chrome 143) run was made.
+- pyarrow reports ts as timestamp[ms, tz=UTC]; Polars reads the same column as a naive
+  Datetime(time_unit='ms', time_zone=None). Values agree; the tz flag interpretation differs.
+- The GZIP file has 3 columns and 2 row groups (writer default rowGroupSize [1000, 100000]).

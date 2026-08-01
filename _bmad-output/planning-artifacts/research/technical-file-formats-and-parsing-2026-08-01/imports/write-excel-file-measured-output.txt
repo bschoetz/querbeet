@@ -1,0 +1,29 @@
+=== write-excel-file verification, 2026-08-01, Linux x86-64 ===
+
+--- node write-test.mjs ---
+return value keys with filePath option: [ 'toBuffer', 'toStream', 'toFile' ]
+wrote german-small.xlsx
+100k rows: 3445 ms, output 3340462 bytes, heap delta -19.3 MB
+
+--- openpyxl verify.py ---
+/home/n_to/.cache/uv/archive-v0/fLsKq4lFHrAHu9nj/lib/python3.14/site-packages/openpyxl/styles/stylesheet.py:237: UserWarning: Workbook contains no default style, apply openpyxl's default
+  warn("Workbook contains no default style, apply openpyxl's default")
+sheet name: 'Report' | dims: A1:E4
+'Kostenstelle'<str,fmt=General> | 'Bezeichnung'<str,fmt=General> | 'Betrag (€)'<str,fmt=General> | 'Menge'<str,fmt=General> | 'Buchungsdatum'<str,fmt=General>
+'0123'<str,fmt=General> | 'Bürobedarf Süd'<str,fmt=General> | 1234.56<float,fmt=#,##0.00> | 5<int,fmt=#,##0> | datetime.datetime(2025, 12, 31, 0, 0)<datetime,fmt=dd.mm.yyyy>
+'0456'<str,fmt=General> | 'Möbel & Zubehör'<str,fmt=General> | -987.5<float,fmt=#,##0.00> | 10<int,fmt=#,##0> | datetime.datetime(2026, 1, 15, 0, 0)<datetime,fmt=dd.mm.yyyy>
+'0789'<str,fmt=General> | 'Straßenreinigung'<str,fmt=General> | 1234567.89<float,fmt=#,##0.00> | 3<int,fmt=#,##0> | datetime.datetime(2026, 7, 1, 0, 0)<datetime,fmt=dd.mm.yyyy>
+header bold: True
+col widths: {'A': 14.0, 'B': 28.0, 'C': 16.0, 'D': 10.0, 'E': 16.0}
+zip entries: ['[Content_Types].xml', '_rels/.rels', 'xl/_rels/workbook.xml.rels', 'xl/workbook.xml', 'xl/worksheets/sheet1.xml', 'xl/worksheets/_rels/sheet1.xml.rels', 'xl/styles.xml', 'xl/sharedStrings.xml']
+xml decl: b'<?xml version="1.0"?><sst xmlns="http://schemas.openxmlforma'
+umlaut bytes present (UTF-8 ü = c3bc): True
+euro sign in header (UTF-8 e282ac): True
+100k file: 100001 rows read by openpyxl in 7.5s, max_row=None
+
+--- worksheet XML structure ---
+has <dimension> element: False
+sheet1.xml head: <?xml version="1.0" ?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:mc="http://sche
+write-excel-file version: 4.1.1
+node: v26.5.0
+openpyxl: 3.1.5

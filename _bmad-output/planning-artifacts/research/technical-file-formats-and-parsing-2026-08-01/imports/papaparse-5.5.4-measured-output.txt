@@ -1,0 +1,29 @@
+artefact: papaparse.min.js fetched from https://cdn.jsdelivr.net/npm/papaparse@5.5.4/papaparse.min.js
+artefact bytes: 19476 (jsDelivr serves 19476 for 5.5.4)
+node: v26.5.0 | DefaultDelimiter: ","
+
+=== dynamicTyping: true, German data ===
+Kostenstelle=123 (number)  Betrag=1.234 (number)  Menge=5 (number)  Preis="1.234,56" (string)
+Kostenstelle=456 (number)  Betrag=999 (number)  Menge=10 (number)  Preis="12,50" (string)
+Kostenstelle=789 (number)  Betrag="1.234.567" (string)  Menge=3 (number)  Preis="0,99" (string)
+
+=== dynamicTyping: false (control) ===
+Kostenstelle="0123" (string)  Betrag="1.234" (string)  Menge="5" (string)  Preis="1.234,56" (string)
+
+=== delimiter guess WITH preamble (no delimiter given) ===
+guessed delimiter: ";" | fields in row 3: 3
+
+=== delimiter guess WITHOUT preamble ===
+guessed delimiter: ";"
+
+=== delimiter guess with skipFirstNLines: 3 ===
+guessed delimiter: ";" | fields: ["Kunde","Umsatz","Region"]
+
+=== two-column semicolon file ===
+guessed delimiter: ";"
+
+=== single-column file ===
+guessed delimiter: "," | aborted: {"type":"Delimiter","code":"UndetectableDelimiter","message":"Unable to auto-detect delimiting character; defaulted to ','"}
+
+=== semicolon file whose values contain commas ===
+guessed delimiter: ";" | fields: ["Kunde","Umsatz"] | row0: {"Kunde":"Meier","Umsatz":"1,50"}
