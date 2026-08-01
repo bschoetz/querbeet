@@ -1,14 +1,34 @@
 # querbeet – Technical Research Plan
 
-This file tracks the five technical research runs needed before implementation starts.
+This file tracks the technical research runs needed before implementation starts.
 Each item is meant to be executed as one `/bmad-technical-research` (→ bmad-deep-recon,
 type: technical) run. Check items off and link the resulting report when done.
 
-Constraints that apply to every research question (from `idea.md`, section 3 – fixed):
+**R6–R9 were added on 2026-08-01 after the PRD** (`_bmad-output/planning-artifacts/prds/prd-querbeet-2026-08-01/prd.md`)
+put four MVP capabilities into scope that no research run covers: a node-graph pipeline
+editor, charts, a PDF/HTML view document, and browser persistence with a compressed
+package format. R4 and R5 were rescoped in the same pass. **Where this file and `idea.md`
+disagree, the PRD is authoritative** — it postdates both.
+
+Constraints that apply to every research question:
 
 - Single HTML file, no server, no backend; all processing client-side.
-- CDN libraries allowed; a build step that emits one HTML file is acceptable.
-- Target data size: ~100,000 rows max, typical case 2–5 report files.
+- **Nothing may be fetched at runtime.** A `file://` page has an opaque origin, so
+  `fetch()`, dynamic `import()` and `<script type="module" src>` all fail. Any candidate
+  that lazy-loads its own icons, styles, fonts, layout engine or worker chunk is
+  disqualified — and this fails only in the built artifact opened from `file://`, never
+  during development. Measured in R2.
+- A build step that emits one HTML file is acceptable and is now mandatory (`hyparquet-writer`
+  is ESM-only).
+- Target data size: **~100,000 rows per source and on the order of half a million rows in
+  total** (PRD NFR-3, revised upward from the earlier "100,000 rows max"). No cap on the
+  number of source files.
+- Datasets are `Object.freeze`d and held in `shallowRef`. Any candidate that deep-watches,
+  proxies or takes ownership of the row array is disqualified. Measured in R2: deep
+  reactivity over 100k×20 costs 437–479 MB against 0 MB for frozen rows.
+- Permissive licence with no runtime key and no eligibility gate. R4 found PrimeVue
+  relicensing mid-flight, so treat every "MIT" as perishable and read the LICENSE in the
+  published package rather than in the repository.
 - Browsers: **Chromium-based (Edge 143+ / Chrome 143+) is the lead browser** — project decision
   2026-08-01, prompted by R4/D2. Firefox 145+ stays a target but is secondary and gets *measured*
   during the first MVP builds rather than assumed; if it does not deliver on the JS-heavy paths it
@@ -236,17 +256,52 @@ formats (CSV, JSON first; XLSX second stage; Parquet export if feasible)?
 
 ## R4 – Performance & table rendering
 
-**Status:** [ ] open
-**Report:** –
+**Status:** [~] partial — D1 (table rendering / virtualization) done 2026-08-01; D2, D3, D4 not run
+**Report:** `_bmad-output/planning-artifacts/research/technical-performance-and-table-rendering-2026-08-01/research.md`
 
-**Question:** How do we keep the UI responsive with up to 100k rows?
+**D1 verdict: virtualization is mandatory, hand-rolled fixed-height row windowing wins
+(94/100), TanStack Virtual is the runner-up at 92, and column virtualization is not needed.**
+Measured against Chromium 151 and Firefox 153 from a real `file://` URL: rendering all
+100,000 rows × 20 columns takes 11.2 s / 12.4 s and builds 2,000,000 cells — an eleven-second
+frozen tab, not a crash. A 50-row window over the same data swaps in 4.1 ms / 5 ms with no
+node recycling, and the same window at 50 columns still swaps in 10.9 ms / 14 ms, which is
+why column virtualization is out. `content-visibility: auto` does not replace virtualization:
+it skips rendering of off-screen subtrees but does not reduce DOM node count.
 
-**Sub-questions:**
-- Table preview rendering: virtualization needed? Lightweight virtual-table
-  libraries vs. hand-rolled windowing (preview shows ~50 rows, but full-result
-  view and export must handle 100k).
-- Should transformations run in a Web Worker to avoid UI freezes during joins?
-- Memory footprint of 2–5 files × 100k rows in the chosen engine (input from R1).
+**Two items D1 flagged as product work, both now in the PRD:** Ctrl+F cannot find virtualized
+rows and cannot be intercepted from userland, so querbeet ships its own search over the full
+dataset (FR-33); and `aria-rowcount`/`aria-rowindex` bookkeeping is manual, with Ctrl+End
+landing on the last *rendered* row — accepted rather than solved, per PRD NFR-7.
+
+**Incidental finding with reach beyond R4: PrimeVue 5.0.0 (2026-07-15) is no longer MIT.**
+The npm package ships a commercial "PrimeUI License" requiring a runtime key, with an
+eligibility-gated free tier needing annual re-confirmation, while the GitHub repository still
+displays the old MIT text. Anything from the PrimeTek family is affected.
+
+**Rescoped 2026-08-01 after the PRD.** Three things changed the remaining dimensions:
+
+- **The scale target moved from 100,000 rows to roughly half a million in total** (PRD NFR-3).
+  The Firefox element-height cliff measured in D1 sits at **614,000 rows at 28 px per row** —
+  above that, Firefox collapses the spacer to zero height and the list silently vanishes,
+  while Chromium clamps at 33,554,428 px and keeps working. At 100k rows that cliff was a
+  factor of six away and the guard was optional; at half a million rows a Union of several
+  large sources lands close to it, so the spacer-height cap and offset rescaling must be
+  built and tested, not merely noted.
+- **Full-dataset search (FR-33) is a new performance question.** Searching every row of a
+  500k-row result while staying interactive was never scoped. It belongs in D4.
+- **A graph editor now sits on the same main thread** (R6). Whether canvas interaction and
+  table rendering compete is a D3/D4 question.
+
+**Sub-questions still open:**
+- **D2 — Arquero memory and materialization in the browser.** R1's 471 bytes/row is a Node
+  figure; the browser number, and the cost of holding every intermediate Step output alive
+  in a graph where a Step may have several consumers, are unmeasured.
+- **D3 — Off-main-thread work and transfer cost.** What actually belongs in a worker, and
+  what structured-clone or transfer costs at these row counts.
+- **D4 — Responsiveness patterns.** Recompute-all versus memoize-per-Step for live preview
+  (R1 measured the full pipeline at 10.5 ms, so recompute-all is very likely fine and this
+  should be settled by measurement, not by searching — no practitioner evidence exists);
+  full-dataset search; and progress/cancellation for the ~3.3 s xlsx export.
 
 **Inputs already settled by R2** — do not re-research these:
 - A Web Worker *can* be created from a `file://` page: classic workers from a `blob:` URL or a
@@ -304,13 +359,183 @@ smaller stack decisions?
   one HTML file. `hyparquet-writer` ships **ESM only** — it is the single dependency that
   turns the build step from optional into required.
 
+**Rescoped 2026-08-01 after the PRD: the parser is not German-only.** PRD FR-9 requires
+type *and* locale detection per column, with sources in different locales side by side in
+one session and different locales possible within one source. The hard part is no longer
+parsing German — it is the ambiguity: `1.234` is one thousand two hundred thirty-four under
+one locale and 1.234 under another, and both readings are valid for the whole column. FR-9
+requires the system to report that ambiguity rather than resolve it silently, which makes
+this as much a UX design question as a parsing one.
+
+The "works offline" sub-question below is **settled and can be struck**: R2's build probe
+established inlining everything into one file, and R3 established that `hyparquet-writer`
+being ESM-only makes the build mandatory. CDN links are not an option, since nothing is
+fetchable at runtime from `file://`.
+
 **Sub-questions:**
-- Number/date detection with German formats (`1.234,56`, `31.12.2025`):
-  existing libraries vs. small custom detector; manual override UX.
-- CSS approach: Pico.css vs. Tailwind via CDN vs. hand-written (small decision,
-  short comparison is enough).
-- "Works offline" precision: keep CDN links (offline after first load, cached)
-  vs. inlining all libraries into the HTML file.
+- Number/date detection across locales, not only German (`1.234,56` and `1,234.56`,
+  `31.12.2025` and `12/31/2025`): existing libraries vs. a small custom detector.
+- **Ambiguity handling** — how to detect that a column admits two readings, how to report
+  a confidence or hit rate that a non-specialist can act on, and what the override UX looks
+  like when the correct answer cannot be computed. This is the load-bearing part.
+- How the confirmed type and locale are recorded in the Recipe so a Consumer inherits the
+  Author's decisions (PRD FR-9, FR-21).
+- CSS approach: Pico.css vs. Tailwind vs. hand-written (small decision, short comparison
+  is enough). Note the constraint: no external stylesheet and no web font, so a framework
+  that expects a CDN link needs its CSS inlined at build time.
+
+---
+
+## R6 – Node-graph pipeline editor
+
+**Status:** [ ] open — **on the critical path**
+**Report:** –
+
+**Why this exists:** the PRD replaced the linear step list with a directed acyclic graph of
+named Steps (FR-12), on a project decision taken 2026-08-01. `idea.md` section 6 had
+explicitly excluded a node-based editor from the MVP, so no research covers it, and it is
+now the only component in the stack with no evidence behind it. It is also structural: it
+shapes the Editor, the Recipe format, and what a language model must emit correctly.
+
+**Question:** What carries a node-graph editor for ~5–30 nodes under querbeet's constraints —
+an existing Vue 3 component, a framework-agnostic library, or a hand-built SVG canvas?
+
+**Candidates to screen:** Vue Flow, Rete.js, Drawflow, LiteGraph.js, jsPlumb, baklavajs,
+hand-built SVG/canvas. Screen the field first; this list is a starting point, not a shortlist.
+
+**Hard gates:** inlines into one HTML file with nothing fetched at runtime (check the built
+artifact for `import(`, `fetch(`, `new Worker`, `@font-face` and non-`data:` `url()`, and
+open it from a real `file://` URL — a component that lazy-loads its own icons fails only
+there); Vue 3 first-class rather than a stale community wrapper; released within the last
+12 months; permissive licence with no runtime key, verified from the LICENSE in the
+published package.
+
+**Sub-questions:**
+- **What does it own?** The library may hold the graph structure but must never hold or
+  watch the tables. Does its API let the graph be a view over an external model, or does it
+  insist on owning node data?
+- **Interaction surface, which is where hand-building stops being cheap:** connection
+  dragging, hit testing, pan and zoom, auto-layout, undo/redo, keyboard navigation. PRD
+  NFR-7 requires every action to have a keyboard-reachable path, and most graph editors are
+  pointer-only — check this early, it disqualifies quickly.
+- **Footprint** is explicitly *not* a criterion. Arquero alone is 236 KB raw and the whole
+  built file is 280 KB; a graph editor at 50 KB changes nothing. Do not let size decide this.
+- **Node rendering:** can node bodies be arbitrary Vue components? Each Step kind has its own
+  configuration form, which is the same `<component :is>` dispatch problem R2 scored Vue on.
+
+**Related spike, not research:** PRD FR-28 requires a language model to emit a valid Recipe
+from documentation alone, and a graph is materially harder to get right than a list. Draft
+the Recipe format for a three-Step graph and have a model produce one from the spec before
+the format is committed. Design the format so a linear pipeline is its trivial case — a graph
+whose every node has one input — so a model asked for something simple can answer simply.
+
+**Also settles PRD Open Question 4:** R2 chose Vue 3 on the criterion of authoring *a list of
+heterogeneous step kinds*. That criterion is now a graph editor. R2's verdict may well
+survive, but it has not been re-examined against the actual requirement. The cheapest way to
+answer both: build three node kinds, one connection and one frozen table flowing through, and
+open it from `file://`.
+
+---
+
+## R7 – Charts and dashboard rendering
+
+**Status:** [ ] open
+**Report:** –
+
+**Why this exists:** PRD FR-35 puts bar charts, line charts, Top-N/Bottom-N lists and key
+figures into the MVP Dashboard. `idea.md` mentioned charts but the research plan never
+carried them, so no library has been screened.
+
+**Question:** Which charting library renders bar and line charts over aggregated results in
+a single offline HTML file?
+
+**Candidates to screen:** uPlot, Chart.js, ECharts, Observable Plot, Vega-Lite, Frappe
+Charts, hand-written SVG. Note the size spread is enormous here — unlike the UI framework
+question, footprint may genuinely matter: ECharts and Vega-Lite are in the hundreds of
+kilobytes against uPlot's tens.
+
+**Hard gates:** same as R6 — inlines with nothing fetched at runtime (watch for web fonts
+and icon sprites specifically, which chart libraries commonly pull), permissive licence,
+released within 12 months, works from `file://`.
+
+**Sub-questions:**
+- **How much data reaches a chart?** Tiles render *aggregated* output, so a bar chart has
+  tens of categories, not 100k points. If that holds, this is a small decision and a heavy
+  library is unjustified. Confirm it rather than assume it: a line chart over a time series
+  from 500k rows could be a different shape.
+- Does it accept a frozen array, or does it clone, sort or mutate its input?
+- Static export: FR-37 requires the chart to appear in an exported HTML file and in a PDF.
+  Does the library render to SVG (embeddable and printable) or only to canvas (a raster
+  image in the PDF)? This may decide the choice on its own.
+- German number and date formatting on axes and labels, without pulling a locale bundle.
+- Does it need a container size at render time? Charts inside a fixed-grid tile layout that
+  the user can resize in three steps must re-render correctly.
+
+---
+
+## R8 – View document export: HTML and PDF
+
+**Status:** [ ] open
+**Report:** –
+
+**Why this exists:** PRD FR-37 requires a self-contained static HTML export and a PDF export
+of the Result and Dashboard. `idea.md` listed PDF export as explicitly out of MVP scope; the
+PRD put it back in. No research covers either.
+
+**Question:** How does a `file://` page with no network access produce a self-contained HTML
+document and a PDF?
+
+**Sub-questions:**
+- **PDF: generate or print?** A library (jsPDF, pdfmake, pdf-lib) versus a print stylesheet
+  plus the browser's own "print to PDF". The second costs almost nothing and produces correct
+  typography and pagination for free, but it cannot be triggered as a file download and
+  depends on the user's print dialog. Weigh this honestly before reaching for a library — it
+  may be the whole answer.
+- If a library: size, font embedding (a PDF with umlauts needs an embedded font, which is a
+  large binary inside an already-inlined single file), table pagination across pages, and
+  whether charts arrive as vectors or as rasters.
+- **HTML export:** the exported document is itself a single self-contained file, so this is
+  the same inlining problem as the app, one level down. How is the result table embedded —
+  fully, or truncated with a stated row count? A 500k-row table inlined into an HTML document
+  is a very large file, and FR-37 says the document is static, so the virtualization from R4
+  does not apply.
+- Both formats must carry the run status (FR-34) and name the Recipe, date and Sources
+  (FR-37), so the export is a document template question and not only a rendering one.
+
+---
+
+## R9 – Browser persistence and the Package container
+
+**Status:** [ ] open
+**Report:** –
+
+**Why this exists:** PRD FR-25 stores the Recipe *and* the loaded source data across sessions
+with a one-action delete, and FR-24 defines a compressed Package bundling a Recipe with its
+data. `idea.md` left persistence as an open decision and had no Package concept at all.
+
+**Question:** How are up to half a million rows stored in the browser and packed into one
+portable file, from a `file://` page?
+
+**Sub-questions:**
+- **IndexedDB from `file://`.** Does it work at all from an opaque origin, in Chromium and
+  Firefox? What is the quota, and is it per-file or shared? This is a gate question — if
+  IndexedDB is unavailable from `file://`, FR-25 is unbuildable as specified and the PRD needs
+  revising. **Check this first; it is cheap and it can invalidate a requirement.**
+- Storage cost and write time for ~500k rows: structured clone of plain objects versus a
+  serialized columnar or compressed blob.
+- Eviction: browsers may clear storage under pressure. What does the tool do when a restored
+  session is incomplete, and does `navigator.storage.persist()` help from an opaque origin?
+- **Package container.** A zip is the obvious shape, and `fflate` is already a candidate from
+  R3's Parquet work (its `gzipSync` is what supplies GZIP to `hyparquet-writer`). Compare
+  against JSZip on size and on synchronous versus asynchronous API — R3 established that
+  `hyparquet-writer` needs a *synchronous* compressor, and the browser-native
+  `CompressionStream` is async and therefore unusable there.
+- Compression ratio and time for report-shaped data at half a million rows, and whether it
+  needs a worker. R3 measured xlsx export at ~3.3 s as the threshold where an operation
+  freezes a tab.
+- Should a Package store its data as Parquet internally? The reader and writer are already in
+  the bundle, the format is columnar and compact, and it would make the container inspectable
+  by DuckDB or pandas — which may be a feature or an unwanted disclosure surface.
 
 ---
 
@@ -318,6 +543,18 @@ smaller stack decisions?
 
 1. ~~**R1 + R2 together** – they define the architecture.~~ Both done (2026-08-01):
    Arquero + Vue 3 (project decision on R1 was Arquero over the research recommendation).
-2. **R3** – biggest risk collection (encoding, SheetJS license, Parquet feasibility).
-3. **R4** – depends on R1 outcome.
-4. **R5** – can run last or alongside R4.
+2. ~~**R3** – biggest risk collection.~~ Done (2026-08-01).
+3. **R6 – graph editor.** Promoted to the front. It is on the critical path, it is
+   structural for the Editor, the Recipe format and the LLM protocol, and it carries an
+   open question against R2's framework verdict. Nothing downstream should be built before
+   it is answered.
+4. **R9's first sub-question alone — does IndexedDB work from `file://`?** Minutes of work,
+   and a negative answer invalidates PRD FR-25 as written. Do it before anything depends on it.
+5. **R4 (D2–D4)** – now also covers full-dataset search and the 614,000-row Firefox spacer
+   cliff, which is close to the revised scale target.
+6. **R5** – type and locale detection; can run alongside R4.
+7. **R7 and R8** – charts and export documents. Both are presentation-layer and neither
+   blocks the transformation path, so they can wait until the ETL core works. R8 has a
+   plausible zero-library answer (print stylesheet) that should be tried before it is
+   researched properly.
+8. **R9's remainder** – package container and storage cost.
