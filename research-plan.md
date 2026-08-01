@@ -595,7 +595,42 @@ established inlining everything into one file, and R3 established that `hyparque
 being ESM-only makes the build mandatory. CDN links are not an option, since nothing is
 fetchable at runtime from `file://`.
 
+**Input added 2026-08-01 by the FR-28 spike — a comparison value has no type, and five
+authors disagreed about it.** `spikes/recipe-llm-authorship-2026-08-01/`.
+
+The Recipe format lets a Filter Step carry `{"column": "Betrag", "op": "gt", "value": ...}`
+and says nothing about what `value` is. Given the same task, five independent authors —
+Gemini three times, Sonnet 5 once, the authoring session once — produced **four strings
+`"1000"` and one number `1000`**, including two different answers from the same assistant.
+The loader accepts both without comment, and the column against which they are compared is
+a `Betrag` formatted `1.234,56`.
+
+That makes three readings of the same Recipe: a string comparison, a JavaScript numeric
+comparison, and a locale-aware parse. They do not agree about which rows are above a
+thousand euros, and nothing currently chooses between them. It is the same failure family
+R1 and R3 already measured — an anchored regex reading `.` as a decimal point — arriving
+from a new direction: not from a library's inference, but from whatever a language model
+felt like typing.
+
+**What R5 owes here**, and it is a decision rather than a measurement:
+- What type a comparison value has in the Recipe. Candidates: always a string, parsed with
+  the column's confirmed locale (consistent with FR-9 making locale a column property);
+  always a JSON number, with the model responsible for the conversion; or typed per
+  condition. The first is the only one that keeps a Recipe portable across locales, which
+  is the point of FR-21 — but it is a decision, not a foregone conclusion.
+- Whether the answer is enforced. Today nothing rejects the wrong shape. Column *names* are
+  validated against the propagated schema (spike `proposed/columns.js`); values are not.
+  Whatever R5 decides should be refused by name in the same place, or a Consumer inherits a
+  Recipe that filters differently than it did for the Author.
+- What the prompt block tells a model. Its only filter example compares a text column, so
+  it offers no guidance for a numeric one — which is why the authors split. Whatever is
+  decided has to land in `block-template.txt` on the same day, or the next model guesses
+  again.
+
 **Sub-questions:**
+- **What type a comparison value has, and who converts it.** See the input above; this is
+  now the second load-bearing item after ambiguity handling, because it reaches the Recipe
+  format and therefore the Consumer.
 - Number/date detection across locales, not only German (`1.234,56` and `1,234.56`,
   `31.12.2025` and `12/31/2025`): existing libraries vs. a small custom detector.
 - **Ambiguity handling** — how to detect that a column admits two readings, how to report
