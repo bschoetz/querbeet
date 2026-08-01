@@ -97,7 +97,8 @@ Genau ein Schritt ist der **Ergebnis-Step**. Nach jedem Schritt: Live-Vorschau d
 
 ### 5.3 Export
 
-- Ergebnis als CSV, JSON oder XLSX herunterladen. Parquet gerne auch, falls machbar
+- Ergebnis als CSV, JSON, XLSX oder Parquet herunterladen. **Parquet ist machbar und drin** — `hyparquet-writer` schreibt, `hyparquet` liest, und der Rundlauf ist gegen pyarrow, DuckDB und Polars geprüft. Damit ist auch der Austausch mit der Python-Welt abgedeckt.
+- Zusätzlich: das Ergebnis als eigenständiges HTML-Dokument, das ohne querbeet lesbar ist und sich selbst benennt — welches Rezept, welche Dateien, welches Datum.
 
 ### 5.4 Das Rezept — speichern, laden, weitergeben
 
@@ -127,7 +128,7 @@ Aus „Pipeline-Definition exportieren" ist der Kern des Produkts geworden. Das 
 Dreiteiliges Layout:
 
 1. **Links – Quellen**: Liste der geladenen Dateien, Button „Datei hinzufügen".
-2. **Mitte – Pipeline**: vertikale Schrittliste, Schritte hinzufügen/entfernen/umsortieren, jeder Schritt mit kompaktem Konfigurationsbereich.
+2. **Mitte – Pipeline**: ~~vertikale Schrittliste~~ **eine Fläche mit dem Schritt-Graphen** (geändert 2026-08-01, siehe 5.2). Schritte hinzufügen, entfernen und verbinden; jeder Schritt eine Kachel mit kompaktem Konfigurationsbereich, deren Höhe mit ihrem Inhalt wächst. Ein Schritt ist als Ergebnis-Step markiert. Verbindungen, die einen Kreis schließen würden, werden mit Begründung abgelehnt statt still hergestellt.
 3. **Rechts/unten – Vorschau**: Tabellenansicht des Ergebnisses nach dem aktuell ausgewählten Schritt, plus Export-Buttons.
 
 Sprache der UI: Deutsch (Zielgruppe), Code und Kommentare auf Englisch.
