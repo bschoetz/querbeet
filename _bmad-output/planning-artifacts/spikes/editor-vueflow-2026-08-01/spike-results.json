@@ -1,0 +1,1519 @@
+{
+ "build": {
+  "distFiles": [
+   "index.html"
+  ],
+  "singleFile": true,
+  "bytes": 247987,
+  "hazards": {
+   "dynamic import": 0,
+   "fetch(": 0,
+   "new Worker": 0,
+   "importScripts": 0,
+   "@font-face": 0,
+   "XMLHttpRequest": 0
+  },
+  "externalSrc": [],
+  "nonDataUrls": []
+ },
+ "engines": {
+  "chromium": {
+   "engine": "chromium",
+   "version": "151.0.7922.34",
+   "errors": [],
+   "extraRequests": [],
+   "q1": {
+    "tolerancePx": 2,
+    "cases": [
+     {
+      "label": "Filter: +3 Bedingungen (Anker mittig, wandert um halbe Höhe)",
+      "nodesThatChangedHeight": [
+       "f1"
+      ],
+      "heightDeltas": {
+       "f1": 60.8
+      },
+      "handleTravelPx": 30.4,
+      "anchorMoved": true,
+      "offsetDeltaPx": 0,
+      "pass": true,
+      "anchors": [
+       {
+        "id": "q1->u1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 356.4
+       },
+       {
+        "id": "q2->u1#1",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 401.92
+       },
+       {
+        "id": "u1->f1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 452.66
+       },
+       {
+        "id": "f1->j1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 473.84
+       },
+       {
+        "id": "kd->j1#1",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 532.92
+       }
+      ]
+     },
+     {
+      "label": "Join: +3 Schlüssel (zwei Anker bei 1/3 und 2/3)",
+      "nodesThatChangedHeight": [
+       "j1"
+      ],
+      "heightDeltas": {
+       "j1": 60.7
+      },
+      "handleTravelPx": 40.5,
+      "anchorMoved": true,
+      "offsetDeltaPx": 0,
+      "pass": true,
+      "anchors": [
+       {
+        "id": "q1->u1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 356.4
+       },
+       {
+        "id": "q2->u1#1",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 401.92
+       },
+       {
+        "id": "u1->f1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 452.66
+       },
+       {
+        "id": "f1->j1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 494.1
+       },
+       {
+        "id": "kd->j1#1",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 573.43
+       }
+      ]
+     },
+     {
+      "label": "Union: +4 Zuordnungen",
+      "nodesThatChangedHeight": [
+       "u1"
+      ],
+      "heightDeltas": {
+       "u1": 81
+      },
+      "handleTravelPx": 54,
+      "anchorMoved": true,
+      "offsetDeltaPx": 0,
+      "pass": true,
+      "anchors": [
+       {
+        "id": "q1->u1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 383.4
+       },
+       {
+        "id": "q2->u1#1",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 455.92
+       },
+       {
+        "id": "u1->f1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 452.66
+       },
+       {
+        "id": "f1->j1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 494.1
+       },
+       {
+        "id": "kd->j1#1",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 573.43
+       }
+      ]
+     },
+     {
+      "label": "Union: +1 Eingang (neuer Anker, bestehende wandern)",
+      "nodesThatChangedHeight": [
+       "u1"
+      ],
+      "heightDeltas": {
+       "u1": 16.8
+      },
+      "handleTravelPx": 27.9,
+      "anchorMoved": true,
+      "offsetDeltaPx": 0,
+      "pass": true,
+      "anchors": [
+       {
+        "id": "q1->u1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 369.47
+       },
+       {
+        "id": "q2->u1#1",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 428.05
+       },
+       {
+        "id": "u1->f1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 452.66
+       },
+       {
+        "id": "f1->j1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 494.1
+       },
+       {
+        "id": "kd->j1#1",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 573.43
+       }
+      ]
+     },
+     {
+      "label": "Join: −2 Schlüssel (Höhe schrumpft)",
+      "nodesThatChangedHeight": [
+       "j1"
+      ],
+      "heightDeltas": {
+       "j1": -40.5
+      },
+      "handleTravelPx": 27,
+      "anchorMoved": true,
+      "offsetDeltaPx": 0,
+      "pass": true,
+      "anchors": [
+       {
+        "id": "q1->u1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 369.47
+       },
+       {
+        "id": "q2->u1#1",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 428.05
+       },
+       {
+        "id": "kd->u1#2",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 486.63
+       },
+       {
+        "id": "u1->f1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 452.66
+       },
+       {
+        "id": "f1->j1#0",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 480.59
+       },
+       {
+        "id": "kd->j1#1",
+        "targetDx": -3.9,
+        "targetDy": 0,
+        "sourceDx": 3.9,
+        "sourceDy": 0,
+        "targetHandleY": 546.42
+       }
+      ]
+     }
+    ],
+    "baseline": {
+     "anchors": [
+      {
+       "id": "q1->u1#0",
+       "targetDx": -3.9,
+       "targetDy": 0,
+       "sourceDx": 3.9,
+       "sourceDy": 0,
+       "targetHandleY": 356.4
+      },
+      {
+       "id": "q2->u1#1",
+       "targetDx": -3.9,
+       "targetDy": 0,
+       "sourceDx": 3.9,
+       "sourceDy": 0,
+       "targetHandleY": 401.92
+      },
+      {
+       "id": "u1->f1#0",
+       "targetDx": -3.9,
+       "targetDy": 0,
+       "sourceDx": 3.9,
+       "sourceDy": 0,
+       "targetHandleY": 422.28
+      },
+      {
+       "id": "f1->j1#0",
+       "targetDx": -3.9,
+       "targetDy": 0,
+       "sourceDx": 3.9,
+       "sourceDy": 0,
+       "targetHandleY": 473.84
+      },
+      {
+       "id": "kd->j1#1",
+       "targetDx": -3.9,
+       "targetDy": 0,
+       "sourceDx": 3.9,
+       "sourceDy": 0,
+       "targetHandleY": 532.92
+      }
+     ],
+     "convention": {
+      "handleWidthPx": 7.79,
+      "halfHandlePx": 3.9,
+      "zoom": 0.8657
+     },
+     "heights": {
+      "q1": 75.1,
+      "q2": 75.1,
+      "kd": 75.1,
+      "u1": 138.3,
+      "f1": 120.6,
+      "j1": 179
+     }
+    },
+    "newHandleConnect": {
+     "ok": true,
+     "replaced": null,
+     "existingEdgeDeltaPx": 0,
+     "newEdgeOffset": {
+      "dx": -3.9,
+      "dy": 0
+     },
+     "newEdgeRendered": true
+    },
+    "anchorConvention": {
+     "handleWidthPx": 7.79,
+     "halfHandlePx": 3.9,
+     "zoom": 0.8657,
+     "observedOffsetPx": -3.9
+    },
+    "newEdgeMatchesConvention": true,
+    "worstOffsetDeltaPx": 0,
+    "pass": true,
+    "remeasureCallsInAppSource": 0
+   },
+   "q2": {
+    "programmatic": {
+     "refused": true,
+     "reason": "„Mit Kunden“ → „Halbjahr“ würde einen Kreis schließen: „Halbjahr“ liegt bereits vor „Mit Kunden“.",
+     "graphUnchanged": true,
+     "refusalShownInUi": true,
+     "refusalText": "Abgelehnt (connect): „Mit Kunden“ → „Halbjahr“ würde einen Kreis schließen: „Halbjahr“ liegt bereits vor „Mit Kunden“."
+    },
+    "selfConnect": {
+     "refused": true,
+     "reason": "„Halbjahr“ kann nicht mit sich selbst verbunden werden."
+    },
+    "pointer": {
+     "edgeCountBefore": 6,
+     "edgeCountAfter": 6,
+     "refused": true,
+     "refusalShownInUi": true,
+     "refusalText": "Abgelehnt (connect): „Mit Kunden“ → „Halbjahr“ würde einen Kreis schließen: „Halbjahr“ liegt bereits vor „Mit Kunden“.",
+     "modelInputOfU1Slot0": "q1"
+    },
+    "pointerControl": {
+     "f1Input": "q2",
+     "accepted": true
+    },
+    "libraryDoor": {
+     "emittedAddChange": true,
+     "changeLog": [
+      {
+       "from": "edges",
+       "type": "add",
+       "id": "cyc"
+      }
+     ],
+     "edgeCountBefore": 6,
+     "edgeCountAfter": 6,
+     "landedInStore": false,
+     "modelUntouched": true
+    },
+    "mechanism": {
+     "landsWhenApplyDefaultIsOn": true,
+     "edgeCountBefore": 6,
+     "edgeCountWithDefaultOn": 7,
+     "afterRename": 7,
+     "healedByRename": false,
+     "afterMove": 6,
+     "healedByStructuralChange": true
+    },
+    "cyclicRecipe": {
+     "rejected": true,
+     "errors": [
+      "Der Graph enthält einen Kreis: Filter → Filter 2 → Filter."
+     ]
+    },
+    "pass": true
+   },
+   "q4": {
+    "clearedTo": 0,
+    "loadedOk": true,
+    "roundTripIdentical": true,
+    "beforeLength": 1325,
+    "recipeBytes": 1309,
+    "containsCellValues": false,
+    "tableStillAttached": 100000,
+    "linear": {
+     "ok": true,
+     "errors": [],
+     "steps": 3
+    },
+    "rejections": {
+     "json": {
+      "rejected": true,
+      "errors": [
+       "Das ist kein gültiges JSON: Expected property name or '}' in JSON at position 2 (line 1 column 3)"
+      ]
+     },
+     "danglingRef": {
+      "rejected": true,
+      "errors": [
+       "„F“ verweist an Eingang 1 auf „gibtsnicht“, das es nicht gibt."
+      ]
+     },
+     "wrongArity": {
+      "rejected": true,
+      "errors": [
+       "„J“ ist ein Join und nimmt genau 2 Eingänge, das Rezept nennt 1.",
+       "Der ausgewiesene Ergebnis-Step „j“ kommt im Rezept nicht vor."
+      ]
+     },
+     "unknownKind": {
+      "rejected": true,
+      "errors": [
+       "„P“ hat die unbekannte Step-Art „pivot“.",
+       "Der ausgewiesene Ergebnis-Step „p“ kommt im Rezept nicht vor."
+      ]
+     },
+     "noResult": {
+      "rejected": true,
+      "errors": [
+       "Das Rezept weist keinen Ergebnis-Step aus."
+      ]
+     },
+     "resultIsSource": {
+      "rejected": true,
+      "errors": [
+       "Der ausgewiesene Ergebnis-Step „a“ ist eine Quelle."
+      ]
+     }
+    },
+    "recipe": {
+     "format": "querbeet/recipe@1",
+     "name": "Spike-Rezept",
+     "sources": [
+      {
+       "id": "q1",
+       "name": "Umsatz Q1",
+       "ui": {
+        "x": 40,
+        "y": 60
+       },
+       "file": "umsatz-q1.csv",
+       "columns": [
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "c7",
+        "c8",
+        "c9",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19"
+       ]
+      },
+      {
+       "id": "q2",
+       "name": "Umsatz Q2",
+       "ui": {
+        "x": 40,
+        "y": 300
+       },
+       "file": "umsatz-q2.csv",
+       "columns": [
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "c7",
+        "c8",
+        "c9",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19"
+       ]
+      },
+      {
+       "id": "kd",
+       "name": "Kunden",
+       "ui": {
+        "x": 40,
+        "y": 520
+       },
+       "file": "kunden.csv",
+       "columns": [
+        "kdnr",
+        "name"
+       ]
+      }
+     ],
+     "steps": [
+      {
+       "id": "u1",
+       "name": "Halbjahr",
+       "ui": {
+        "x": 420,
+        "y": 110
+       },
+       "kind": "union",
+       "inputs": [
+        "q1",
+        "q2",
+        "kd"
+       ],
+       "config": {
+        "mappings": [
+         {
+          "target": "",
+          "from": ""
+         },
+         {
+          "target": "",
+          "from": ""
+         },
+         {
+          "target": "",
+          "from": ""
+         },
+         {
+          "target": "",
+          "from": ""
+         }
+        ],
+        "unmatched": "keep"
+       }
+      },
+      {
+       "id": "f1",
+       "name": "Nur Bestand",
+       "ui": {
+        "x": 880,
+        "y": 170
+       },
+       "kind": "filter",
+       "inputs": "u1",
+       "config": {
+        "conditions": [
+         {
+          "column": "",
+          "op": "equals",
+          "value": ""
+         },
+         {
+          "column": "",
+          "op": "equals",
+          "value": ""
+         },
+         {
+          "column": "",
+          "op": "equals",
+          "value": ""
+         },
+         {
+          "column": "",
+          "op": "equals",
+          "value": ""
+         }
+        ],
+        "combine": "and"
+       }
+      },
+      {
+       "id": "j1",
+       "name": "Mit Kunden",
+       "ui": {
+        "x": 1330,
+        "y": 230
+       },
+       "kind": "join",
+       "inputs": [
+        "f1",
+        "kd"
+       ],
+       "config": {
+        "keys": [
+         {
+          "left": "",
+          "right": ""
+         },
+         {
+          "left": "",
+          "right": ""
+         }
+        ],
+        "type": "left",
+        "nullsMatch": false,
+        "duplicateAudit": false
+       }
+      }
+     ],
+     "result": "j1"
+    },
+    "pass": true
+   },
+   "q3": {
+    "design": "B — das Modell ist maßgeblich, Vue Flow ist Ansicht",
+    "steps": [
+     {
+      "label": "nach dem Laden des Rezepts",
+      "ok": true,
+      "problems": []
+     },
+     {
+      "label": "nach dem Ziehen eines Steps mit der Maus",
+      "ok": true,
+      "problems": []
+     },
+     {
+      "label": "nach dem Hinzufügen eines Steps",
+      "ok": true,
+      "problems": []
+     },
+     {
+      "label": "nach Verbinden und Trennen",
+      "ok": true,
+      "problems": []
+     },
+     {
+      "label": "nach dem Löschen eines Steps mit Nachfolger",
+      "ok": true,
+      "problems": []
+     }
+    ],
+    "dragged": {
+     "modelMoved": true,
+     "modelPos": {
+      "x": 1024,
+      "y": 247
+     },
+     "drift": {
+      "ok": true,
+      "problems": []
+     }
+    },
+    "afterConnectDisconnect": {
+     "connected": {
+      "ok": true,
+      "problems": []
+     },
+     "disconnected": {
+      "ok": true,
+      "problems": []
+     }
+    },
+    "removal": {
+     "broken": [
+      {
+       "id": "f1",
+       "missing": [
+        {
+         "slot": 0,
+         "lostName": "Halbjahr"
+        }
+       ],
+       "underfilled": true,
+       "reason": "„Nur Bestand“ hat „Halbjahr“ verloren."
+      },
+      {
+       "id": "fil3",
+       "missing": [],
+       "underfilled": true,
+       "reason": "„Filter“ braucht 1 Eingänge, hat aber 0."
+      }
+     ],
+     "orphans": [
+      "q1",
+      "q2",
+      "fil3"
+     ],
+     "drift": {
+      "ok": true,
+      "problems": []
+     }
+    },
+    "dataset": {
+     "rows": 100000,
+     "frozen": true
+    },
+    "pass": true
+   }
+  },
+  "firefox": {
+   "engine": "firefox",
+   "version": "153.0",
+   "errors": [],
+   "extraRequests": [],
+   "q1": {
+    "tolerancePx": 2,
+    "cases": [
+     {
+      "label": "Filter: +3 Bedingungen (Anker mittig, wandert um halbe Höhe)",
+      "nodesThatChangedHeight": [
+       "f1"
+      ],
+      "heightDeltas": {
+       "f1": 61.8
+      },
+      "handleTravelPx": 30.9,
+      "anchorMoved": true,
+      "offsetDeltaPx": 0.02,
+      "pass": true,
+      "anchors": [
+       {
+        "id": "q1->u1#0",
+        "targetDx": -3.95,
+        "targetDy": -0.01,
+        "sourceDx": 3.95,
+        "sourceDy": 0.01,
+        "targetHandleY": 356.19
+       },
+       {
+        "id": "q2->u1#1",
+        "targetDx": -3.95,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0,
+        "targetHandleY": 403.02
+       },
+       {
+        "id": "u1->f1#0",
+        "targetDx": -3.96,
+        "targetDy": -0.01,
+        "sourceDx": 3.96,
+        "sourceDy": 0,
+        "targetHandleY": 454.26
+       },
+       {
+        "id": "f1->j1#0",
+        "targetDx": -3.95,
+        "targetDy": -0.01,
+        "sourceDx": 3.95,
+        "sourceDy": -0.01,
+        "targetHandleY": 476.08
+       },
+       {
+        "id": "kd->j1#1",
+        "targetDx": -3.95,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0,
+        "targetHandleY": 537.27
+       }
+      ]
+     },
+     {
+      "label": "Join: +3 Schlüssel (zwei Anker bei 1/3 und 2/3)",
+      "nodesThatChangedHeight": [
+       "j1"
+      ],
+      "heightDeltas": {
+       "j1": 61.7
+      },
+      "handleTravelPx": 41.2,
+      "anchorMoved": true,
+      "offsetDeltaPx": 0.01,
+      "pass": true,
+      "anchors": [
+       {
+        "id": "q1->u1#0",
+        "targetDx": -3.95,
+        "targetDy": -0.01,
+        "sourceDx": 3.95,
+        "sourceDy": 0.01,
+        "targetHandleY": 356.19
+       },
+       {
+        "id": "q2->u1#1",
+        "targetDx": -3.95,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0,
+        "targetHandleY": 403.02
+       },
+       {
+        "id": "u1->f1#0",
+        "targetDx": -3.96,
+        "targetDy": -0.01,
+        "sourceDx": 3.96,
+        "sourceDy": 0,
+        "targetHandleY": 454.26
+       },
+       {
+        "id": "f1->j1#0",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": -0.01,
+        "targetHandleY": 496.64
+       },
+       {
+        "id": "kd->j1#1",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0,
+        "targetHandleY": 578.43
+       }
+      ]
+     },
+     {
+      "label": "Union: +4 Zuordnungen",
+      "nodesThatChangedHeight": [
+       "u1"
+      ],
+      "heightDeltas": {
+       "u1": 82.3
+      },
+      "handleTravelPx": 54.9,
+      "anchorMoved": true,
+      "offsetDeltaPx": 0.01,
+      "pass": true,
+      "anchors": [
+       {
+        "id": "q1->u1#0",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0.01,
+        "targetHandleY": 383.63
+       },
+       {
+        "id": "q2->u1#1",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0,
+        "targetHandleY": 457.89
+       },
+       {
+        "id": "u1->f1#0",
+        "targetDx": -3.96,
+        "targetDy": -0.01,
+        "sourceDx": 3.96,
+        "sourceDy": 0,
+        "targetHandleY": 454.26
+       },
+       {
+        "id": "f1->j1#0",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": -0.01,
+        "targetHandleY": 496.64
+       },
+       {
+        "id": "kd->j1#1",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0,
+        "targetHandleY": 578.43
+       }
+      ]
+     },
+     {
+      "label": "Union: +1 Eingang (neuer Anker, bestehende wandern)",
+      "nodesThatChangedHeight": [
+       "u1"
+      ],
+      "heightDeltas": {
+       "u1": 17.1
+      },
+      "handleTravelPx": 28.6,
+      "anchorMoved": true,
+      "offsetDeltaPx": 0,
+      "pass": true,
+      "anchors": [
+       {
+        "id": "q1->u1#0",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0.01,
+        "targetHandleY": 369.33
+       },
+       {
+        "id": "q2->u1#1",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0,
+        "targetHandleY": 429.29
+       },
+       {
+        "id": "u1->f1#0",
+        "targetDx": -3.96,
+        "targetDy": -0.01,
+        "sourceDx": 3.96,
+        "sourceDy": 0,
+        "targetHandleY": 454.26
+       },
+       {
+        "id": "f1->j1#0",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": -0.01,
+        "targetHandleY": 496.64
+       },
+       {
+        "id": "kd->j1#1",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0,
+        "targetHandleY": 578.43
+       }
+      ]
+     },
+     {
+      "label": "Join: −2 Schlüssel (Höhe schrumpft)",
+      "nodesThatChangedHeight": [
+       "j1"
+      ],
+      "heightDeltas": {
+       "j1": -41.2
+      },
+      "handleTravelPx": 27.4,
+      "anchorMoved": true,
+      "offsetDeltaPx": 0,
+      "pass": true,
+      "anchors": [
+       {
+        "id": "q1->u1#0",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0.01,
+        "targetHandleY": 369.33
+       },
+       {
+        "id": "q2->u1#1",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0,
+        "targetHandleY": 429.29
+       },
+       {
+        "id": "kd->u1#2",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0,
+        "targetHandleY": 489.26
+       },
+       {
+        "id": "u1->f1#0",
+        "targetDx": -3.96,
+        "targetDy": -0.01,
+        "sourceDx": 3.96,
+        "sourceDy": 0,
+        "targetHandleY": 454.26
+       },
+       {
+        "id": "f1->j1#0",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": -0.01,
+        "targetHandleY": 482.93
+       },
+       {
+        "id": "kd->j1#1",
+        "targetDx": -3.96,
+        "targetDy": 0,
+        "sourceDx": 3.95,
+        "sourceDy": 0,
+        "targetHandleY": 550.99
+       }
+      ]
+     }
+    ],
+    "baseline": {
+     "anchors": [
+      {
+       "id": "q1->u1#0",
+       "targetDx": -3.95,
+       "targetDy": -0.01,
+       "sourceDx": 3.95,
+       "sourceDy": 0.01,
+       "targetHandleY": 356.19
+      },
+      {
+       "id": "q2->u1#1",
+       "targetDx": -3.95,
+       "targetDy": 0,
+       "sourceDx": 3.95,
+       "sourceDy": 0,
+       "targetHandleY": 403.02
+      },
+      {
+       "id": "u1->f1#0",
+       "targetDx": -3.95,
+       "targetDy": 0.01,
+       "sourceDx": 3.96,
+       "sourceDy": 0,
+       "targetHandleY": 423.39
+      },
+      {
+       "id": "f1->j1#0",
+       "targetDx": -3.95,
+       "targetDy": -0.01,
+       "sourceDx": 3.95,
+       "sourceDy": 0.01,
+       "targetHandleY": 476.08
+      },
+      {
+       "id": "kd->j1#1",
+       "targetDx": -3.95,
+       "targetDy": 0,
+       "sourceDx": 3.95,
+       "sourceDy": 0,
+       "targetHandleY": 537.27
+      }
+     ],
+     "convention": {
+      "handleWidthPx": 7.92,
+      "halfHandlePx": 3.96,
+      "zoom": 0.8793
+     },
+     "heights": {
+      "q1": 76.3,
+      "q2": 76.3,
+      "kd": 76.3,
+      "u1": 142.3,
+      "f1": 124.3,
+      "j1": 185.4
+     }
+    },
+    "newHandleConnect": {
+     "ok": true,
+     "replaced": null,
+     "existingEdgeDeltaPx": 0,
+     "newEdgeOffset": {
+      "dx": -3.96,
+      "dy": 0
+     },
+     "newEdgeRendered": true
+    },
+    "anchorConvention": {
+     "handleWidthPx": 7.92,
+     "halfHandlePx": 3.96,
+     "zoom": 0.8793,
+     "observedOffsetPx": -3.95
+    },
+    "newEdgeMatchesConvention": true,
+    "worstOffsetDeltaPx": 0.02,
+    "pass": true,
+    "remeasureCallsInAppSource": 0
+   },
+   "q2": {
+    "programmatic": {
+     "refused": true,
+     "reason": "„Mit Kunden“ → „Halbjahr“ würde einen Kreis schließen: „Halbjahr“ liegt bereits vor „Mit Kunden“.",
+     "graphUnchanged": true,
+     "refusalShownInUi": true,
+     "refusalText": "Abgelehnt (connect): „Mit Kunden“ → „Halbjahr“ würde einen Kreis schließen: „Halbjahr“ liegt bereits vor „Mit Kunden“."
+    },
+    "selfConnect": {
+     "refused": true,
+     "reason": "„Halbjahr“ kann nicht mit sich selbst verbunden werden."
+    },
+    "pointer": {
+     "edgeCountBefore": 6,
+     "edgeCountAfter": 6,
+     "refused": true,
+     "refusalShownInUi": true,
+     "refusalText": "Abgelehnt (connect): „Mit Kunden“ → „Halbjahr“ würde einen Kreis schließen: „Halbjahr“ liegt bereits vor „Mit Kunden“.",
+     "modelInputOfU1Slot0": "q1"
+    },
+    "pointerControl": {
+     "f1Input": "q2",
+     "accepted": true
+    },
+    "libraryDoor": {
+     "emittedAddChange": true,
+     "changeLog": [
+      {
+       "from": "edges",
+       "type": "add",
+       "id": "cyc"
+      }
+     ],
+     "edgeCountBefore": 6,
+     "edgeCountAfter": 6,
+     "landedInStore": false,
+     "modelUntouched": true
+    },
+    "mechanism": {
+     "landsWhenApplyDefaultIsOn": true,
+     "edgeCountBefore": 6,
+     "edgeCountWithDefaultOn": 7,
+     "afterRename": 7,
+     "healedByRename": false,
+     "afterMove": 6,
+     "healedByStructuralChange": true
+    },
+    "cyclicRecipe": {
+     "rejected": true,
+     "errors": [
+      "Der Graph enthält einen Kreis: Filter → Filter 2 → Filter."
+     ]
+    },
+    "pass": true
+   },
+   "q4": {
+    "clearedTo": 0,
+    "loadedOk": true,
+    "roundTripIdentical": true,
+    "beforeLength": 1325,
+    "recipeBytes": 1309,
+    "containsCellValues": false,
+    "tableStillAttached": 100000,
+    "linear": {
+     "ok": true,
+     "errors": [],
+     "steps": 3
+    },
+    "rejections": {
+     "json": {
+      "rejected": true,
+      "errors": [
+       "Das ist kein gültiges JSON: JSON.parse: expected property name or '}' at line 1 column 3 of the JSON data"
+      ]
+     },
+     "danglingRef": {
+      "rejected": true,
+      "errors": [
+       "„F“ verweist an Eingang 1 auf „gibtsnicht“, das es nicht gibt."
+      ]
+     },
+     "wrongArity": {
+      "rejected": true,
+      "errors": [
+       "„J“ ist ein Join und nimmt genau 2 Eingänge, das Rezept nennt 1.",
+       "Der ausgewiesene Ergebnis-Step „j“ kommt im Rezept nicht vor."
+      ]
+     },
+     "unknownKind": {
+      "rejected": true,
+      "errors": [
+       "„P“ hat die unbekannte Step-Art „pivot“.",
+       "Der ausgewiesene Ergebnis-Step „p“ kommt im Rezept nicht vor."
+      ]
+     },
+     "noResult": {
+      "rejected": true,
+      "errors": [
+       "Das Rezept weist keinen Ergebnis-Step aus."
+      ]
+     },
+     "resultIsSource": {
+      "rejected": true,
+      "errors": [
+       "Der ausgewiesene Ergebnis-Step „a“ ist eine Quelle."
+      ]
+     }
+    },
+    "recipe": {
+     "format": "querbeet/recipe@1",
+     "name": "Spike-Rezept",
+     "sources": [
+      {
+       "id": "q1",
+       "name": "Umsatz Q1",
+       "ui": {
+        "x": 40,
+        "y": 60
+       },
+       "file": "umsatz-q1.csv",
+       "columns": [
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "c7",
+        "c8",
+        "c9",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19"
+       ]
+      },
+      {
+       "id": "q2",
+       "name": "Umsatz Q2",
+       "ui": {
+        "x": 40,
+        "y": 300
+       },
+       "file": "umsatz-q2.csv",
+       "columns": [
+        "c0",
+        "c1",
+        "c2",
+        "c3",
+        "c4",
+        "c5",
+        "c6",
+        "c7",
+        "c8",
+        "c9",
+        "c10",
+        "c11",
+        "c12",
+        "c13",
+        "c14",
+        "c15",
+        "c16",
+        "c17",
+        "c18",
+        "c19"
+       ]
+      },
+      {
+       "id": "kd",
+       "name": "Kunden",
+       "ui": {
+        "x": 40,
+        "y": 520
+       },
+       "file": "kunden.csv",
+       "columns": [
+        "kdnr",
+        "name"
+       ]
+      }
+     ],
+     "steps": [
+      {
+       "id": "u1",
+       "name": "Halbjahr",
+       "ui": {
+        "x": 420,
+        "y": 110
+       },
+       "kind": "union",
+       "inputs": [
+        "q1",
+        "q2",
+        "kd"
+       ],
+       "config": {
+        "mappings": [
+         {
+          "target": "",
+          "from": ""
+         },
+         {
+          "target": "",
+          "from": ""
+         },
+         {
+          "target": "",
+          "from": ""
+         },
+         {
+          "target": "",
+          "from": ""
+         }
+        ],
+        "unmatched": "keep"
+       }
+      },
+      {
+       "id": "f1",
+       "name": "Nur Bestand",
+       "ui": {
+        "x": 880,
+        "y": 170
+       },
+       "kind": "filter",
+       "inputs": "u1",
+       "config": {
+        "conditions": [
+         {
+          "column": "",
+          "op": "equals",
+          "value": ""
+         },
+         {
+          "column": "",
+          "op": "equals",
+          "value": ""
+         },
+         {
+          "column": "",
+          "op": "equals",
+          "value": ""
+         },
+         {
+          "column": "",
+          "op": "equals",
+          "value": ""
+         }
+        ],
+        "combine": "and"
+       }
+      },
+      {
+       "id": "j1",
+       "name": "Mit Kunden",
+       "ui": {
+        "x": 1330,
+        "y": 230
+       },
+       "kind": "join",
+       "inputs": [
+        "f1",
+        "kd"
+       ],
+       "config": {
+        "keys": [
+         {
+          "left": "",
+          "right": ""
+         },
+         {
+          "left": "",
+          "right": ""
+         }
+        ],
+        "type": "left",
+        "nullsMatch": false,
+        "duplicateAudit": false
+       }
+      }
+     ],
+     "result": "j1"
+    },
+    "pass": true
+   },
+   "q3": {
+    "design": "B — das Modell ist maßgeblich, Vue Flow ist Ansicht",
+    "steps": [
+     {
+      "label": "nach dem Laden des Rezepts",
+      "ok": true,
+      "problems": []
+     },
+     {
+      "label": "nach dem Ziehen eines Steps mit der Maus",
+      "ok": true,
+      "problems": []
+     },
+     {
+      "label": "nach dem Hinzufügen eines Steps",
+      "ok": true,
+      "problems": []
+     },
+     {
+      "label": "nach Verbinden und Trennen",
+      "ok": true,
+      "problems": []
+     },
+     {
+      "label": "nach dem Löschen eines Steps mit Nachfolger",
+      "ok": true,
+      "problems": []
+     }
+    ],
+    "dragged": {
+     "modelMoved": true,
+     "modelPos": {
+      "x": 1022,
+      "y": 247
+     },
+     "drift": {
+      "ok": true,
+      "problems": []
+     }
+    },
+    "afterConnectDisconnect": {
+     "connected": {
+      "ok": true,
+      "problems": []
+     },
+     "disconnected": {
+      "ok": true,
+      "problems": []
+     }
+    },
+    "removal": {
+     "broken": [
+      {
+       "id": "f1",
+       "missing": [
+        {
+         "slot": 0,
+         "lostName": "Halbjahr"
+        }
+       ],
+       "underfilled": true,
+       "reason": "„Nur Bestand“ hat „Halbjahr“ verloren."
+      },
+      {
+       "id": "fil3",
+       "missing": [],
+       "underfilled": true,
+       "reason": "„Filter“ braucht 1 Eingänge, hat aber 0."
+      }
+     ],
+     "orphans": [
+      "q1",
+      "q2",
+      "fil3"
+     ],
+     "drift": {
+      "ok": true,
+      "problems": []
+     }
+    },
+    "dataset": {
+     "rows": 100000,
+     "frozen": true
+    },
+    "pass": true
+   }
+  }
+ }
+}

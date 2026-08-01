@@ -1,8 +1,9 @@
 # Spike: the Vue Flow Editor — four questions, one build
 
-**Status:** [ ] not started
+**Status:** [x] done, 2026-08-01 — all four questions pass in Chromium 151 and Firefox 153
 **Created:** 2026-08-01, after R6 and the project decision for Vue Flow 1.48.2
 **Kind:** spike, not research. The outcome is working code plus four answers, not a report.
+**Results:** `editor-vueflow-2026-08-01/findings.md` · code in `editor-vueflow-2026-08-01/app/`
 
 ---
 
@@ -119,6 +120,26 @@ One single-file build, opened from a real `file://` URL in Chromium and Firefox,
 
 After that the Editor stops being a risk and becomes a construction site, and the FR-28 spike —
 can a language model emit a valid Recipe from the documentation alone? — is unblocked.
+
+---
+
+## Outcome
+
+All four, in one single-file build of 247,987 B, from a real `file://` URL, in both engines, with no
+page errors and no requests beyond the document.
+
+1. **Q1 pass.** Anchors track variable-height bodies with an offset change of 0 px (Chromium) /
+   0.02 px (Firefox) across five height changes between −40.5 px and +81 px, including a newly
+   created handle carrying a new edge. Zero `updateNodeInternals` calls in the app.
+2. **Q2 pass.** Refused with a named reason on the pointer path, the programmatic path and the
+   Recipe loader. Sharper than expected: under `applyDefault: false`, `addEdges` cannot mutate at
+   all — it proposes a change nobody applies. R6 [M8] reconfirmed: it still runs no cycle check.
+3. **Q3 decided: design B**, the model is authoritative. Five drift checks clean in both engines.
+   The `:nodes` / `:edges` props turned out to be unusable for it — they are v-models.
+4. **Q4 pass.** Byte-identical round trip, 1,309 B for a six-Step graph, no cell values by
+   construction, seven named rejection classes, and `inputs: "u1"` as the linear shorthand.
+
+Full measurements and the rules that follow: `editor-vueflow-2026-08-01/findings.md`.
 
 ---
 
