@@ -1,0 +1,136 @@
+{
+  "null_join_attempts": {
+    "keys_array": [
+      {
+        "k": "a",
+        "v": 1,
+        "w": "A"
+      },
+      {
+        "k": null,
+        "v": 2
+      }
+    ],
+    "predicate_op_equal": [
+      {
+        "k_1": "a",
+        "v": 1,
+        "k_2": "a",
+        "w": "A"
+      },
+      {
+        "k_1": null,
+        "v": 2
+      }
+    ],
+    "predicate_explicit_null": [
+      {
+        "k_1": "a",
+        "v": 1,
+        "k_2": "a",
+        "w": "A"
+      },
+      {
+        "k_1": null,
+        "v": 2,
+        "k_2": null,
+        "w": "NULL-ROW"
+      }
+    ],
+    "sentinel_substitution": [
+      {
+        "k": "a",
+        "v": 1,
+        "w": "A"
+      },
+      {
+        "k": null,
+        "v": 2,
+        "w": "NULL-ROW"
+      }
+    ]
+  },
+  "german_numbers": {
+    "default": {
+      "rows": [
+        {
+          "kunde": "Alpha",
+          "a": 1.234,
+          "b": 1.234,
+          "c": "1.234,56",
+          "d": 1234
+        },
+        {
+          "kunde": "Beta",
+          "a": 2.5,
+          "b": 2.5,
+          "c": "2.500,00",
+          "d": 2500
+        }
+      ],
+      "types": [
+        "kunde:string",
+        "a:number",
+        "b:number",
+        "c:string",
+        "d:number"
+      ]
+    },
+    "autoType_false": {
+      "rows": [
+        {
+          "kunde": "Alpha",
+          "a": "1.234",
+          "b": "1.234",
+          "c": "1.234,56",
+          "d": "1234"
+        },
+        {
+          "kunde": "Beta",
+          "a": "2.500",
+          "b": "2.500",
+          "c": "2.500,00",
+          "d": "2500"
+        }
+      ],
+      "types": [
+        "kunde:string",
+        "a:string",
+        "b:string",
+        "c:string",
+        "d:string"
+      ]
+    },
+    "german_parser": {
+      "rows": [
+        {
+          "kunde": "Alpha",
+          "a": 1234,
+          "b": 1234,
+          "c": 1234.56,
+          "d": 1234
+        },
+        {
+          "kunde": "Beta",
+          "a": 2500,
+          "b": 2500,
+          "c": 2500,
+          "d": 2500
+        }
+      ]
+    }
+  },
+  "aq_from_preserves_strings": {
+    "values": [
+      {
+        "betrag": "1.234",
+        "datum": "31.12.2025"
+      },
+      {
+        "betrag": "2.500",
+        "datum": "01.01.2026"
+      }
+    ],
+    "type_of_first": "string"
+  }
+}

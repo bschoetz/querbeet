@@ -1,0 +1,191 @@
+{
+  "version": "8.0.3",
+  "concat": {
+    "result_columns": [
+      "id",
+      "betrag"
+    ],
+    "dropped_column_from_b": true,
+    "rows": [
+      {
+        "id": 1,
+        "betrag": 10
+      },
+      {
+        "id": 2,
+        "betrag": 20
+      },
+      {
+        "id": 3
+      }
+    ]
+  },
+  "concat_padded": {
+    "result_columns": [
+      "id",
+      "betrag",
+      "nur_in_b"
+    ],
+    "rows": [
+      {
+        "id": 1,
+        "betrag": 10,
+        "nur_in_b": null
+      },
+      {
+        "id": 2,
+        "betrag": 20,
+        "nur_in_b": "x"
+      },
+      {
+        "id": 3,
+        "betrag": null,
+        "nur_in_b": null
+      }
+    ]
+  },
+  "null_join": {
+    "default": [
+      {
+        "k": "a",
+        "v": 1,
+        "w": "A"
+      },
+      {
+        "k": null,
+        "v": 2
+      }
+    ],
+    "with_op_equal": [
+      {
+        "k_1": "a",
+        "v": 1,
+        "k_2": "a",
+        "w": "A"
+      },
+      {
+        "k_1": null,
+        "v": 2
+      }
+    ]
+  },
+  "duplicate_keys": {
+    "input_rows": 2,
+    "output_rows": 4,
+    "cartesian": true
+  },
+  "filter_from_config": {
+    "string_expression": [
+      {
+        "name": "Beta",
+        "betrag": 900,
+        "status": "bezahlt",
+        "notiz": "x"
+      },
+      {
+        "name": "Gamma",
+        "betrag": 500,
+        "status": "offen",
+        "notiz": ""
+      }
+    ],
+    "escaped": {
+      "status/eq": [
+        "Alpha",
+        "Gamma"
+      ],
+      "name/contains": [
+        "Gamma"
+      ],
+      "notiz/empty": [
+        "Alpha",
+        "Gamma"
+      ],
+      "notiz/notEmpty": [
+        "Beta"
+      ]
+    }
+  },
+  "derive_from_config": {
+    "viaString": [
+      {
+        "preis": 10,
+        "menge": 3,
+        "summe": 30
+      },
+      {
+        "preis": 5,
+        "menge": 4,
+        "summe": 20
+      }
+    ],
+    "viaEscape": [
+      {
+        "preis": 10,
+        "menge": 3,
+        "summe": 30
+      },
+      {
+        "preis": 5,
+        "menge": 4,
+        "summe": 20
+      }
+    ]
+  },
+  "join_type_runtime": {
+    "left_rows": 2,
+    "inner_rows": 1
+  },
+  "rollup_from_config": [
+    {
+      "g": "a",
+      "summe": 3,
+      "anzahl": 2,
+      "gueltig": 2
+    },
+    {
+      "g": "b",
+      "summe": 5,
+      "anzahl": 2,
+      "gueltig": 1
+    }
+  ],
+  "german_types": {
+    "autoType_default": [
+      {
+        "kunde": "Alpha",
+        "betrag": "1.234,56",
+        "datum": "31.12.2025"
+      },
+      {
+        "kunde": "Beta",
+        "betrag": "2.000,00",
+        "datum": "01.01.2026"
+      }
+    ],
+    "autoType_false": [
+      {
+        "kunde": "Alpha",
+        "betrag": "1.234,56",
+        "datum": "31.12.2025"
+      },
+      {
+        "kunde": "Beta",
+        "betrag": "2.000,00",
+        "datum": "01.01.2026"
+      }
+    ],
+    "custom_parse": [
+      {
+        "kunde": "Alpha",
+        "betrag": 1234.56,
+        "datum": "31.12.2025"
+      },
+      {
+        "kunde": "Beta",
+        "betrag": 2000,
+        "datum": "01.01.2026"
+      }
+    ]
+  }
+}

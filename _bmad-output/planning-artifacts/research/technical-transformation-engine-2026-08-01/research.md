@@ -9,12 +9,14 @@ shape: 'select'
 preset: 'standard'
 validation: 'normal'
 claims:
-  verified: 33
-  unverified: 6
-  disputed: 1
-  total: 40
+  verified: 66
+  unverified: 9
+  disputed: 2
+  total: 77
 created: '2026-08-01'
 updated: '2026-08-01'
+deepened: '2026-08-01 — Arquero slice (adoption, capabilities, type handling)'
+project_decision: 'Arquero — overrides the research recommendation, see the note below the executive summary'
 ---
 
 # Technical research: client-side transformation engine for querbeet
@@ -36,6 +38,16 @@ Third, **the dependency buys less than it appears to.** Union with column mappin
 **The biggest caveat:** hand-written code means owning every edge case forever — type coercion, null semantics, duplicate-key blow-up — and those are exactly where hand-rolled data code goes quietly wrong. The mitigation is cheap and specific, and it is recommendation R3 below: keep Arquero as a **development-time test oracle**, not a runtime dependency.
 
 Weighted decision matrix, runner-up conditions, and the case against this recommendation are in [Verdict](#verdict).
+
+> **Project decision (2026-08-01): querbeet will use Arquero, not hand-written functions.**
+> The project owner overrode this recommendation, reasoning that a complete, widely used
+> library is more battle-tested than freshly written bespoke code. That is a legitimate
+> reading of the same evidence — this report's own C5 criterion scores Arquero 5/5 against
+> hand-written 3/5, and the [case against the recommendation](#the-case-against-this-recommendation)
+> makes precisely that argument. The research verdict is left standing as research rather
+> than rewritten to match; the practical consequences of the decision are worked out in
+> [Deepening: adopting Arquero](#deepening-adopting-arquero), which also revises the
+> dormancy risk downward on new evidence.
 
 ---
 
@@ -293,6 +305,107 @@ Define every pipeline step as a pure function `(tables, config) => table` over p
 
 ---
 
+## Deepening: adopting Arquero
+
+Added 2026-08-01 after the project decision. Scope: Arquero only. Three research briefs plus five original probe scripts run against the **released 8.0.3 package** — not the `main` branch — which also settles the earlier "main may be ahead of the release" caveat for every behavior below. Probe scripts and raw output are in `imports/arquero-probe*.mjs` and the matching `-result.json` files [40].
+
+### What this changes about the risk assessment
+
+Two findings revise the dormancy risk **downward**, and they are the strongest support for the decision:
+
+**Adoption rose roughly tenfold during the dormancy.** Monthly npm downloads went 24,659 (Jan 2025) → 30,462 (Jul 2025) → 81,567 (Jan 2026) → 249,216 (Jul 2026), a smooth curve rather than a step [31]. The honest caveat: no identified dependent accounts for that volume, so some share is likely continuous-integration and mirror traffic — the *direction* is reliable, the absolute human-usage figure is not. GitHub records 399 dependent repositories and 57 dependent packages [32]. One negative result worth knowing, because it contradicts a natural assumption: **the Observable ecosystem does not use Arquero** — neither Observable Framework nor Observable Plot depends on it, and neither does UW IDL's own Mosaic [32].
+
+**Forking is cheap, and now measured rather than asserted.** 172 source files totalling 10,764 lines, a 63-file test suite of 9,020 lines, and `npm ci && npm test` passes clean on Node v26.5.0 — 392 tests in about one second. Two runtime dependencies, both current. Plain rollup with mocha, tape, eslint and tsc [34]. A BSD-3-Clause library that small, that well tested and that dependency-light is a realistic thing to maintain yourself if you ever have to.
+
+**The dormancy itself is better characterized than "finished versus abandoned".** Nothing anywhere declares the project complete. The maintainer's last thirty public GitHub events are entirely on Mosaic, and his own comment on issue #361 (2025-10-21) reads: "not something I have time to work on… If someone is interested in working on this, I'd be happy to help guide" [33]. He was still answering issues in late 2025. The 41 open issues skew toward feature requests, bundler friction and questions; genuine correctness reports are a small minority covering narrow edge cases [33].
+
+Does this overturn the verdict? **No, but it narrows the gap honestly.** On the original matrix Arquero scored 1/5 on C2 (ecosystem health). Measured fork cost and rising adoption justify raising that to 3/5, which moves Arquero from 68 to 76 against hand-written's 94. The recommendation would still have been hand-written; the decision to use Arquero buys maturity and API breadth at a cost the matrix prices mostly in C2 and C3, and that is a reasonable trade to make deliberately.
+
+### Driving the six operations from UI state
+
+This was the decisive capability question, and it is settled: **all six operations can be constructed from plain configuration objects**, verified by running them on 8.0.3 [40].
+
+The governing choice is `aq.escape()` versus parsed string expressions [35]. Use `escape()` wherever the **column name is runtime data** — filters and computed columns — because it applies an ordinary JavaScript closure with no code generation. Use parsed string expressions with `params()` for `rollup`, which `escape()` cannot host because it forbids aggregate and window functions.
+
+| Operation | Shape that works | Notes |
+|---|---|---|
+| Filter | `table.filter(aq.escape(d => OPS[cfg.op](d[cfg.column], cfg.value)))` with an operator dispatch table | Verified for equals, contains, is-empty and is-not-empty. Hand-roll the operators: `op.includes` is documented for arrays only, `op.indexof` is the string primitive, and `op.valid`/`op.invalid` are aggregates rather than row predicates [35] |
+| Computed column | `table.derive({[name]: aq.escape(d => d[cfg.left] * d[cfg.right])})` | `derive` also takes `{drop, before, after}` for placement. String expressions work too |
+| Join | `table.join_left(other, [[...leftKeys], [...rightKeys]])` | **Footgun:** a flat `['a','b']` is the left/right key *pair*, not two keys. Multi-key needs the nested form [35] |
+| Join type at runtime | `join_left` is `join` with `{left: true, right: false}`; options are exactly `{left, right, suffix}` | Verified switching type from config |
+| Select, rename, reorder | A single `select()` call accepting `{old: 'new'}` objects | `select` fixes output order, so all three collapse into one call |
+| Group-by | `table.groupby(cols).rollup(spec)` with `spec` assembled from config | Verified building the spec from a config array. `op.sum` ignores nulls, `op.count()` counts all rows, `op.valid()` counts non-null |
+
+### The three traps, with measured workarounds
+
+**1. `concat` silently drops columns.** Confirmed on 8.0.3: a column present only in an incoming table vanishes from the output with no warning, and a row missing a column yields that key *absent* from the emitted object rather than set to null [40]. There is no built-in full outer union; the documentation states plainly that only the receiving table's named columns appear. A second hazard sits in the same source: `if (trows === nrows) return table` returns the receiver unwidened when every other table is empty [35].
+
+The workaround, measured working: compute the union of all column names, pad each table with `derive` for its missing columns, force identical order with `select(allCols)`, then `concat`. Since querbeet's core use case *is* merging exports with differing column sets, this belongs in the application's union step permanently — not as a special case.
+
+**2. Null join keys never match, and the obvious fix is a performance trap.** Arquero's own test is named "does not treat null values as equal"; `null`, `undefined` and `NaN` all fail to match, and **no option overrides it** [39]. This definitively corrects an earlier claim in this report that `op.equal` fixes it — it does not, and it additionally renames the key columns [40].
+
+Two workarounds exist, and the choice between them matters enormously:
+
+| Workaround | Measured at 100k rows × 5k lookup, 8% null keys | Why |
+|---|---|---|
+| Sentinel substitution before joining | **30.8 ms** | Keeps the hash join, and preserves clean column names |
+| Custom predicate function | 73.6 ms at only 2k rows → **~3.7 s projected at 100k** | `src/verbs/join.js` selects `loopJoin` for a predicate, making it O(n·m) [39] |
+
+Sentinel substitution is roughly 120 times faster and is the only viable option [40]. For reference, the plain hash join that leaves nulls unmatched takes 43.3 ms, so the correct behavior is actually *cheaper* than the default.
+
+**3. Duplicate keys produce a Cartesian product.** Confirmed on 8.0.3: two left rows against two matching right rows yield four output rows [40]. `lookup()` is the row-count-safe alternative, keeping the last observed instance per key [35]. Warn the user whenever a join's output row count exceeds its input.
+
+### Type handling — the part that can silently corrupt reports
+
+This is the most important section for a German-language reporting tool, and it contains the deepening's sharpest finding.
+
+**Arquero's CSV type inference silently corrupts German numbers.** `aq.fromCSV` with default settings converts `"1.234"` — German for one thousand two hundred thirty-four — into the JavaScript number `1.234`, and `"2.500"` into `2.5`. Wrong by a factor of a thousand, with no error and no warning [40]. The value passes the numeric test because `+"1.234"` is a valid number. Arquero has a `decimal` option, but it only replaces the first occurrence and there is no thousands-separator support anywhere in 8.0.3 [36].
+
+**Worse, inference samples only the first 1,000 values.** `autoMax` defaults to 1000; Arquero picks a parser from that sample and then applies it to the entire column with no re-check [36]. Measured on a file of 1,000 plain integers followed by German-formatted values [40]:
+
+| Import mode | Row 1001 `"1.234,56"` | Row 1002 `"7.500"` | Column total |
+|---|---|---|---|
+| Default `autoType` | `null` — dropped | `7.5` — wrong by 1000× | **600,062.50 (wrong)** |
+| `autoMax` raised above row count | stays a string | stays a string | `null` — no arithmetic possible |
+| `autoType: false` | stays a string | stays a string | `null` — no arithmetic possible |
+| Explicit per-column `parse` function | `1234.56` ✓ | `7500` ✓ | **608,789.56 (correct)** |
+
+Note what the wrong total looks like: 600,062.50 is entirely plausible. Nothing about it signals a defect.
+
+**And the obvious detector does not catch it.** Comparing `op.count()` against `op.valid()` reveals values that became null — in the experiment above, 1003 versus 1002 — but it is blind to the factor-1000 corruption, because 7.5 is a perfectly valid number [40]. Count-versus-valid detects *dropped* values, never *mis-scaled* ones.
+
+**The rule that follows: always pass explicit per-column `parse` functions; never rely on inference.** A `parse[column]` function wins over everything, including `autoType: false` [36] — it is the supported hook. Two further details: in CSV, empty fields become `null` *before* parsing and parsers are skipped for null, whereas `fromJSON` calls the parser on every value including null, so JSON parsers must be null-safe [36]. And `aq.from(objects)` never coerces types at all, so if a dedicated CSV library does the parsing, this entire hazard class is bypassed — which is a real argument for pairing Arquero with PapaParse rather than using `fromCSV`. That question belongs to research-plan R3.
+
+On missing values generally: `src/util/null.js` exporting `NULL = undefined` describes what aggregates *emit* when nothing valid exists, not how input missings are stored — those are `null`. One predicate governs everything, `isValid(v) => v != null && v === v`, so `null`, `undefined` and `NaN` are indistinguishable to aggregation [37].
+
+### Export shaping
+
+Measured on 8.0.3 [40]: `toCSV({delimiter: ';', format: {…}})` with per-column format functions produces German-Excel-shaped output — `1234,56` and `31.12.2025` — and a full round trip back through `fromCSV` with matching per-column parsers reproduces the original numbers exactly. Quoting is correct for embedded semicolons, quotes and newlines, and umlauts survive.
+
+One gap the application must close itself: **Arquero writes no UTF-8 byte-order mark and uses LF line endings**, and offers no option for a BOM, CRLF, or locale [38]. German Excel needs the BOM to recognize UTF-8, so prepend the byte-order mark U+FEFF to the exported string before handing it to the download.
+
+### Distribution and pinning
+
+The published package ships `dist/arquero.js` (759,244 bytes) and `dist/arquero.min.js` (236,290 bytes), both UMD builds exposing a global `aq` — verified against the locally installed package. The `unpkg` and `jsdelivr` fields point at the minified build, while `main` and `module` point at `./src/index.js` with `type: module` and no `exports` map, so ESM-oriented CDNs serve raw source. Apache Arrow is deliberately excluded from the bundle [35].
+
+A plain `<script>` tag from a CDN therefore works with no build step, which satisfies the single-file constraint. **Pin `arquero@8.0.3` rather than `@latest`** — on current evidence there will be no further releases, so a floating tag buys nothing and risks everything [35].
+
+### Recommendations arising from this deepening
+
+**R7 — Wrap Arquero rather than calling it directly from the UI layer.** Every trap above is a wrapper's job: pad-then-concat for union, sentinel substitution for null keys, a row-count check after joins. Confidence: **high**, resting on measured behavior [40].
+
+**R8 — Never call `fromCSV` without explicit per-column `parse` functions.** Or avoid `fromCSV` altogether and feed Arquero via `aq.from(objects)` after parsing with a dedicated CSV library. Treat automatic type inference as unsafe for this application's data. Confidence: **high** [36][40]. *Feeds:* research-plan R3 and R5.
+
+**R9 — Use sentinel substitution for null join keys, never a predicate function.** The predicate form silently drops to an O(n·m) nested-loop join. Confidence: **high**, measured [39][40].
+
+**R10 — Pin `arquero@8.0.3` and vendor the `dist/arquero.min.js` build.** 236 KB inlined into the single HTML file removes the CDN dependency entirely and matches the offline requirement. Confidence: **high** [35].
+
+**R11 — Keep a fork plan on file rather than a fork.** 10,764 lines with 392 passing tests and two dependencies is a realistic thing to adopt if a blocking bug ever surfaces. Record this so the option is remembered rather than rediscovered under pressure. Confidence: **high**, measured [34].
+
+**R12 — Verify the Content-Security-Policy consequence before hardening the page.** Open issue #361 reports that Arquero requires `unsafe-eval` because of its dynamic function compilation [35]. Using `escape()` throughout may avoid it, but that is untested. Confidence: **medium** — this is a real open question, not a settled finding.
+
+---
+
 ## Source appendix
 
 | [n] | Supports | Publisher | Pub date | Accessed | Confidence |
@@ -324,6 +437,16 @@ Define every pipeline step as a pure function `(tables, config) => table` over p
 | [27] | Standalone HTML with base64-inlined WASM works offline | [Bun (Oven) docs](https://bun.com/docs/bundler/standalone-html) | undated (current) | 2026-08-01 | medium |
 | [28] | Web Worker creation and origin rules | [MDN](https://developer.mozilla.org/en-US/docs/Web/API/Web_Workers_API/Using_web_workers) | 2026-05-07 | 2026-08-01 | high |
 | [30] | **Original benchmark run for this decision**: all timings, memory, correctness fingerprints | This research run — `imports/bench.mjs`, `imports/bench-result.json` | 2026-08-01 | 2026-08-01 | high (measured), Node/V8 not browser |
+| [31] | Arquero npm download time series, Jan 2025 – Jul 2026 | [npm registry download API](https://api.npmjs.org/downloads/range/2025-01-01:2026-07-31/arquero) | 2026-08-01 | 2026-08-01 | high for the trend; **low for absolute human usage** (no dependent accounts for the volume; likely CI and mirror traffic) |
+| [32] | 399 dependent repositories, 57 dependent packages; Observable ecosystem does *not* depend on Arquero | [GitHub dependency graph, uwdata/arquero](https://github.com/uwdata/arquero/network/dependents) | 2026-08-01 | 2026-08-01 | high |
+| [33] | Maintainer attention has moved to Mosaic; issue #361 comment "not something I have time to work on"; open-issue composition | [uwdata/arquero issue #361](https://github.com/uwdata/arquero/issues/361) | 2025-10-21 | 2026-08-01 | high |
+| [34] | Fork cost measured: 172 src files / 10,764 LOC, 63 test files / 9,020 LOC, 392 tests pass on Node v26.5.0, two runtime dependencies | [uwdata/arquero](https://github.com/uwdata/arquero) — `npm ci && npm test` run this session | 2026-08-01 | 2026-08-01 | high (executed, not inferred) |
+| [35] | Verb inventory, `escape()` versus parsed expressions, join key-pair footgun, `concat` source, `lookup()`, CSP issue #361, UMD dist and package fields | [Arquero API documentation](https://idl.uw.edu/arquero/api/) and the v8.0.3-tagged source | undated (v8.0.3) | 2026-08-01 | high |
+| [36] | `autoType` / `autoMax` (default 1000) / `parse` precedence; `decimal` replaces only the first occurrence; CSV-versus-JSON null asymmetry | [uwdata/arquero `src/format/stream/parse-text-rows.js`](https://github.com/uwdata/arquero/blob/v8.0.3/src/format/stream/parse-text-rows.js) and `src/util/parse-values.js` | v8.0.3 tag | 2026-08-01 | high |
+| [37] | `NULL = undefined` is what aggregates emit; `isValid(v) => v != null && v === v`; count/valid/invalid/distinct semantics | [uwdata/arquero `src/util/null.js`](https://github.com/uwdata/arquero/blob/v8.0.3/src/util/null.js) | v8.0.3 tag | 2026-08-01 | high |
+| [38] | `toCSV` options and formatting; no BOM, CRLF or locale option | [uwdata/arquero `src/format/to-csv.js`](https://github.com/uwdata/arquero/blob/v8.0.3/src/format/to-csv.js) | v8.0.3 tag | 2026-08-01 | high |
+| [39] | `hashJoin` versus `loopJoin` selection; the test named "does not treat null values as equal"; no option overrides it | [uwdata/arquero `src/verbs/join.js`](https://github.com/uwdata/arquero/blob/v8.0.3/src/verbs/join.js) and its tests | v8.0.3 tag | 2026-08-01 | high |
+| [40] | **Original Arquero probes run for this deepening**: config-driven operations, concat drop, null-join workarounds and their cost, `autoMax` corruption, German CSV round trip | This research run — `imports/arquero-probe*.mjs` and matching `-result.json` | 2026-08-01 | 2026-08-01 | high (measured against the released 8.0.3 package), Node/V8 not browser |
 
 ---
 

@@ -1,0 +1,36 @@
+{
+  "default_toCSV": "kunde,betrag,menge,notiz,datum\nMüller GmbH,1234.56,7500,,2025-12-31\nSchmidt; Co,-8.5,12,\"mit \"\"Zitat\"\"\",2026-01-01\n\"Zeilen\numbruch\",0,0,,\n",
+  "semicolon": "kunde;betrag;menge;notiz;datum\nMüller GmbH;1234.56;7500;;2025-12-31\n\"Schmidt; Co\";-8.5;12;\"mit \"\"Zitat\"\"\";2026-01-01\n\"Zeilen\numbruch\";0;0;;\n",
+  "german_excel": "kunde;betrag;menge;notiz;datum\nMüller GmbH;1234,56;7500;;31.12.2025\n\"Schmidt; Co\";-8,5;12;\"mit \"\"Zitat\"\"\";01.01.2026\n\"Zeilen\numbruch\";0;0;;\n",
+  "round_trip": {
+    "rows": [
+      {
+        "kunde": "Müller GmbH",
+        "betrag": 1234.56,
+        "menge": 7500,
+        "notiz": null,
+        "datum": "31.12.2025"
+      },
+      {
+        "kunde": "Schmidt; Co",
+        "betrag": -8.5,
+        "menge": 12,
+        "notiz": "mit \"Zitat\"",
+        "datum": "01.01.2026"
+      },
+      {
+        "kunde": "Zeilen\numbruch",
+        "betrag": 0,
+        "menge": 0,
+        "notiz": null,
+        "datum": null
+      }
+    ],
+    "betrag_matches": true,
+    "menge_matches": true
+  },
+  "notes": {
+    "has_bom": false,
+    "line_ending": "LF"
+  }
+}

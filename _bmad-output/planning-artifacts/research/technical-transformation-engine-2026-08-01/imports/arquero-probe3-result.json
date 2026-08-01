@@ -1,0 +1,94 @@
+{
+  "default_autoType": {
+    "total_rows": 1003,
+    "type_of_early_value": "number",
+    "late_rows": [
+      {
+        "id": 9001,
+        "betrag": null
+      },
+      {
+        "id": 9002,
+        "betrag": 7.5
+      },
+      {
+        "id": 9003,
+        "betrag": 555
+      }
+    ],
+    "count_vs_valid": {
+      "count": 1003,
+      "valid": 1002
+    },
+    "sum": 600062.5
+  },
+  "autoMax_raised": {
+    "total_rows": 1003,
+    "type_of_early_value": "string",
+    "late_rows": [
+      {
+        "id": 9001,
+        "betrag": "1.234,56"
+      },
+      {
+        "id": 9002,
+        "betrag": "7.500"
+      },
+      {
+        "id": 9003,
+        "betrag": "555"
+      }
+    ],
+    "count_vs_valid": {
+      "count": 1003,
+      "valid": 1003
+    },
+    "sum": null
+  },
+  "autoType_false": {
+    "total_rows": 1003,
+    "type_of_early_value": "string",
+    "late_rows": [
+      {
+        "id": "9001",
+        "betrag": "1.234,56"
+      },
+      {
+        "id": "9002",
+        "betrag": "7.500"
+      },
+      {
+        "id": "9003",
+        "betrag": "555"
+      }
+    ],
+    "count_vs_valid": {
+      "count": 1003,
+      "valid": 1003
+    },
+    "sum": null
+  },
+  "explicit_parser": {
+    "total_rows": 1003,
+    "type_of_early_value": "number",
+    "late_rows": [
+      {
+        "id": 9001,
+        "betrag": 1234.56
+      },
+      {
+        "id": 9002,
+        "betrag": 7500
+      },
+      {
+        "id": 9003,
+        "betrag": 555
+      }
+    ],
+    "count_vs_valid": {
+      "count": 1003,
+      "valid": 1003
+    },
+    "sum": 608789.56
+  }
+}

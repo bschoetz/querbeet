@@ -1,0 +1,32 @@
+{
+  "n_main": 100000,
+  "n_lookup": 5000,
+  "results": [
+    {
+      "label": "hash_join_keys_nulls_unmatched",
+      "ms": 43.8,
+      "err": null,
+      "rows": 100000,
+      "over_budget": false
+    },
+    {
+      "label": "sentinel_then_hash_join",
+      "ms": 30.7,
+      "err": null,
+      "rows": 100000,
+      "over_budget": false
+    },
+    {
+      "label": "predicate_join_2k_rows",
+      "ms": 71.4,
+      "err": null,
+      "rows": 2000,
+      "over_budget": false
+    },
+    {
+      "label": "predicate_join_100k_PROJECTED",
+      "ms": 3570,
+      "note": "extrapolated from the 2k measurement assuming O(n*m); not executed"
+    }
+  ]
+}

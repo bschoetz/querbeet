@@ -18,13 +18,29 @@ Constraints that apply to every research question (from `idea.md`, section 3 –
 **Status:** [x] done (deep-recon, type technical, shape select, 2026-08-01)
 **Report:** `_bmad-output/planning-artifacts/research/technical-transformation-engine-2026-08-01/research.md`
 
-**Verdict: hand-written array functions — no engine dependency** (94/100 on the weighted
-matrix). Runner-up Arquero (68), which wins only if the feature set grows well past the
-six operations; it is dormant since 2025-05-29 and is recommended as a development-time
-test oracle instead. AlaSQL is rejected: a measured 25.2 s two-key join at 100k rows
-(Arquero: 95 ms) plus documented, still-open silent-wrong-answer join bugs — this
-overturns the proposal in `idea.md` section 4. DuckDB-WASM fails hard gate G2 on size
-(~8 MB gzip, ~50 MB inlined into one HTML file), not on capability.
+**Research verdict: hand-written array functions — no engine dependency** (94/100 on the
+weighted matrix). Runner-up Arquero (68). AlaSQL is rejected: a measured 25.2 s two-key
+join at 100k rows (Arquero: 95 ms) plus documented, still-open silent-wrong-answer join
+bugs — this overturns the proposal in `idea.md` section 4. DuckDB-WASM fails hard gate G2
+on size (~8 MB gzip, ~50 MB inlined into one HTML file), not on capability.
+
+**PROJECT DECISION: Arquero** — overrides the research recommendation. Rationale: a
+complete, widely used library is more battle-tested than freshly written bespoke code.
+A follow-up deepening (same run folder, section "Deepening: adopting Arquero") revised
+the dormancy risk downward: npm downloads grew roughly tenfold *during* the dormancy, and
+forking is cheap and measured — 10,764 lines of source, 392 tests passing on Node 26, two
+runtime dependencies. Arquero's C2 score rises from 1/5 to 3/5, moving it 68 → 76. Still
+below 94, so the recommendation stands as research, but the trade is a reasonable one
+made deliberately.
+
+**Three traps the implementation must handle** (all measured against released 8.0.3):
+`concat` silently drops columns unique to incoming tables — pad every table to the union
+of column names first; null join keys never match and no option changes that — use
+sentinel substitution (30.8 ms), never a predicate function (~3.7 s projected, drops to a
+nested-loop join); duplicate keys produce a Cartesian product. And critically,
+`fromCSV`'s default type inference **silently corrupts German numbers** — `1.234` becomes
+1.234 instead of 1234 — while sampling only the first 1000 rows, so always pass explicit
+per-column `parse` functions or feed Arquero via `aq.from()` after parsing elsewhere.
 
 Key evidence: an original benchmark run for this decision (100k rows x 20 cols joined
 against a 5k lookup) is preserved in the run folder's `imports/`. Plain JavaScript
