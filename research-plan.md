@@ -797,6 +797,12 @@ whose every node has one input — so a model asked for something simple can ans
 > question:** can a model produce one from the documentation alone? That needs the format
 > documentation written as a prompt block (FR-27) and an independent model, not the one that
 > designed the format. Nothing blocks it now.
+>
+> **Now fully done 2026-08-01** (`spikes/recipe-llm-authorship-2026-08-01/`): **yes.** Five
+> independent cold runs by Gemini and Sonnet 5 against the FR-27 block alone — all five loaded on
+> the first round, none needed a correction, and the run given no Pipeline at all still found the
+> differently-spelled column by comparing Profiles. The rejection classes grew from seven to
+> thirteen. Details and the two named limits are in the entry at the end of this file.
 
 **Also settles PRD Open Question 4:** R2 chose Vue 3 on the criterion of authoring *a list of
 heterogeneous step kinds*. That criterion is now a graph editor. R2's verdict may well
@@ -974,9 +980,16 @@ portable file, from a `file://` page?
 8. **R9's remainder** – package container and storage cost.
 
 **Outside this numbering, because it is a spike rather than research: the FR-28 Recipe-authorship
-spike.** Unblocked since 2026-08-01 — the format exists, round-trips, and rejects malformed input
-with named reasons. It belongs *early* rather than in sequence: a failure changes the Recipe format,
-and the Editor, the Package, the Pre-flight Check and the FR-27 prompt block all inherit that change.
-Running it after more is built on the format is the expensive ordering. It also needs an independent
-model, since the format's author cannot be the one that validates whether the documentation stands
-on its own.
+spike.** ~~Unblocked since 2026-08-01.~~ **Done 2026-08-01**
+(`spikes/recipe-llm-authorship-2026-08-01/`) — and it passed, including the half that mattered.
+The format documents in 6,734 B of plain text; a full FR-27 block is 10,938 B. **Five independent
+cold runs by Gemini and Sonnet 5, no repository access, all five loaded on the first round and not
+one needed a correction.** The hardest run got no Pipeline and no Column Annotations — just four
+files and a question — and still found the differently-spelled column by comparing Profiles, named
+it unasked, and built the same graph as everyone else. Thirteen defect classes are each refused by a
+message naming the defect. **This closes PRD Open Question 3.**
+
+Two limits are named in the findings and are not closed: one of the two assistants shares the
+authoring session's vendor, and **no run ever produced a refusal, so FR-28's paste-the-error-back
+loop is still unexercised.** The spike also fed R5 a decision it did not have — five authors
+disagreed about whether a Filter's comparison value is a string or a number — recorded in R5 above.
