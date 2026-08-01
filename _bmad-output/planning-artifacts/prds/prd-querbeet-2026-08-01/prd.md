@@ -394,6 +394,10 @@ The user can export a Recipe bundled with the data of its Sources as a single co
 - A Package is visibly distinct from a Recipe — different extension and an unmistakable indication in the UI that it contains data.
 - Exporting a Package states the resulting file size before writing it.
 - A Package that cannot be read — truncated, wrong version, corrupted — fails with a named reason and imports nothing, rather than importing a Recipe without its data.
+- An imported Package and a persisted session (FR-25) do not collide. Because the `file://` origin
+  supplies no discriminator — every local page shares one storage bucket, measured in R9 — the
+  discriminator has to live in the database or key name, and it has to be there from the first
+  version rather than retrofitted once two things are already stored under one key.
 
 #### FR-25: Persist the session, and make deleting it easy
 
@@ -404,6 +408,31 @@ The current Recipe and the loaded Source data survive closing and reopening the 
 - The UI states plainly and persistently that data is stored in this browser.
 - A single, discoverable action deletes all stored data; after it, reopening the tool starts empty.
 - Deleting stored data does not require deleting the Recipe, and deleting the Recipe does not require deleting the data.
+
+**Measured constraint — the storage is shared, not private to this file.** Research R9 confirmed
+IndexedDB works from `file://` in both engines and survives a browser restart, so this requirement
+is buildable as written. It also measured something the requirement did not anticipate: **a
+`file://` page has an opaque origin, and every local page shares one storage bucket.** A page in a
+*different directory*, opened by its own `file://` URL, read back a full 100,000-row Source written
+by another directory's page — in Chromium 151 and Firefox 153 alike. This cannot be fixed from
+inside querbeet; it is what an opaque origin means.
+
+Three consequences follow, and the first two are user-visible:
+
+- **Two copies of `querbeet.html` on one machine share one stored session.** Opening the second
+  copy shows the first copy's Recipe and data. Copying the file is the expected way to distribute
+  this tool, so this will happen.
+- **Any other local HTML file the user opens can read querbeet's stored data, and querbeet can read
+  theirs.** See the qualification added to NFR-8.
+- **The one-action delete clears the shared store**, not "this file's" store.
+
+**Additional consequences (testable):**
+- The statement that data is stored in this browser says *what that means*: readable by other local
+  pages, shared between copies of the tool, and removable by the browser without warning — storage
+  cannot be made persistent from `file://` in either engine, so it is best-effort by construction.
+- A restored session that is incomplete is reported as incomplete rather than presented as whole.
+- Startup never blocks on `navigator.storage.persist()`. R9 measured it never settling in Firefox
+  from `file://`, which deadlocked its own probe for 180 seconds before the first byte was stored.
 
 ### 4.4 LLM Assistance
 
@@ -559,7 +588,7 @@ The user can export the Result and Dashboard as a self-contained document to han
 - **NFR-5 — Form factor.** Desktop only, designed for Full HD. Mobile and tablet layouts are not supported and not attempted.
 - **NFR-6 — Language.** The interface is German. Code, comments, and project documents are English.
 - **NFR-7 — Accessibility.** No WCAG conformance level is targeted and no accessibility testing is required. Semantic markup and ARIA attributes are welcome where they are free. One rule is not optional, because it is a correctness rule rather than an accessibility one: **no interaction may exist only as a pointer gesture.** Drag-and-drop is permitted and encouraged for file input, Step arrangement and tile ordering — implemented as a gesture that computes a target and updates the underlying model, never as a library that reorders DOM nodes itself, which is the documented cause of a list fighting its own framework. Every such action also has a keyboard-reachable path.
-- **NFR-8 — Data residence.** Cell values leave the browser only through an export the user triggered, or through an LLM disclosure the user saw and confirmed before copying it. There is no other path out.
+- **NFR-8 — Data residence.** Cell values leave the browser only through an export the user triggered, or through an LLM disclosure the user saw and confirmed before copying it. There is no other path out. **Qualified 2026-08-01 by measurement (R9):** this holds for leaving the *browser*, but not for leaving *querbeet*. Data persisted under FR-25 sits in the shared `file://` storage bucket, where any other local HTML page the user opens can read it — measured across directories in both engines. Nothing leaves the machine, and the guarantee above is unchanged; what is not guaranteed is isolation from other local pages, and the UI must not imply otherwise.
 
 ## 5. Non-Goals (Explicit)
 
