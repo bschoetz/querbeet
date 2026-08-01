@@ -4,7 +4,9 @@ Material that belongs to a downstream document — architecture, solution design
 
 ## 1. Settled technology decisions
 
-All four decisions below come from completed research runs in `_bmad-output/planning-artifacts/research/`. They are inputs to this PRD, not outputs of it, and they are not re-litigated here.
+Every decision below comes from a completed research run in `_bmad-output/planning-artifacts/research/`. They are inputs to this PRD, not outputs of it, and they are not re-litigated here.
+
+**Currency:** this table tracks R1 through R7 and R9. Four of its rows record a **project decision that overrode the research verdict** — Arquero, the Vite build path, Vue Flow and ECharts — and each says so in its own row, because a reader who finds only the pick would otherwise assume the research chose it. **R5 (type and locale detection) was still running when this was last revised**, so no parsing or locale row exists yet; R8 (view document export) has not run.
 
 | Concern | Decision | Source |
 | --- | --- | --- |
@@ -20,7 +22,9 @@ All four decisions below come from completed research runs in `_bmad-output/plan
 | Parquet write | **`hyparquet-writer` 0.16.3**, Snappy default | R3. Round-trip verified against pyarrow 25, DuckDB 1.5.5 and Polars 1.43.2. |
 | Parquet read | **`hyparquet` 1.27.1** — the writer's own dependency | R3 measured the pair at 33,439 bytes gzipped together, against 17,239 for the writer alone, so reading costs about 16 KB on top. Same authors, zero dependencies, MIT, and the better-established of the two (842 stars against 59). Added when Parquet import entered scope. |
 | Table rendering | **Hand-rolled fixed-height row windowing**, ~50-row window; no column virtualization | R4 D1. 94 vs 92 for TanStack Virtual — close enough that adopting the library instead is a reasonable deliberate trade. |
-| Graph Editor | **Unresearched** | No research run covers node-graph editors against this project's constraints. See §7. |
+| Graph Editor | **Vue Flow 1.48.2** | R6 — *node-graph pipeline editor*. **Overrides** the research verdict, which scored a hand-built SVG canvas at 85 against Vue Flow's 75, on the same reasoning that decided R1. MIT with no paid tier and no runtime key, verified in the shipped LICENSE. Two findings become mandatory work rather than observations: the cycle check must sit *in front of* Vue Flow's mutation API, whose bundle contains no cycle detection at all, and the app's model owns the truth because Vue Flow copies the nodes it is handed. §7 records what the follow-up spike then measured. |
+| Charts | **Apache ECharts 6.1.0, SVG renderer only** | R7 — *charts and dashboard rendering*. **Overrides** the research verdict, which scored hand-written SVG at 93 against ECharts' 84 — a margin carried entirely by footprint, the one criterion R2 and R6 each ruled out; without it the two tie at 92 to 91. Apache-2.0. Decided on battle-testedness, and the edge-case tripwire then confirmed it: eight cases, both engines, no throw and zero `NaN` in any serialized SVG. The renderer choice is not cosmetic — see §2. |
+| Session persistence | **IndexedDB**, no library | R9 — *browser persistence*. Works from `file://` in both engines and survives a browser restart, so FR-25 is buildable as written. Storage costs about a tenth of the heap: 100k × 20 rows occupy 8.9 MB stored against ~94 MB live. One consequence reaches NFR-8 and is recorded there — the `file://` origin is a single shared bucket, so any other local HTML page can read querbeet's stored data. |
 
 ## 2. Consequences that shape the build
 
@@ -30,7 +34,13 @@ All four decisions below come from completed research runs in `_bmad-output/plan
 
 **Workers must be classic scripts from a blob URL.** Measured as the only form that works from `file://` in both Chromium and Firefox. Vite's idiomatic `new Worker(new URL(...), {type:'module'})` emits a separate chunk, silently breaks the single-file build, and fails at runtime with no build-time signal. Import every worker as `?worker&inline`, set `worker.format = 'iife'`, and assert after every build that `dist/` contains exactly one file.
 
-**The only operation that genuinely needs a worker is XLSX export.** Measured at ~3.3 s for 100k rows, against 273 ms for Parquet and 10.5 ms for the full transformation pipeline. That single number is why FR-36 requires progress and a responsive interface during export.
+**Both exports belong in a worker, and nothing else does.** R3's figures were Node and understated the browser badly; R4 re-measured from `file://`. XLSX export costs **4,943.8 ms (Chromium) / 5,805 ms (Firefox)** at 100k rows and **26,269.7 / 30,558 ms at half a million** — it does not scale linearly. Parquet costs 1,553.6 / 801 ms at 100k and 9,717 / 4,369 ms at 500k, with Firefox roughly twice as fast as Chromium on that path. Across eight main-versus-worker pairs a worker removes 88–98 % of the block for between −0.9 % and +18.8 % elapsed time, so both exports move off-thread. This is why FR-36 requires progress and a responsive interface.
+
+**Never move a dataset to a worker in order to compute on it.** The transfer is the cost, not the work: a structured clone of 100,000 rows blocks the sender for 109.4 ms (Chromium) / 132 ms (Firefox) and 510.8 / 627 ms at half a million, against 263–446 ms for the entire Arquero pipeline. If a worker needs data it should receive it once and keep it. Arquero column arrays are ~30 % cheaper to send than frozen row objects but the full round trip is *worse*, so the columnar intuition is only half right.
+
+**There is no shared cancellation flag on this platform, and the API surface says otherwise.** `SharedArrayBuffer` is hidden from `file://` in both engines, and the documented `WebAssembly.Memory({shared:true})` escape hatch yields one that neither engine will post. A `typeof` check concludes the opposite of the truth. Cancel through the message queue instead: latency is 3.0 / 2 ms at ~5 ms chunks, and progress is effectively free at ~2.6 % overhead.
+
+**The chart renderer choice is load-bearing, and two tile settings come with it.** Register ECharts' `SVGRenderer` and nothing else: in canvas mode `getDataURL({type:'svg'})` returns a PNG silently, with no error, so registering both renderers makes it possible for an export to degrade from vector to raster undetected. The reason SVG matters is FR-37 — measured, an SVG chart enters a printed PDF as vector plus selectable text while a canvas chart enters as a raster bounded by the screen's `devicePixelRatio`. Beyond that, **every tile needs a long-label strategy** (`axisLabel.width` with `overflow`, or a shortening formatter, which querbeet owns anyway since the tick formatter is application-supplied) because a 60-character category label escapes the SVG by 15–21 px, and **`barMaxWidth` must be set** or a single-category tile renders as a 237 px slab in a 346 px plot. ECharts does not observe its container either, so a tile size change must call `resize()`.
 
 **Nothing may be fetched at runtime.** A `file://` page has an opaque origin; anything that fetches fails CORS. No sibling config file, no lazy chunk, no CDN link, no external font or stylesheet. Data enters only through file input or drag-and-drop.
 
@@ -39,7 +49,7 @@ All four decisions below come from completed research runs in `_bmad-output/plan
 R1's deepening measured these against the released 8.0.3. Each maps to a PRD requirement; the mechanism belongs here.
 
 - **`concat` silently drops columns** present only in incoming tables — precisely querbeet's core use case. Workaround, measured working: compute the union of all column names, pad each table via `derive`, force order with `select`, then `concat`. This is FR-13's *"never dropped silently"* clause.
-- **Null join keys never match and no option overrides it.** Two workarounds exist and the choice matters enormously: sentinel substitution before joining costs 30.8 ms at 100k rows; a custom predicate function drops Arquero to an O(n·m) loop join, projected at ~3.7 s. Use sentinels. This is FR-14's explicit null-handling setting.
+- **Null join keys never match and no option overrides it.** Two workarounds exist and the choice matters enormously: sentinel substitution before joining costs 30.8 ms at 100k rows; a custom predicate function drops Arquero to an O(n·m) loop join, projected at ~3.7 s. Use sentinels — **but only against a lookup whose keys are unique.** R4's Checkpoint D2-a measured the other case: when *both* sides carry nulls in the key column, which a graph makes easy since two branches of one Source inherit its nulls, every sentinel row matches every sentinel row and the output grows quadratically in the null count. 28,000 source rows produced **2,687,670 join rows**; at 100,000 it crashed the tab. Null keys silently *dropped* rows, and the sentinel silently *multiplies* them, which is worse. Either exclude sentinel rows from the join and re-attach them afterwards, give each side a distinct sentinel so they cannot match, or refuse the join — and a Join Step must warn when both inputs carry nulls in the key column, which is a UX requirement and not only an implementation detail. This is FR-14's explicit null-handling setting.
 - **Duplicate keys produce a Cartesian product.** `lookup()` is the row-count-safe alternative. This is FR-14's row-count warning, and the optional duplicate audit in the same FR is what turns the heuristic into a count.
 - **Never call `fromCSV`.** Its type inference converts German `"1.234"` to 1.234 and samples only the first 1,000 values before applying a parser to the whole column. Feed Arquero via `aq.from(objects)` after PapaParse has done the parsing, and own the locale-aware number parser. This is FR-9 — and note that FR-9 requires more than a German parser: Sources in different locales may sit side by side in one session.
 - **`toCSV` writes no BOM and uses LF.** Prepend U+FEFF for German Excel. This is FR-36.
@@ -78,14 +88,67 @@ R1's deepening measured these against the released 8.0.3. Each maps to a PRD req
 
 **Drag-and-drop.** The first draft banned drag reordering outright, on a misreading of the research. The finding is narrower: the documented failure is a *library that mutates DOM order* while the framework diffs the same list — two sources of truth, and the list fights itself. Native drag events that compute a target index and update the model are fine, because the framework then re-renders from a single truth. What remains binding is that no interaction may exist *only* as a pointer gesture, which is a correctness rule about keyboard reachability rather than an accessibility target.
 
-## 7. The graph Editor: what is not known
+## 7. The graph Editor: what was measured
 
-This is the one component in the stack with no research behind it, and it arrived after the four research runs had concluded. Recording the shape of the gap so it is not rediscovered later.
+*Rewritten 2026-08-01. This section previously recorded the shape of a gap — "nothing has been
+screened" — and that is no longer true: R6 screened the field, the project chose Vue Flow, and a
+follow-up spike built and measured the Editor. What follows is what is known; the open items are at
+the end and are shorter than the list they replace.*
 
-**Nothing has been screened.** The obvious candidates — Vue Flow, Rete.js, Drawflow, Litegraph, or a hand-built SVG canvas — have not been checked against a single one of this project's gates. The gates are known and are the same ones that cut half the field in R2 and R4: it must inline into one HTML file with nothing fetched at runtime (no `import()`, no external CSS, no web font, no worker chunk); it must be Vue 3 first-class rather than a stale community wrapper; it must be permissively licensed with no runtime key, which R4 showed is not a stable property — PrimeVue relicensed mid-flight; and it must not deep-watch or otherwise take ownership of data structures that must stay frozen.
+**All three finalists were built as real single-file artefacts and opened from `file://`.** Vue Flow
+1.48.2, BaklavaJS 2.8.1 and a hand-built canvas each build to exactly one HTML file (175,233 /
+73,532 / 224,382 B), contain zero occurrences of `import(`, `fetch(`, `new Worker`, `@font-face` or a
+non-`data:` `url()`, and issue zero network requests beyond the document in Chromium 151 and Firefox
+153. **The gate that shaped this whole plan separated nothing** — the lazy-loading hazard is real in
+the field (`@maxgraph/core` fetches four `.gif` files by relative URL) but absent among the
+finalists.
 
-**The scale question is different from R4's.** A graph canvas holds tens of nodes, not a hundred thousand rows, so rendering cost is not the concern. The concern is the interaction surface: connection dragging, hit testing, auto-layout, pan and zoom, and undo. That is where a hand-built canvas stops being a weekend and starts being a component — the opposite of the calculus in R4, where hand-rolling won precisely because the need was small and exactly known.
+**The ownership question settles in everyone's favour, and it settles by a mechanism worth knowing.**
+A frozen 100,000 × 20 table placed by reference in node data comes back out of each library's own
+state with identity preserved, `isReactive` false, and both array and rows still frozen. **Vue's
+reactivity skips non-extensible objects, so `Object.freeze` is itself the protection** — Vue Flow's
+`markRaw` advice does not apply to a frozen payload, and §2's existing freeze rule already covers it.
+The editor costs 0.32–2.76 MB of heap against ~94 MB for one Source table, so footprint cannot
+decide this.
 
-**Two constraints from elsewhere in this document apply and are easy to overlook.** The frozen-data rule means the graph library may hold the Pipeline structure but must never hold or watch the tables; keeping the Pipeline model framework-free (§5) already enforces the seam, provided the editor is a view over that model rather than its owner. And nothing may be fetched at runtime, which rules out any component that lazy-loads its own icons, styles or layout engine — a failure that shows up only when the built file is opened from `file://`, never at development time.
+**Two things the chosen library does not do, both now mandatory implementation work.** Vue Flow's
+published bundle contains **no cycle detection whatsoever** — zero occurrences of `cycle`, `acyclic`
+or `topological` — and `addEdges` created a cycle on a three-node chain without complaint. FR-12
+requires refusal with a named reason, so the check sits *in front of* the mutation API, and the
+unguarded path is the programmatic one that both a Recipe loader and an LLM-authored Recipe use. And
+Vue Flow **copies the node objects it is handed**, so the app must decide which side owns the truth.
 
-**The cheapest de-risking is the same move R2 and R4 both made:** build the thing that decides it. Three node kinds, one connection, one frozen table flowing through, built once and opened from a real `file://` URL. That answers the framework question (PRD Open Question 4) and the editor question (Open Question 2) in the same afternoon, and it is the only evidence that will actually settle either.
+**The spike then built it and answered four questions** (`spikes/editor-vueflow-2026-08-01/`). The
+variable-height tripwire — React Flow #3270 and Vue Flow #174 are the same asynchronous-DOM-geometry
+failure in two independent codebases — **passes: anchors drift 0 px in Chromium and 0.02 px in
+Firefox across five runtime height changes.** The cycle guard refuses on the pointer path, the
+programmatic path and the Recipe loader. **Design B is authoritative:** `applyDefault: false`, the
+model owns state, and the projection is pushed with `setNodes`/`setEdges` from one watcher. The
+Recipe round-trips byte-identically at 1,309 B for a six-Step graph, with seven rejection classes
+each naming its defect specifically enough to paste back to a model.
+
+**Datasets never enter the graph model.** Tables live in a `shallowRef` registry keyed by Source id,
+outside the graph; the graph itself is small and deeply reactive. R4 confirmed this is also where a
+per-Step result cache belongs.
+
+**NFR-7 is better than assumed, and the cost claim inverted.** Nine of eleven Editor interactions are
+keyboard-reachable in both engines — reaching the canvas, selecting, multi-selecting, moving (5 px
+per arrow, 20 px with Shift), adding a Step, designating the Result Step, editing configuration,
+deleting, and focus returning to the canvas. **Connecting two Steps is the one gap**, and it waits on
+a UX decision rather than on anything technical, since `connectOnClick` is already on and its click
+path ends in the same guarded door as the drag. Vue Flow ships `nodesFocusable`, `edgesFocusable`,
+`tabIndex: 0`, arrow-key movement and an `aria-live` region — all of which the hand-built path would
+have had to write. The two fixes this needed were four and fifteen lines.
+
+**There is no Editor/table contention**, measured against a real build with a virtualized table pane
+beside the canvas: the 50-row window swap costs 2.9–3.1 ms (Chromium) / 4–5 ms (Firefox) identically
+at 6 and at 30 Steps, idle and during real pointer drags, and **not one frame exceeded 50 ms across
+2,800 swaps** in either engine. The per-node `ResizeObserver` is real and cheap — resizing all 30
+node bodies at once costs 32.2 / 33 ms once, not per frame.
+
+**What is still not known.** Vue Flow ships no auto-layout and no undo/redo, and neither does any
+alternative screened — Baklava does ship undo/redo, clipboard, subgraphs and a topological sort, so
+if those become requirements it is the fallback rather than the hand-built canvas. Keyboard
+*connecting* is unresolved and is a UX decision. And the hedge stands: the graph model stays free of
+both the canvas and any library, which is now the exit *from* Vue Flow rather than an argument
+against adopting it.
