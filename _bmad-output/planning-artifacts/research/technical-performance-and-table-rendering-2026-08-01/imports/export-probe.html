@@ -1,0 +1,288 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>working</title>
+<h1>querbeet R4/D3 — export cost in a browser, main thread vs worker</h1>
+<pre id="out"></pre>
+<script>
+// ---------------------------------------------------------------------------
+// querbeet R4 / D3 — M2, M8.
+//
+// R3 measured xlsx export at ~3.3 s and Parquet at 273 ms for 100k rows, and
+// stated plainly that every one of its figures is Node. This probe re-measures
+// both in Chromium and Firefox from a real file:// URL, and then does the same
+// work inside a classic blob: worker so the two paths can be compared on the
+// only axis that matters for a frozen tab: how long the MAIN thread is blocked.
+//
+// It also answers M8 — progress and cancellation — because those questions only
+// have answers once there is a real long-running worker job to attach them to:
+//   · is SharedArrayBuffer available from file:// (the usual cancellation flag)?
+//   · how quickly does a chunked worker actually notice a cancel message?
+//   · what does posting progress cost at various granularities?
+//
+// Libraries are injected by the runner (addInitScript), not fetched: writeXlsxFile
+// (write-excel-file 4.1.1 UMD) and HPW.parquetWriteBuffer (hyparquet-writer 0.16.3,
+// bundled to IIFE with esbuild because it ships ESM only — R3's finding that makes
+// the build step mandatory).
+// ---------------------------------------------------------------------------
+
+const out = document.getElementById('out');
+const R = (window.__R__ = { env: {}, exports: [], worker: {}, cancel: [], progress: [], notes: [] });
+const log = (s) => { out.textContent += s + '\n'; };
+const now = () => performance.now();
+const ms = (x) => +x.toFixed(1);
+const heap = () => (performance.memory ? +(performance.memory.usedJSHeapSize / 1048576).toFixed(1) : null);
+async function settle() {
+  if (window.gc) { window.gc(); window.gc(); }
+  await new Promise((r) => setTimeout(r, 300));
+}
+
+const COLS = 20;
+const KEYS = Array.from({ length: COLS }, (_, i) => 'c' + i);
+
+// Report-shaped data: an id, a few numbers, the rest short strings — the shape
+// R3 and R4/D2 both used, so the figures stay comparable across runs.
+function makeRows(n) {
+  const a = new Array(n);
+  for (let r = 0; r < n; r++) {
+    const o = {};
+    for (let c = 0; c < COLS; c++) o[KEYS[c]] = c === 0 ? r : (c < 5 ? r * c + 0.5 : 'v' + r + '_' + c);
+    a[r] = Object.freeze(o);
+  }
+  return Object.freeze(a);
+}
+function toColumns(rows) {
+  const cols = KEYS.map((k, c) => ({
+    name: k,
+    data: rows.map((row) => row[k]),
+    type: c === 0 ? 'INT32' : (c < 5 ? 'DOUBLE' : 'STRING'),
+  }));
+  return cols;
+}
+// write-excel-file takes an array of rows of cell objects; the header row is
+// bold, which is the styling R3 verified with openpyxl.
+//
+// Note what `type` is: the native `Number` / `String` CONSTRUCTOR, not a name.
+// A sheet in this format is therefore **not structured-cloneable** — postMessage
+// throws `DataCloneError: function Number() { [native code] } could not be
+// cloned`. Measured, not reasoned: it is what killed this probe's first run.
+// So the worker path cannot receive a finished sheet; it has to receive plain
+// rows and build the sheet on the far side. Both paths below build the sheet
+// where the export happens, which is the only shape that actually works.
+function toSheet(rows) {
+  const head = KEYS.map((k) => ({ value: k, fontWeight: 'bold' }));
+  const body = rows.map((row) => KEYS.map((k, c) => ({ value: row[k], type: c < 5 ? Number : String })));
+  return [head, ...body];
+}
+
+// --- the worker ------------------------------------------------------------
+// Classic script from a blob: URL (R2's rule). The libraries are pushed into it
+// as source text, exactly as they would be inlined by the Vite build.
+function workerSource(libs) {
+  return `
+${libs}
+const now = () => performance.now();
+const KEYS = ${JSON.stringify(KEYS)};
+// The same sheet builder as the main thread's, defined here rather than sent:
+// a function is not structured-cloneable either.
+function toSheet(rows) {
+  const head = KEYS.map((k) => ({ value: k, fontWeight: 'bold' }));
+  const body = rows.map((row) => KEYS.map((k, c) => ({ value: row[k], type: c < 5 ? Number : String })));
+  return [head].concat(body);
+}
+let cancelled = false;
+self.onmessage = async (e) => {
+  const m = e.data;
+  if (m.op === 'cancel') { cancelled = true; return; }
+  if (m.op === 'caps') {
+    // MDN states that without cross-origin isolation the SharedArrayBuffer
+    // constructor is hidden, but that WebAssembly.Memory({shared:true}) still
+    // yields one. If that holds from file://, an Atomics cancellation flag is
+    // reachable after all — so it is tested rather than assumed.
+    let wasmSab = null, wasmErr = null;
+    try { wasmSab = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true }).buffer.constructor.name; }
+    catch (ex) { wasmErr = String(ex).slice(0, 160); }
+    self.postMessage({ op: 'caps', sab: typeof SharedArrayBuffer !== 'undefined',
+      crossOriginIsolated: typeof crossOriginIsolated !== 'undefined' ? crossOriginIsolated : null,
+      atomicsWait: typeof Atomics !== 'undefined' && typeof Atomics.wait === 'function',
+      wasmSharedMemoryBuffer: wasmSab, wasmSharedMemoryError: wasmErr });
+    return;
+  }
+  if (m.op === 'xlsx' || m.op === 'parquet') {
+    const arrivedAt = performance.timeOrigin + performance.now();
+    const t0 = now();
+    let bytes = 0, err = null, shapeMs = 0;
+    try {
+      if (m.op === 'xlsx') {
+        // The sheet is built HERE, from plain rows, because the sheet format
+        // itself cannot cross a thread boundary (see toSheet's comment).
+        const tS = now();
+        const sheet = toSheet(m.payload);
+        shapeMs = now() - tS;
+        const blob = await writeXlsxFile(sheet).toBlob();
+        bytes = blob.size;
+      } else {
+        const buf = HPW.parquetWriteBuffer({ columnData: m.payload, codec: m.codec });
+        bytes = buf.byteLength;
+      }
+    } catch (ex) { err = String(ex).slice(0, 200); }
+    self.postMessage({ op: m.op, arrivedAt, workMs: now() - t0, shapeMs, bytes, err });
+    return;
+  }
+  if (m.op === 'chunked') {
+    // A long job that yields between chunks — the only shape in which a worker
+    // can notice anything at all, because a message cannot interrupt a running
+    // synchronous block.
+    cancelled = false;
+    const { total, chunk, progressEvery } = m;
+    const t0 = now();
+    let i = 0, acc = 0, progressCount = 0;
+    while (i < total) {
+      const end = Math.min(i + chunk, total);
+      for (; i < end; i++) acc += Math.sqrt(i) | 0;
+      if (progressEvery && (i / chunk) % progressEvery === 0) { self.postMessage({ op: 'progress', done: i }); progressCount++; }
+      // Yielding to the event loop is what lets a 'cancel' message be seen.
+      await new Promise((r) => setTimeout(r, 0));
+      if (cancelled) { self.postMessage({ op: 'cancelled', at: performance.timeOrigin + performance.now(), done: i, totalMs: now() - t0, progressCount }); return; }
+    }
+    self.postMessage({ op: 'chunkedDone', totalMs: now() - t0, acc, progressCount });
+    return;
+  }
+};
+`;
+}
+
+let worker = null;
+function once(pred) {
+  return new Promise((res) => {
+    const h = (e) => { if (!pred || pred(e.data)) { worker.removeEventListener('message', h); res({ data: e.data, at: performance.timeOrigin + performance.now() }); } };
+    worker.addEventListener('message', h);
+  });
+}
+
+// --- main-thread export ----------------------------------------------------
+// `payload` is always the neutral form — plain rows for xlsx, column specs for
+// parquet — and the library-specific shaping is timed inside, on whichever
+// thread does the export. Otherwise the worker would look artificially cheap.
+async function mainExport(kind, rows, payload, codec) {
+  const rec = { where: 'main', kind, rows, codec };
+  R.exports.push(rec);
+  await settle();
+  const t0 = now();
+  try {
+    if (kind === 'xlsx') {
+      const tS = now();
+      const sheet = toSheet(payload);
+      rec.shapeMs = ms(now() - tS);
+      const blob = await writeXlsxFile(sheet).toBlob();
+      rec.bytes = blob.size;
+    } else {
+      const buf = HPW.parquetWriteBuffer({ columnData: payload, codec });
+      rec.bytes = buf.byteLength;
+    }
+    rec.ms = ms(now() - t0);
+  } catch (err) { rec.error = String(err).slice(0, 200); rec.ms = ms(now() - t0); }
+  log(`main ${kind} ${rows} ${codec||''}: ${rec.ms} ms (shape ${rec.shapeMs || 0}), ${rec.bytes} B ${rec.error || ''}`);
+  return rec;
+}
+
+// --- worker export ---------------------------------------------------------
+// Three numbers, and the middle one is the point: `postBlockMs` is what the
+// user's tab actually loses, `totalMs` is what the user waits.
+async function workerExport(kind, rows, payload, codec) {
+  const rec = { where: 'worker', kind, rows, codec };
+  R.exports.push(rec);
+  await settle();
+  const t0e = performance.timeOrigin + performance.now();
+  const t0 = now();
+  worker.postMessage({ op: kind, payload, codec });
+  rec.postBlockMs = ms(now() - t0);
+  const r = await once((d) => d.op === kind);
+  rec.totalMs = ms(now() - t0);
+  rec.workMs = ms(r.data.workMs);
+  rec.shapeMs = ms(r.data.shapeMs || 0);
+  rec.transferMs = ms(r.data.arrivedAt - t0e);
+  rec.bytes = r.data.bytes;
+  rec.error = r.data.err;
+  log(`worker ${kind} ${rows} ${codec||''}: postBlock ${rec.postBlockMs} · transfer ${rec.transferMs} · work ${rec.workMs} (shape ${rec.shapeMs}) · total ${rec.totalMs} ms ${rec.error || ''}`);
+  return rec;
+}
+
+// --- driver ----------------------------------------------------------------
+(async () => {
+  R.env = {
+    ua: navigator.userAgent,
+    protocol: location.protocol,
+    origin: location.origin,
+    // The usual cancellation flag is a SharedArrayBuffer + Atomics, which needs
+    // cross-origin isolation. A file:// page cannot send headers, so this is a
+    // gate question, not a detail.
+    sabOnMain: typeof SharedArrayBuffer !== 'undefined',
+    crossOriginIsolated: typeof crossOriginIsolated !== 'undefined' ? crossOriginIsolated : null,
+    hasMemory: !!performance.memory,
+    libs: { writeXlsxFile: typeof writeXlsxFile, HPW: typeof HPW },
+  };
+  try { R.env.wasmSharedMemoryBuffer = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true }).buffer.constructor.name; }
+  catch (e) { R.env.wasmSharedMemoryError = String(e).slice(0, 160); }
+  log('protocol ' + location.protocol + ' · SAB on main: ' + R.env.sabOnMain + ' · crossOriginIsolated: ' + R.env.crossOriginIsolated);
+
+  const blob = new Blob([workerSource(window.__LIBS__ || '')], { type: 'text/javascript' });
+  worker = new Worker(URL.createObjectURL(blob));
+  const caps = once((d) => d.op === 'caps');
+  worker.postMessage({ op: 'caps' });
+  R.worker.caps = (await caps).data;
+  log('worker caps: ' + JSON.stringify(R.worker.caps));
+
+  for (const n of [100000, 500000]) {
+    let rows = null;
+    try { rows = makeRows(n); } catch (e) { R.notes.push(`build ${n} failed: ${e}`); continue; }
+    R.notes.push(`built ${n} rows, heap ${heap()} MB`);
+
+    // Parquet takes columns; xlsx takes a sheet. Both conversions are part of
+    // the honest cost of the export, so they are timed separately rather than
+    // hidden.
+    const tC = now();
+    const cols = toColumns(rows);
+    const colMs = ms(now() - tC);
+    R.notes.push(`toColumns ${n}: ${colMs} ms`);
+    // `codec` is the real option name; the probe's first run passed
+    // `compressed: true`, which hyparquet-writer 0.16.3 silently ignores —
+    // identical bytes and identical time as the SNAPPY default. Measured across
+    // the codecs that matter, so the compression lever is priced rather than
+    // assumed.
+    for (const codec of ['SNAPPY', 'UNCOMPRESSED', 'GZIP']) {
+      await mainExport('parquet', n, cols, codec);
+    }
+    await workerExport('parquet', n, cols, 'SNAPPY');
+
+    await mainExport('xlsx', n, rows);
+    await workerExport('xlsx', n, rows);
+    rows = null;
+    await settle();
+  }
+
+  // --- M8: cancellation latency and progress cost --------------------------
+  // A worker cannot be interrupted mid-block, so "cancel" is really "how long
+  // is the longest block between yields". Measured across chunk sizes.
+  for (const chunk of [1000000, 10000000]) {
+    worker.postMessage({ op: 'chunked', total: 400000000, chunk, progressEvery: 0 });
+    await new Promise((r) => setTimeout(r, 300));
+    const t0 = performance.timeOrigin + performance.now();
+    worker.postMessage({ op: 'cancel' });
+    const r = await once((d) => d.op === 'cancelled');
+    R.cancel.push({ chunk, latencyMs: ms(r.data.at - t0), doneAt: r.data.done });
+    log(`cancel with chunk ${chunk}: noticed after ${ms(r.data.at - t0)} ms`);
+  }
+
+  // Progress granularity: what does a progress message actually cost?
+  for (const every of [0, 1, 10]) {
+    const t0 = now();
+    worker.postMessage({ op: 'chunked', total: 100000000, chunk: 1000000, progressEvery: every });
+    const r = await once((d) => d.op === 'chunkedDone');
+    R.progress.push({ progressEvery: every, totalMs: ms(now() - t0), workerMs: ms(r.data.totalMs), messages: r.data.progressCount });
+    log(`progressEvery ${every}: ${ms(r.data.totalMs)} ms in worker, ${r.data.progressCount} messages`);
+  }
+
+  document.title = 'DONE';
+  log('done');
+})();
+</script>

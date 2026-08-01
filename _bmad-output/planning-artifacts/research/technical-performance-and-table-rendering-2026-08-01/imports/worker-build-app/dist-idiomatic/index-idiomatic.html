@@ -1,0 +1,4 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8" /><title>idiomatic worker form</title>  <script type="module" crossorigin>var e=new Worker(new URL(``+new URL(`exportWorker-DlJonCmc.js`,import.meta.url).href,``+import.meta.url),{type:`module`}),t=document.getElementById(`out`),n=window.__R__={constructed:!0};e.onmessage=e=>{n.result=e.data,t.textContent=JSON.stringify(n),document.title=`DONE`},e.onerror=e=>{n.workerError=String(e.message||e),t.textContent=JSON.stringify(n),document.title=`DONE`},e.postMessage({rows:2e4});</script>
+</head>
+<body><pre id="out">running…</pre></body></html>

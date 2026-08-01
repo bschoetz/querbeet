@@ -1,0 +1,242 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>working</title>
+<h1>querbeet R4/D4 — 30-Step recompute, memoization, full-dataset search</h1>
+<pre id="out"></pre>
+<script>
+// ---------------------------------------------------------------------------
+// querbeet R4 / D4 — M5 (recompute-all vs memoize-per-Step) and M7 (FR-33
+// full-dataset search over half a million rows).
+//
+// D2-a measured a realistic 8-Step graph at 447 MB and 700 ms. The PRD's range
+// is 5-30 Steps and the upper half was never measured, which is what makes the
+// memoization question open: if a full recompute of 30 Steps is 300 ms, nothing
+// needs caching; if it is 4 s, everything does.
+//
+// The graph is built the way the Editor would build it — five 100,000-row
+// Sources unioned to half a million, joined to a lookup, then a chain of
+// per-Step transforms — and every intermediate is HELD, because in a graph the
+// Editor can re-run from any Step, which is exactly what D2-a corrected D2's
+// reify() rule about.
+//
+// Arquero 8.0.3 is injected by the runner, not fetched.
+// ---------------------------------------------------------------------------
+
+const out = document.getElementById('out');
+const R = (window.__R__ = { env: {}, build: {}, steps: [], recompute: {}, edits: [], search: [], notes: [] });
+const log = (s) => { out.textContent += s + '\n'; };
+const now = () => performance.now();
+const ms = (x) => +x.toFixed(1);
+const heap = () => (performance.memory ? +(performance.memory.usedJSHeapSize / 1048576).toFixed(1) : null);
+async function settle() {
+  if (window.gc) { window.gc(); window.gc(); }
+  await new Promise((r) => setTimeout(r, 400));
+  if (window.gc) window.gc();
+  await new Promise((r) => setTimeout(r, 200));
+}
+
+const PER_SOURCE = 100000;
+const SOURCES = 5;                 // → 500,000 rows, PRD NFR-3's total
+const COLS = 20;
+const KEYS = Array.from({ length: COLS }, (_, i) => 'c' + i);
+const LOOKUP_ROWS = 5000;
+
+// Source data as column arrays, which is what aq.from()/aq.table() holds. c0 is
+// the join key, c1-c4 numeric, the rest short strings — R4/D2's shape.
+function makeSourceColumns(n, offset) {
+  const o = {};
+  for (let c = 0; c < COLS; c++) {
+    const arr = new Array(n);
+    if (c === 0) for (let r = 0; r < n; r++) arr[r] = (offset + r) % LOOKUP_ROWS;
+    else if (c < 5) for (let r = 0; r < n; r++) arr[r] = (offset + r) * c * 0.5;
+    else for (let r = 0; r < n; r++) arr[r] = 'v' + (offset + r) + '_' + c;
+    o[KEYS[c]] = arr;
+  }
+  return o;
+}
+function makeLookupColumns() {
+  const key = new Array(LOOKUP_ROWS), name = new Array(LOOKUP_ROWS);
+  for (let i = 0; i < LOOKUP_ROWS; i++) { key[i] = i; name[i] = 'Kunde ' + i; }
+  return { c0: key, kundenname: name };
+}
+
+// --- the 30-Step graph -----------------------------------------------------
+// Each entry is one Step: a name, and a function from the previous Step's table
+// to this Step's table. Sources are Steps 1-5, so the chain below is Steps 6-30.
+function buildPlan() {
+  const plan = [];
+  plan.push({ name: 'union', kind: 'concat', run: (srcs) => srcs[0].concat(...srcs.slice(1)) });
+  plan.push({ name: 'join-lookup', kind: 'join', run: (t, lookup) => t.join_left(lookup, ['c0', 'c0']) });
+  plan.push({ name: 'filter-plausible', kind: 'filter', run: (t) => t.filter((d) => d.c1 >= 0) });
+  // 22 more Steps: the mix a real Recipe has — derives dominate, with a select,
+  // an orderby and a second filter thrown in where an author would put them.
+  for (let i = 0; i < 22; i++) {
+    const n = i;
+    if (i === 7) plan.push({ name: 'orderby-c1', kind: 'orderby', run: (t) => t.orderby('c1') });
+    else if (i === 13) plan.push({ name: 'filter-band', kind: 'filter', run: (t) => t.filter((d) => d.c2 < 1e12) });
+    else if (i === 18) plan.push({ name: 'select-drop', kind: 'select', run: (t) => t.select(aq.not('c19')) });
+    else plan.push({ name: 'derive-' + n, kind: 'derive', run: (t) => t.derive({ ['d' + n]: aq.escape((d) => d.c1 + n) }) });
+  }
+  return plan;
+}
+
+// Run the chain from a starting index, given the memoized tables before it.
+// Returns the per-Step timings, so a slow Step can be named rather than
+// averaged away.
+function runChain(plan, from, cache, sources, lookup) {
+  const timings = [];
+  let t = from === 0 ? null : cache[from - 1];
+  for (let i = from; i < plan.length; i++) {
+    const step = plan[i];
+    const t0 = now();
+    if (i === 0) t = step.run(sources);
+    else if (step.kind === 'join') t = step.run(t, lookup);
+    else t = step.run(t);
+    // Arquero is lazy about nothing here — but `filter`/`derive` build a view,
+    // and a view's cost only shows when it is read. numRows() forces the shape
+    // without materialising rows, which is what the Editor does too.
+    const rows = t.numRows();
+    timings.push({ i, name: step.name, kind: step.kind, ms: ms(now() - t0), rows });
+    cache[i] = t;
+  }
+  return timings;
+}
+
+// --- FR-33: search every row ----------------------------------------------
+// D2 established the primitive: iterating a column allocates no objects. The
+// question is whether that is enough at half a million rows x 20 columns.
+function searchByColumns(t, needle) {
+  const names = t.columnNames();
+  const n = t.numRows();
+  const hits = [];
+  const q = needle.toLowerCase();
+  for (const name of names) {
+    const col = t.column(name);
+    if (!col) continue;
+    for (let r = 0; r < n; r++) {
+      const v = col[r];
+      if (v == null) continue;
+      if (typeof v === 'string') { if (v.toLowerCase().indexOf(q) !== -1) hits.push(r); }
+      else if (String(v).indexOf(q) !== -1) hits.push(r);
+    }
+  }
+  return hits;
+}
+function searchByObjects(t, needle) {
+  const q = needle.toLowerCase();
+  const rows = t.objects();
+  const hits = [];
+  for (let r = 0; r < rows.length; r++) {
+    const o = rows[r];
+    for (const k in o) {
+      const v = o[k];
+      if (v == null) continue;
+      const s = typeof v === 'string' ? v : String(v);
+      if (s.toLowerCase().indexOf(q) !== -1) { hits.push(r); break; }
+    }
+  }
+  return hits;
+}
+// Chunked: the same column scan, but yielding often enough that the tab keeps
+// painting. The number that matters is the LONGEST uninterrupted block.
+async function searchChunked(t, needle, chunkRows) {
+  const names = t.columnNames();
+  const n = t.numRows();
+  const q = needle.toLowerCase();
+  const hits = [];
+  let longest = 0, yields = 0;
+  for (const name of names) {
+    const col = t.column(name);
+    if (!col) continue;
+    for (let start = 0; start < n; start += chunkRows) {
+      const end = Math.min(start + chunkRows, n);
+      const t0 = now();
+      for (let r = start; r < end; r++) {
+        const v = col[r];
+        if (v == null) continue;
+        const s = typeof v === 'string' ? v : String(v);
+        if (s.toLowerCase().indexOf(q) !== -1) hits.push(r);
+      }
+      const block = now() - t0;
+      if (block > longest) longest = block;
+      yields++;
+      await new Promise((r) => setTimeout(r, 0));
+    }
+  }
+  return { hits: hits.length, longestBlockMs: ms(longest), yields };
+}
+
+// --- driver ----------------------------------------------------------------
+(async () => {
+  R.env = { ua: navigator.userAgent, protocol: location.protocol, aq: typeof aq, hasMemory: !!performance.memory };
+  await settle();
+  const h0 = heap();
+
+  // Sources: five 100,000-row tables, held as the registry would hold them.
+  const tBuild = now();
+  const sources = [];
+  for (let s = 0; s < SOURCES; s++) sources.push(aq.table(makeSourceColumns(PER_SOURCE, s * PER_SOURCE)));
+  const lookup = aq.table(makeLookupColumns());
+  R.build = { ms: ms(now() - tBuild), sources: SOURCES, rowsEach: PER_SOURCE, totalRows: SOURCES * PER_SOURCE };
+  await settle();
+  R.build.heapMB = heap() != null ? +(heap() - h0).toFixed(1) : null;
+  log(`sources built: ${R.build.totalRows} rows in ${R.build.ms} ms, ${R.build.heapMB} MB`);
+
+  const plan = buildPlan();
+  R.notes.push(`plan has ${plan.length} chain Steps on top of ${SOURCES} Sources = ${plan.length + SOURCES} Steps total`);
+
+  // 1. Cold full recompute of the whole chain, every intermediate held.
+  const cache = new Array(plan.length);
+  const hBefore = heap();
+  const t0 = now();
+  R.steps = runChain(plan, 0, cache, sources, lookup);
+  R.recompute.fullMs = ms(now() - t0);
+  await settle();
+  R.recompute.graphHeapMB = heap() != null && hBefore != null ? +(heap() - hBefore).toFixed(1) : null;
+  R.recompute.finalRows = cache[plan.length - 1].numRows();
+  R.recompute.finalCols = cache[plan.length - 1].numCols();
+  log(`full recompute of ${plan.length} Steps: ${R.recompute.fullMs} ms, +${R.recompute.graphHeapMB} MB, final ${R.recompute.finalRows} x ${R.recompute.finalCols}`);
+
+  // 2. Warm full recompute — same work, caches already warm, so this is the
+  //    honest "recompute-all on every edit" figure.
+  const cache2 = new Array(plan.length);
+  const t1 = now();
+  runChain(plan, 0, cache2, sources, lookup);
+  R.recompute.warmMs = ms(now() - t1);
+  log(`warm full recompute: ${R.recompute.warmMs} ms`);
+
+  // 3. Edit at Step k — recompute only the tail, upstream memoized. This is
+  //    what memoization actually buys, per edit position.
+  for (const k of [0, 1, 2, 5, 10, 15, 20, 24]) {
+    const c = cache.slice();
+    const t = now();
+    runChain(plan, k, c, sources, lookup);
+    const took = ms(now() - t);
+    R.edits.push({ editAtStep: k, stepName: plan[k].name, tailSteps: plan.length - k, ms: took });
+    log(`edit at Step ${k} (${plan[k].name}): tail of ${plan.length - k} Steps costs ${took} ms`);
+  }
+
+  // 4. FR-33 search over the final result.
+  const finalT = cache[plan.length - 1];
+  for (const needle of ['v499999_9', 'Kunde 4999']) {
+    await settle();
+    const a0 = now();
+    const byCol = searchByColumns(finalT, needle);
+    const colMs = ms(now() - a0);
+    let objMs = null, objHits = null, objErr = null;
+    try {
+      await settle();
+      const b0 = now();
+      objHits = searchByObjects(finalT, needle).length;
+      objMs = ms(now() - b0);
+    } catch (e) { objErr = String(e).slice(0, 160); }
+    await settle();
+    const chunked = await searchChunked(finalT, needle, 25000);
+    R.search.push({ needle, rows: finalT.numRows(), cols: finalT.numCols(), columnScanMs: colMs, columnHits: byCol.length, objectsScanMs: objMs, objectHits: objHits, objectsError: objErr, chunked });
+    log(`search "${needle}": columns ${colMs} ms (${byCol.length} hits) · objects ${objMs} ms · chunked longest block ${chunked.longestBlockMs} ms over ${chunked.yields} yields`);
+  }
+
+  document.title = 'DONE';
+  log('done');
+})();
+</script>

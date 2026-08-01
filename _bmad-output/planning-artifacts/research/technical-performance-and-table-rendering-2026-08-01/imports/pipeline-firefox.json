@@ -1,0 +1,291 @@
+{
+ "browser": "firefox",
+ "version": "153.0",
+ "done": true,
+ "crashed": false,
+ "errors": [],
+ "results": {
+  "env": {
+   "ua": "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0",
+   "protocol": "file:",
+   "aq": "object",
+   "hasMemory": false
+  },
+  "build": {
+   "ms": 643,
+   "sources": 5,
+   "rowsEach": 100000,
+   "totalRows": 500000,
+   "heapMB": null
+  },
+  "steps": [
+   {
+    "i": 0,
+    "name": "union",
+    "kind": "concat",
+    "ms": 94,
+    "rows": 500000
+   },
+   {
+    "i": 1,
+    "name": "join-lookup",
+    "kind": "join",
+    "ms": 179,
+    "rows": 500000
+   },
+   {
+    "i": 2,
+    "name": "filter-plausible",
+    "kind": "filter",
+    "ms": 5,
+    "rows": 500000
+   },
+   {
+    "i": 3,
+    "name": "derive-0",
+    "kind": "derive",
+    "ms": 25,
+    "rows": 500000
+   },
+   {
+    "i": 4,
+    "name": "derive-1",
+    "kind": "derive",
+    "ms": 27,
+    "rows": 500000
+   },
+   {
+    "i": 5,
+    "name": "derive-2",
+    "kind": "derive",
+    "ms": 28,
+    "rows": 500000
+   },
+   {
+    "i": 6,
+    "name": "derive-3",
+    "kind": "derive",
+    "ms": 30,
+    "rows": 500000
+   },
+   {
+    "i": 7,
+    "name": "derive-4",
+    "kind": "derive",
+    "ms": 32,
+    "rows": 500000
+   },
+   {
+    "i": 8,
+    "name": "derive-5",
+    "kind": "derive",
+    "ms": 32,
+    "rows": 500000
+   },
+   {
+    "i": 9,
+    "name": "derive-6",
+    "kind": "derive",
+    "ms": 94,
+    "rows": 500000
+   },
+   {
+    "i": 10,
+    "name": "orderby-c1",
+    "kind": "orderby",
+    "ms": 1,
+    "rows": 500000
+   },
+   {
+    "i": 11,
+    "name": "derive-8",
+    "kind": "derive",
+    "ms": 56,
+    "rows": 500000
+   },
+   {
+    "i": 12,
+    "name": "derive-9",
+    "kind": "derive",
+    "ms": 65,
+    "rows": 500000
+   },
+   {
+    "i": 13,
+    "name": "derive-10",
+    "kind": "derive",
+    "ms": 62,
+    "rows": 500000
+   },
+   {
+    "i": 14,
+    "name": "derive-11",
+    "kind": "derive",
+    "ms": 72,
+    "rows": 500000
+   },
+   {
+    "i": 15,
+    "name": "derive-12",
+    "kind": "derive",
+    "ms": 78,
+    "rows": 500000
+   },
+   {
+    "i": 16,
+    "name": "filter-band",
+    "kind": "filter",
+    "ms": 10,
+    "rows": 500000
+   },
+   {
+    "i": 17,
+    "name": "derive-14",
+    "kind": "derive",
+    "ms": 82,
+    "rows": 500000
+   },
+   {
+    "i": 18,
+    "name": "derive-15",
+    "kind": "derive",
+    "ms": 90,
+    "rows": 500000
+   },
+   {
+    "i": 19,
+    "name": "derive-16",
+    "kind": "derive",
+    "ms": 90,
+    "rows": 500000
+   },
+   {
+    "i": 20,
+    "name": "derive-17",
+    "kind": "derive",
+    "ms": 98,
+    "rows": 500000
+   },
+   {
+    "i": 21,
+    "name": "select-drop",
+    "kind": "select",
+    "ms": 2,
+    "rows": 500000
+   },
+   {
+    "i": 22,
+    "name": "derive-19",
+    "kind": "derive",
+    "ms": 45,
+    "rows": 500000
+   },
+   {
+    "i": 23,
+    "name": "derive-20",
+    "kind": "derive",
+    "ms": 46,
+    "rows": 500000
+   },
+   {
+    "i": 24,
+    "name": "derive-21",
+    "kind": "derive",
+    "ms": 51,
+    "rows": 500000
+   }
+  ],
+  "recompute": {
+   "fullMs": 1394,
+   "graphHeapMB": null,
+   "finalRows": 500000,
+   "finalCols": 39,
+   "warmMs": 1022
+  },
+  "edits": [
+   {
+    "editAtStep": 0,
+    "stepName": "union",
+    "tailSteps": 25,
+    "ms": 1156
+   },
+   {
+    "editAtStep": 1,
+    "stepName": "join-lookup",
+    "tailSteps": 24,
+    "ms": 973
+   },
+   {
+    "editAtStep": 2,
+    "stepName": "filter-plausible",
+    "tailSteps": 23,
+    "ms": 906
+   },
+   {
+    "editAtStep": 5,
+    "stepName": "derive-2",
+    "tailSteps": 20,
+    "ms": 694
+   },
+   {
+    "editAtStep": 10,
+    "stepName": "orderby-c1",
+    "tailSteps": 15,
+    "ms": 534
+   },
+   {
+    "editAtStep": 15,
+    "stepName": "derive-12",
+    "tailSteps": 10,
+    "ms": 384
+   },
+   {
+    "editAtStep": 20,
+    "stepName": "derive-17",
+    "tailSteps": 5,
+    "ms": 203
+   },
+   {
+    "editAtStep": 24,
+    "stepName": "derive-21",
+    "tailSteps": 1,
+    "ms": 54
+   }
+  ],
+  "search": [
+   {
+    "needle": "v499999_9",
+    "rows": 500000,
+    "cols": 39,
+    "columnScanMs": 433,
+    "columnHits": 1,
+    "objectsScanMs": 828,
+    "objectHits": 1,
+    "objectsError": null,
+    "chunked": {
+     "hits": 1,
+     "longestBlockMs": 3,
+     "yields": 780
+    }
+   },
+   {
+    "needle": "Kunde 4999",
+    "rows": 500000,
+    "cols": 39,
+    "columnScanMs": 458,
+    "columnHits": 100,
+    "objectsScanMs": 700,
+    "objectHits": 100,
+    "objectsError": null,
+    "chunked": {
+     "hits": 100,
+     "longestBlockMs": 3,
+     "yields": 780
+    }
+   }
+  ],
+  "notes": [
+   "plan has 25 chain Steps on top of 5 Sources = 30 Steps total"
+  ]
+ }
+}

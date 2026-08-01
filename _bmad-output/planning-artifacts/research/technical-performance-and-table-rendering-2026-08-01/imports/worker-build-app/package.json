@@ -1,0 +1,8 @@
+{
+  "name": "querbeet-worker-build-gate",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "vite build" },
+  "dependencies": { "hyparquet-writer": "0.16.3", "fflate": "^0.8.2" },
+  "devDependencies": { "vite": "^8.2.0", "vite-plugin-singlefile": "^2.3.3" }
+}

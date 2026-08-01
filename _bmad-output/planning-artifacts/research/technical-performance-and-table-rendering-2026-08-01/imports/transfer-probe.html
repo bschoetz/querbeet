@@ -1,0 +1,271 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>working</title>
+<h1>querbeet R4/D3 — structured clone across a worker boundary</h1>
+<pre id="out"></pre>
+<script>
+// ---------------------------------------------------------------------------
+// querbeet R4 / D3 — what does it actually cost to move a dataset to a worker?
+//
+// The question D3 exists to answer is not "is the work faster off-thread" but
+// "does the transfer eat the win". So the load-bearing number here is not the
+// round trip: it is how long postMessage() BLOCKS the calling thread, because
+// structured-clone serialization happens synchronously inside that call. A
+// worker that costs 400 ms of main-thread block to feed has already frozen the
+// tab it was supposed to keep responsive.
+//
+// Measured in both shapes, because querbeet holds both:
+//   rows  — array of frozen objects, what the parser produces (R2's boundary)
+//   cols  — object of plain arrays, which is literally what an Arquero table
+//           is: t.column(name) in Arquero 8 returns the backing array itself
+//   typed — the same column count with the numeric half as Float64Array, to
+//           price the option of keeping numbers typed
+//   buf   — one ArrayBuffer, transferred rather than cloned (the zero-copy
+//           control: if this is not ~0 ms the whole comparison is suspect)
+//
+// Cross-thread timing uses performance.timeOrigin + performance.now(), because
+// performance.now() alone is relative to each thread's own origin and would
+// silently report nonsense for the one-way legs.
+//
+// One trap this probe fell into on its first run and now measures around:
+// MessageEvent.data is deserialized LAZILY, on first property access. A
+// timestamp taken at the top of onmessage therefore reports the deserialize
+// leg as ~0 ms, which is wrong by two orders of magnitude at 500k rows. Every
+// deserialize figure below is the cost of touching `.data`, timed explicitly.
+// ---------------------------------------------------------------------------
+
+const out = document.getElementById('out');
+const R = (window.__R__ = { cases: [], env: {}, notes: [] });
+const log = (s) => { out.textContent += s + '\n'; };
+const now = () => performance.now();
+const epoch = () => performance.timeOrigin + performance.now();
+const ms = (x) => +x.toFixed(1);
+
+const NUMERIC = 10;               // of 20 columns, for the `typed` shape
+const COLS = 20;
+const KEYS = Array.from({ length: COLS }, (_, i) => 'c' + i);
+
+function heap() {
+  const m = performance.memory;
+  return m ? +(m.usedJSHeapSize / 1048576).toFixed(1) : null;
+}
+async function settle() {
+  if (window.gc) { window.gc(); window.gc(); }
+  await new Promise((r) => setTimeout(r, 400));
+  if (window.gc) { window.gc(); }
+  await new Promise((r) => setTimeout(r, 200));
+}
+
+// --- the four payload shapes ----------------------------------------------
+// Same values in all of them, so a difference in cost is a difference in
+// shape and not in content.
+function makeRows(n) {
+  const a = new Array(n);
+  for (let r = 0; r < n; r++) {
+    const o = {};
+    for (let c = 0; c < COLS; c++) o[KEYS[c]] = c === 0 ? r : 'v' + r + '_' + c;
+    a[r] = Object.freeze(o);
+  }
+  return Object.freeze(a);
+}
+function makeCols(n) {
+  const o = {};
+  for (let c = 0; c < COLS; c++) {
+    const arr = new Array(n);
+    if (c === 0) for (let r = 0; r < n; r++) arr[r] = r;
+    else for (let r = 0; r < n; r++) arr[r] = 'v' + r + '_' + c;
+    o[KEYS[c]] = arr;
+  }
+  return o;
+}
+function makeTyped(n) {
+  const o = {};
+  for (let c = 0; c < COLS; c++) {
+    if (c < NUMERIC) {
+      const arr = new Float64Array(n);
+      for (let r = 0; r < n; r++) arr[r] = r + c / 100;
+      o[KEYS[c]] = arr;
+    } else {
+      const arr = new Array(n);
+      for (let r = 0; r < n; r++) arr[r] = 'v' + r + '_' + c;
+      o[KEYS[c]] = arr;
+    }
+  }
+  return o;
+}
+function makeBuf(bytes) {
+  const b = new ArrayBuffer(bytes);
+  new Uint8Array(b).fill(7);
+  return b;
+}
+
+// --- the worker, classic from a blob URL (R2's settled construction) -------
+const WORKER_SRC = `
+const epoch = () => performance.timeOrigin + performance.now();
+function touch(p) {
+  // Force the whole payload to exist, not just its first property: a lazy
+  // deserializer would otherwise hand back a stub and be timed as free.
+  let acc = 0;
+  if (Array.isArray(p)) { for (let i = 0; i < p.length; i++) acc += p[i].c0; }
+  else if (p instanceof ArrayBuffer) { const u = new Uint8Array(p); for (let i = 0; i < u.length; i += 4096) acc += u[i]; }
+  else { for (const k in p) { const col = p[k]; acc += typeof col[0] === 'number' ? col[0] : col.length; } }
+  return acc;
+}
+self.onmessage = (e) => {
+  const arrivedAt = epoch();          // BEFORE .data is touched
+  const tD = performance.now();
+  const m = e.data;                   // this access is what deserializes
+  const ctl = m.__ctl;
+  if (ctl === 'ping') { self.postMessage({ __ctl: 'pong', at: epoch() }); return; }
+  const p = m.payload;
+  const acc = touch(p);               // and this forces it to be complete
+  const deserializeMs = performance.now() - tD;
+
+  if (ctl === 'sink') {
+    // One-way. Nothing large comes back, so this leg is main-side serialize
+    // plus worker-side deserialize and nothing else.
+    self.postMessage({ __ctl: 'sunk', arrivedAt, deserializeMs, acc });
+    return;
+  }
+  if (ctl === 'echo') {
+    const transfer = (p instanceof ArrayBuffer) ? [p] : [];
+    const sentAt = epoch();
+    const tS = performance.now();
+    self.postMessage({ __ctl: 'echoed', arrivedAt, deserializeMs, sentAt, acc, payload: p }, transfer);
+    // The serialize cost is only known after the call returns, so it follows
+    // in a second, tiny message rather than being guessed at.
+    self.postMessage({ __ctl: 'echoMeta', serializeMs: performance.now() - tS });
+    return;
+  }
+};
+`;
+const blob = new Blob([WORKER_SRC], { type: 'text/javascript' });
+const blobUrl = URL.createObjectURL(blob);
+let worker = null;
+function spawn() {
+  const t0 = now();
+  worker = new Worker(blobUrl);            // classic, from blob: — R2's rule
+  return now() - t0;
+}
+// The listener times its own first `.data` access, because that access is what
+// deserializes — including the one a predicate makes. Timing it anywhere later
+// measures nothing.
+function once(pred) {
+  return new Promise((res) => {
+    const h = (e) => {
+      const t = now();
+      const d = e.data;
+      const deserMs = now() - t;
+      if (!pred || pred(d)) { worker.removeEventListener('message', h); res({ data: d, at: epoch(), deserMs }); }
+    };
+    worker.addEventListener('message', h);
+  });
+}
+
+// --- one case --------------------------------------------------------------
+async function runCase(shape, rows, make) {
+  const rec = { shape, rows, ok: false };
+  R.cases.push(rec);
+  await settle();
+  rec.heapBefore = heap();
+
+  const tBuild = now();
+  let payload;
+  try { payload = make(rows); } catch (err) { rec.error = 'build: ' + err.message; return rec; }
+  rec.buildMs = ms(now() - tBuild);
+  await settle();
+  rec.heapAfter = heap();
+  rec.payloadMB = rec.heapAfter != null && rec.heapBefore != null ? +(rec.heapAfter - rec.heapBefore).toFixed(1) : null;
+
+  // 1. structuredClone in place — serialize + deserialize, one thread, no
+  //    worker involved. Isolates the algorithm from the thread hop.
+  try {
+    const t = now();
+    const c = structuredClone(payload);
+    rec.structuredCloneMs = ms(now() - t);
+    rec.cloneProbe = Array.isArray(c) ? (c[0] && c[0].c0) : (c instanceof ArrayBuffer ? new Uint8Array(c)[0] : c.c0 && c.c0[0]);
+  } catch (err) { rec.structuredCloneMs = null; rec.structuredCloneError = String(err).slice(0, 120); }
+  await settle();
+
+  // 2. postMessage one-way. postBlockMs is the number that decides whether a
+  //    worker is affordable: the CALLER is frozen for exactly this long, and a
+  //    frozen caller is the thing a worker was supposed to prevent.
+  const isBuf = payload instanceof ArrayBuffer;
+  let bufCopy = null;
+  if (isBuf) { bufCopy = payload.slice(0); }   // transfer neuters the original
+  try {
+    const t0e = epoch();
+    const t0 = now();
+    worker.postMessage({ __ctl: 'sink', payload }, isBuf ? [payload] : []);
+    rec.postBlockMs = ms(now() - t0);                    // main-thread serialize
+    const r = await once((d) => d && d.__ctl === 'sunk');
+    rec.workerDeserializeMs = ms(r.data.deserializeMs);  // worker-thread deserialize
+    rec.arrivalLagMs = ms(r.data.arrivedAt - t0e);       // send start → worker dispatch
+    rec.oneWayMs = ms(rec.arrivalLagMs + rec.workerDeserializeMs);
+  } catch (err) { rec.postError = String(err).slice(0, 160); }
+  if (isBuf) payload = bufCopy;               // restore for the echo leg
+
+  // 3. round trip — the full cost of handing work out and getting a result back
+  try {
+    const meta = once((d) => d && d.__ctl === 'echoMeta');
+    const t0 = now();
+    worker.postMessage({ __ctl: 'echo', payload }, payload instanceof ArrayBuffer ? [payload] : []);
+    rec.echoPostBlockMs = ms(now() - t0);
+    const r = await once((d) => d && d.__ctl === 'echoed');
+    rec.returnDeserializeMs = ms(r.deserMs);              // measured at the .data access
+    const back = r.data.payload;
+    const accBack = Array.isArray(back)
+      ? back.length && back[back.length - 1].c0
+      : (back instanceof ArrayBuffer ? new Uint8Array(back)[0] : Object.keys(back).length);
+    rec.roundTripMs = ms(now() - t0);
+    rec.workerDeserializeMsEcho = ms(r.data.deserializeMs);
+    rec.workerSerializeMs = ms((await meta).data.serializeMs);
+    rec.echoProbe = accBack;
+    rec.ok = true;
+  } catch (err) { rec.echoError = String(err).slice(0, 160); }
+
+  payload = null;
+  bufCopy = null;
+  await settle();
+  rec.heapAfterRelease = heap();
+  log(`${shape} ${rows}: build ${rec.buildMs} · clone ${rec.structuredCloneMs} · postBlock ${rec.postBlockMs} · wkrDeser ${rec.workerDeserializeMs} · oneWay ${rec.oneWayMs} · roundTrip ${rec.roundTripMs}`);
+  return rec;
+}
+
+// --- driver ----------------------------------------------------------------
+(async () => {
+  R.env = {
+    ua: navigator.userAgent,
+    hasMemory: !!performance.memory,
+    hasGc: !!window.gc,
+    hardwareConcurrency: navigator.hardwareConcurrency,
+    origin: location.origin,
+    protocol: location.protocol,
+  };
+  R.workerSpawnMs = ms(spawn());
+  const pong = once((d) => d && d.__ctl === 'pong');
+  const tp = epoch();
+  worker.postMessage({ __ctl: 'ping' });
+  R.pingMs = ms((await pong).data.at - tp);
+  log(`worker spawned in ${R.workerSpawnMs} ms (classic, blob:), ping ${R.pingMs} ms`);
+
+  // 100k first in every shape, then 500k — so a 500k OOM still leaves the
+  // 100k row of the table filled in.
+  const plan = [
+    ['rows', 100000, makeRows],
+    ['cols', 100000, makeCols],
+    ['typed', 100000, makeTyped],
+    ['buf', 100000, () => makeBuf(100000 * 20 * 8)],
+    ['rows', 500000, makeRows],
+    ['cols', 500000, makeCols],
+    ['typed', 500000, makeTyped],
+    ['buf', 500000, () => makeBuf(500000 * 20 * 8)],
+  ];
+  for (const [shape, rows, make] of plan) {
+    try { await runCase(shape, rows, make); }
+    catch (err) { R.notes.push(`${shape}/${rows} threw: ${String(err).slice(0, 200)}`); log(`${shape} ${rows}: FAILED ${err}`); }
+  }
+  document.title = 'DONE';
+  log('done');
+})();
+</script>

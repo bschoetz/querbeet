@@ -1,0 +1,77 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>working</title>
+<pre id="out"></pre>
+<script>
+// ---------------------------------------------------------------------------
+// querbeet R4/D3 — M8, the deciding half of the cancellation question.
+//
+// A `file://` page can never be cross-origin isolated (it sends no headers), so
+// the SharedArrayBuffer constructor is hidden. MDN notes an escape hatch:
+// `new WebAssembly.Memory({shared:true}).buffer` is a SharedArrayBuffer anyway.
+// The export probe confirmed the buffer exists in both engines — but a shared
+// flag is only useful if it can be SENT to the worker, and MDN also says
+// postMessage throws for SharedArrayBuffer when the document is not isolated.
+//
+// So: construct it, try to post it, and if it arrives, prove it is genuinely
+// shared by writing on one side and reading on the other.
+// ---------------------------------------------------------------------------
+const out = document.getElementById('out');
+const R = (window.__R__ = {});
+const log = (s) => { out.textContent += s + '\n'; };
+
+const SRC = `
+self.onmessage = (e) => {
+  const m = e.data;
+  if (m.op === 'probe') {
+    let ok = false, view = null, err = null;
+    try {
+      view = new Int32Array(m.buf);
+      ok = view.length > 0;
+      // Write a value the main thread will look for WITHOUT another message.
+      Atomics.store(view, 1, 4242);
+    } catch (ex) { err = String(ex).slice(0, 200); }
+    self.postMessage({ op: 'probed', ok, isShared: m.buf && m.buf.constructor && m.buf.constructor.name, err,
+      sawFlag: view ? Atomics.load(view, 0) : null });
+  }
+};
+`;
+
+(async () => {
+  R.protocol = location.protocol;
+  R.crossOriginIsolated = typeof crossOriginIsolated !== 'undefined' ? crossOriginIsolated : null;
+  R.sabConstructorVisible = typeof SharedArrayBuffer !== 'undefined';
+
+  let sab = null;
+  try {
+    const mem = new WebAssembly.Memory({ initial: 1, maximum: 1, shared: true });
+    sab = mem.buffer;
+    R.wasmBufferType = sab.constructor.name;
+  } catch (e) { R.wasmError = String(e).slice(0, 200); }
+
+  const w = new Worker(URL.createObjectURL(new Blob([SRC], { type: 'text/javascript' })));
+  const reply = new Promise((res) => w.addEventListener('message', (e) => res(e.data), { once: true }));
+
+  if (sab) {
+    const view = new Int32Array(sab);
+    Atomics.store(view, 0, 7);           // the "cancel flag" the worker should see
+    try {
+      w.postMessage({ op: 'probe', buf: sab });
+      R.postMessageAccepted = true;
+    } catch (e) {
+      R.postMessageAccepted = false;
+      R.postMessageError = String(e).slice(0, 200);
+    }
+    if (R.postMessageAccepted) {
+      const r = await Promise.race([reply, new Promise((res) => setTimeout(() => res({ timeout: true }), 5000))]);
+      R.workerReply = r;
+      // The real test: did the worker's write land in OUR buffer, with no
+      // message carrying it? If yes, the memory is genuinely shared and an
+      // Atomics cancel flag works from file://.
+      R.mainSeesWorkerWrite = Atomics.load(view, 1);
+    }
+  }
+  log(JSON.stringify(R, null, 1));
+  document.title = 'DONE';
+})();
+</script>

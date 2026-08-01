@@ -260,8 +260,79 @@ formats (CSV, JSON first; XLSX second stage; Parquet export if feasible)?
 
 ## R4 – Performance & table rendering
 
-**Status:** [~] partial — D1 (table rendering) and D2 (Arquero at scale) done 2026-08-01; D3, D4 not run
+**Status:** [x] done (deep-recon, type technical, 2026-08-01) — all four dimensions plus Checkpoint D2-a
 **Report:** `_bmad-output/planning-artifacts/research/technical-performance-and-table-rendering-2026-08-01/research.md`
+
+**D3 verdict (done 2026-08-01): only the exports belong in a worker, and the reason is the transfer.**
+Moving 100,000 rows across a thread boundary blocks the sender for **109.4 ms (Chromium 151) /
+132 ms (Firefox 153)**; at half a million rows it is **510.8 / 627 ms**. The Arquero pipeline a worker
+was meant to rescue costs 263–446 ms in total, so handing it over is a straight loss — **never move a
+dataset to a worker to compute on it; if a worker needs data it should receive it once and keep it.**
+Both shapes were measured: Arquero column arrays are ~30 % cheaper to *send* than frozen row objects
+but the full round trip is **worse** (1,772.7 vs 1,578.6 ms at 500k), so the columnar intuition is only
+half right. Keeping ten of twenty columns as `Float64Array` halves the send block; a transferred
+`ArrayBuffer` of 76.3 MB costs **0.7 ms**.
+
+**R3's export figures were Node and understate the browser badly.** Re-measured from `file://`:
+xlsx **4,943.8 ms (Chromium) / 5,805 ms (Firefox)** at 100k and **26,269.7 / 30,558 ms at 500k** — it
+does not scale linearly, and R3's ~16 s projection is short by about ten seconds. Parquet SNAPPY is
+1,553.6 / 801 ms at 100k and 9,717 / 4,369 ms at 500k. **Firefox is roughly twice as fast as Chromium
+on Parquet**, reversing D2's ranking — engine ranking is per-operation, not global. Across all eight main-versus-worker
+pairs a worker **removes 88–98 % of the block** at an elapsed-time cost between **−0.9 % and +18.8 %** —
+largest on the shortest job and vanishing on the longest — so **both exports go in a worker**.
+
+**Three export traps, all measured:** a `write-excel-file` sheet **cannot be postMessage'd** (its cell
+`type` holds the native `Number` constructor → `DataCloneError`), so a worker must receive plain rows
+and build the sheet itself; `await writeXlsxFile(sheet)` returns the *builder* and silently does
+nothing — the call is `.toBlob()`, and this **resolves R3's `filePath` finding**: the option was
+removed in 4.0, the README documents the removal at the top and still contradicts itself with a v3
+example further down; and **`codec: 'GZIP'` writes an unreadable file** — hyparquet-writer 0.16.3
+registers only SNAPPY and falls back to raw bytes while still labelling the pages GZIP, which
+**pyarrow 25 refuses** (`GZipCodec failed: unknown compression method`). Passing
+`compressors: { GZIP: fflate.gzipSync }` fixes it and is **2.4× smaller than SNAPPY**. This qualifies
+R3's "read correctly across three codecs": out of the box, only SNAPPY is safe.
+
+**R3's leftover is settled and the question does not arise: `read-excel-file` 9.3.5 never creates a
+worker.** `parseSpreadsheetContents.js` hardcodes `var CAN_USE_WORKER = false` and the whole
+`worker-f` call site is commented out. The README's retraction is the accurate half, and the
+`read-excel-file/web-worker` fallback is not needed.
+
+**The build gate now has a real worker in it, and R2's rules hold.** `./w.js?worker&inline` with
+`worker: { format: 'iife' }` builds to **exactly one file** (62,612 B with hyparquet-writer and fflate
+inlined into the worker) and runs from `file://` in both engines. The idiomatic
+`new Worker(new URL(...))` emits two files and throws `SecurityError` — **in Chromium only; Firefox 153
+runs it fine**, which makes the trap worse, since Chromium is the lead browser. **And `new Worker` is a
+poor gate signal:** the *correct* artefact contains two occurrences of it plus a `createObjectURL`,
+because inlining requires blob-URL construction — grep it to start a question, never to answer one.
+Gate on the `dist/` file count and on opening the artefact from a real `file://` URL in both engines.
+
+**D4 verdict (done 2026-08-01): nothing in the responsiveness brief is a problem.**
+
+- **Memoize per Step.** A 30-Step graph over half a million rows recomputes fully in **496.4 ms
+  (Chromium) / 1,394 ms (Firefox)** and holding all 30 intermediates costs **180 MB**. Edit cost
+  tracks tail length almost linearly: **editing the last Step costs 24.1 / 54 ms against 496 / 1,394
+  recomputed — a factor of 20 to 26.** Editing the *first* Step is a full recompute by definition
+  (578.6 / 1,156 ms); that is the number to design the progress affordance against. D2-a's rule
+  extends from 8 Steps to 30 unchanged: **the join (85.6 / 179 ms) and the concat (44.9 / 94 ms) are
+  the price, twenty-two derives at 22–26 / 90–98 ms are noise.**
+- **There is no Editor/table contention at 30 Steps.** Measured against the Editor spike's own build
+  with a real virtualized table pane beside the canvas: the 50-row window swap costs **2.9–3.1 ms
+  (Chromium) / 4–5 ms (Firefox)** identically at 6 and 30 Steps, idle and during real pointer drags,
+  and **not one frame exceeded 50 ms across 2,800 swaps** in either engine. The `ResizeObserver`
+  mechanism is real and cheap: resizing all 30 node bodies at once costs **32.2 / 33 ms once**, not
+  per frame. Cold rebuild at 30 Steps is 50.1 / 67 ms. **This closes R6's open question 2.**
+- **Full-dataset search (FR-33) needs neither a worker nor an index.** A column scan over
+  500,000 × 39 (19.5M cells) costs **431.6 ms (Chromium) / 433 ms (Firefox)** — the engines are equal
+  here — against 674 / 828 ms via `objects()`. Chunking at 25,000 rows with a yield puts the longest
+  block at **2–3 ms** at no cost to the total.
+- **There is no shared cancellation flag on this platform, and the API surface says otherwise.**
+  `SharedArrayBuffer` is hidden from `file://` in both engines; MDN's `WebAssembly.Memory({shared:true})`
+  escape hatch *does* yield one, and **both engines refuse to post it** (`DataCloneError`, naming
+  cross-origin isolation). `Atomics.wait` exists, so a `typeof` check would have concluded the
+  opposite. Cancel through the message queue instead: latency is **3.0 / 2 ms** at ~5 ms chunks and
+  **17.2 / 7 ms** at ~50 ms chunks, a function of chunk size alone. **Progress is effectively free** —
+  100 messages cost ~15 ms on 571 ms of work (2.6 %). The shape is: chunk the work, post progress
+  freely, check a plain boolean between chunks.
 
 **D1 verdict: virtualization is mandatory, hand-rolled fixed-height row windowing wins
 (94/100), TanStack Virtual is the runner-up at 92, and column virtualization is not needed.**
@@ -324,7 +395,8 @@ lead-browser decision above.
 - **A graph editor now sits on the same main thread** (R6). Whether canvas interaction and
   table rendering compete is a D3/D4 question.
 
-**Sub-questions still open — the brief for the final R4 run:**
+**The brief for the final R4 run — executed 2026-08-01, verdicts above.** Kept for the record so the
+questions and the answers stay side by side:
 
 **D3 — Off-main-thread work and transfer cost.** *What actually belongs in a worker.*
 
@@ -853,8 +925,12 @@ portable file, from a `file://` page?
    yes, in both engines, surviving a browser restart. FR-25 holds. Three consequences fell out —
    the shared `file://` bucket, the `persist()` deadlock in Firefox, and a Firefox write time at
    half a million rows that lands on R3's tab-freeze threshold.
-5. **R4 (D2–D4)** – now also covers full-dataset search and the 614,000-row Firefox spacer
-   cliff, which is close to the revised scale target.
+5. ~~**R4 (D2–D4)**~~ Done (2026-08-01). All four dimensions plus Checkpoint D2-a. Headlines: only
+   the exports belong in a worker and the reason is the transfer; memoize per Step; there is no
+   Editor/table contention at 30 Steps; full-dataset search needs neither a worker nor an index; and
+   there is no shared cancellation flag from `file://`. Three findings reach outside R4 — R3's export
+   figures understate the browser by ~10 s at half a million rows, `hyparquet-writer`'s `GZIP` codec
+   silently writes an unreadable file, and `new Worker` is a poor hard-gate signal for built artefacts.
 6. **R5** – type and locale detection; can run alongside R4.
 7. **R7 and R8** – charts and export documents. Both are presentation-layer and neither
    blocks the transformation path, so they can wait until the ETL core works. R8 has a

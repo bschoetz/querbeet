@@ -2,9 +2,9 @@
 title: 'technical research: Performance and table rendering (querbeet R4)'
 type: 'technical'
 topic: 'Performance and table rendering (querbeet R4)'
-decision: 'How to keep the UI responsive with up to 100k rows in a single-file Vue 3 + Arquero app'
+decision: 'How to keep the UI responsive at roughly half a million rows in a single-file Vue 3 + Arquero app'
 source: 'native run (deep-recon)'
-status: partial
+status: complete
 preset: 'standard'
 validation: 'normal'
 created: '2026-08-01'
@@ -13,13 +13,77 @@ updated: '2026-08-01'
 
 # technical research: Performance and table rendering (querbeet R4)
 
-**Decision this research serves:** How to keep the UI responsive with up to 100k rows in a
-single-file Vue 3 + Arquero app.
+**Decision this research serves:** How to keep the UI responsive at roughly half a million rows in
+a single-file Vue 3 + Arquero app. (The decision was scoped to 100,000 rows when the run started;
+PRD NFR-3 raised it mid-run, and D3 and D4 were measured against the higher target.)
 
-> **Run status — partial.** Dimensions **D1 (table rendering / virtualization)** and
-> **D2 (Arquero at scale in the browser)** have been executed. D3 (off-main-thread work and
-> transfer cost) and D4 (responsiveness patterns) are planned but not yet run. The executive
-> summary is written once all dimensions land. Resume with a Deepen on this folder.
+> **Run status — complete.** All four dimensions have been executed: **D1** (table rendering /
+> virtualization) and **D2** (Arquero at scale in the browser) on 2026-08-01, **Checkpoint D2-a**
+> (does the graph stay affordable with fan-out?) the same day, and **D3** (off-main-thread work and
+> transfer cost) and **D4** (responsiveness patterns) in a Deepen on this folder, also 2026-08-01.
+
+## Executive summary
+
+**The architecture holds at half a million rows, and the two things that looked like open risks are
+not.** A 30-Step graph recomputes in 496 ms (Chromium) / 1,394 ms (Firefox); the Editor and the
+table show **no measurable contention at 30 Steps**, with the frame interval locked at 60 Hz through
+real pointer drags and a 30-node `ResizeObserver` storm; and searching every one of 19.5 million
+cells costs ~430 ms and chunks to a 2–3 ms longest block. What actually needs attention is narrower
+and more concrete than the brief expected.
+
+**Six things this research decides.**
+
+1. **Virtualize the table, and hand-roll it.** Rendering 100,000 × 20 unvirtualized takes 11.2 s
+   (Chromium) / 12.4 s (Firefox); a 50-row window swaps in 3–5 ms. Column virtualization is not
+   needed even at 50 columns. **Row height is a load-bearing constant, not styling:** at half a
+   million rows the maximum safe height in Firefox is ~32 px, and the spacer cap with offset
+   rescaling is mandatory rather than optional. (D1)
+2. **Arquero fits, and its sharing semantics are what make a graph affordable.** 80.2 MB per
+   100,000 × 20 source, scaling linearly; `select`/`filter`/`orderby`/`derive` share the parent's
+   arrays, only `slice`/`join`/`concat` copy. Fan-out is free — ten consumers of an 80 MB source
+   cost 0.13 MB between them — and **joins and concats are the entire price**, still true at 30
+   Steps. (D2, D2-a, D4)
+3. **Memoize per Step.** Editing the last Step of a 30-Step graph costs **24 ms** memoized against
+   496 ms recomputed, a factor of 20. Holding all 30 intermediates costs 180 MB at half a million
+   rows, and the cache has nowhere else to live than the `shallowRef` registry the Editor spike
+   already established. (D4)
+4. **Only the exports belong in a worker, and the reason is the transfer.** Moving 100,000 rows
+   across a thread boundary blocks the sender for 109 ms and half a million for 511 ms — more than
+   the whole pipeline costs. But xlsx export takes **26.3 seconds** at half a million rows, and a
+   worker buys back 95 % of that freeze for no measurable elapsed-time cost. **Never move a dataset to a
+   worker to compute on it; if a worker needs data, it should receive it once and keep it.** (D3)
+5. **Full-dataset search (FR-33) needs neither a worker nor an index** — a column scan with a yield
+   every 25,000 rows, longest block 2–3 ms. (D4)
+6. **There is no shared cancellation flag on this platform**, and the API surface says otherwise:
+   `Atomics.wait` exists, `WebAssembly.Memory({shared:true})` yields a real `SharedArrayBuffer`, and
+   both engines refuse to post it from `file://`. Cancel through the message queue instead — latency
+   is 2–17 ms and is a function of chunk size alone, and progress messages cost 2.6 %. (D3, D4)
+
+**Four findings that change something outside this report.**
+
+- **PrimeVue 5.0.0 (2026-07-15) is no longer MIT** — a commercial licence with a runtime key and an
+  eligibility-gated free tier, while the GitHub repository still shows the old MIT text. The whole
+  PrimeTek family is affected. (D1)
+- **R1's null-key sentinel is a Cartesian bomb between two branches of one Source.** 28,000 source
+  rows produced 2,687,670 join rows; at 100,000 it crashed the tab. A Join Step must warn when both
+  inputs carry nulls in the key column. (D2-a)
+- **`hyparquet-writer` 0.16.3 writes an unreadable file when asked for GZIP** — raw bytes labelled
+  GZIP, which pyarrow 25 refuses. One option fixes it, and GZIP is 2.4× smaller than SNAPPY. (D3)
+- **`new Worker` is a poor gate signal for built artefacts.** It appears in a correctly inlined
+  worker (inlining requires blob-URL construction), in dead library code, and in a genuinely
+  fetching worker — only the last is a failure. Gate on the `dist/` file count and on opening the
+  artefact from a real `file://` URL in both engines. (D3)
+
+**Two corrections to earlier querbeet research, both from measuring rather than re-reading.**
+R3's export figures are Node and understate the browser badly — plan against 26–31 s for xlsx at
+half a million rows, not the ~16 s a linear projection suggested. And R3's leftover question about
+`read-excel-file`'s internal worker does not arise: the library **never creates a worker at all**,
+because `CAN_USE_WORKER` is hardcoded `false` and the whole call site is commented out. (D3)
+
+**Engine ranking is per-operation, not global.** Firefox is 1.5–2× slower on Arquero work and 8×
+slower on full row materialization (D2) — and roughly **twice as fast as Chromium** on Parquet
+writing (D3), and exactly equal on column scanning (D4). Any statement of the form "Firefox is
+slower" needs an operation attached to it.
 
 > **Rescope note, 2026-08-01 (after the PRD).** The scale target moved from "~100,000 rows max"
 > to **~100,000 rows per source and roughly half a million in total** (PRD NFR-3), the linear
@@ -642,6 +706,404 @@ documented with a route out.
 
 ---
 
+## D3 — Off-main-thread work and transfer cost
+
+### The short answer
+
+**Only the exports belong in a worker, and the reason is the transfer, exactly as the brief
+suspected.** Moving 100,000 rows across a thread boundary blocks the sender for **109.4 ms**
+(Chromium 151) / **132 ms** (Firefox 153); at half a million rows it is **510.8 / 627 ms** [33].
+The Arquero pipeline that a worker was meant to rescue costs 263–446 ms in total (D2) — so paying
+half a second of *frozen main thread* to hand it over is a straight loss. The exports are the
+opposite case: xlsx costs **26.3 seconds** at half a million rows (Chromium), and a worker buys back
+95 % of that block at **no cost in elapsed time at all** — 26,040.6 ms through the worker against
+26,269.7 ms on the main thread [34].
+
+Four rules follow, and one of them is a correction to a figure this project has been planning
+against.
+
+1. **Never move a dataset to a worker to compute on it.** Transfer costs what a whole pipeline
+   costs. If a worker needs data, it should receive it *once* and keep it.
+2. **Put both exports in a worker.** xlsx especially: 26.3 s of frozen tab versus 1.3 s of block.
+3. **If a worker must return bulk data, transfer an `ArrayBuffer` rather than clone a structure.**
+   A transferred 76.3 MB buffer costs **0.7 ms** to send and **0.3 ms** round trip [33]. Cloning
+   the same volume as objects costs three orders of magnitude more.
+4. **R3's export figures were Node and they understate the browser badly.** Plan against 26–31 s
+   for xlsx at half a million rows, not the ~16 s that a linear projection from Node suggested [34].
+
+### The transfer, measured in both shapes
+
+The brief called this D3's most valuable single measurement, and it is: an Arquero table is column
+arrays of primitives while a parsed Source is an array of objects, and structured clone might price
+them very differently. It does — but not in the direction that helps.
+
+`postBlock` is the number that decides everything, because structured-clone serialization happens
+*synchronously inside* `postMessage()`. A worker that costs half a second of main-thread block to
+feed has already frozen the tab it was supposed to keep responsive [33].
+
+| Shape | Rows | Payload heap | postBlock (Chromium) | postBlock (Firefox) | Round trip (Chromium) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Frozen row objects | 100,000 | 84.8 MB | **109.4 ms** | **132 ms** | 308.4 ms |
+| Arquero column arrays | 100,000 | 47.3 MB | **65.2 ms** | **65 ms** | 308.0 ms |
+| 10 of 20 columns typed (`Float64Array`) | 100,000 | 34.0 MB | **48.7 ms** | **62 ms** | 181.6 ms |
+| Transferred `ArrayBuffer` | 100,000 | 15.3 MB | **0.1 ms** | **0 ms** | 0.2 ms |
+| Frozen row objects | 500,000 | 438.7 MB | **510.8 ms** | **627 ms** | 1,578.6 ms |
+| Arquero column arrays | 500,000 | 251.8 MB | **366.9 ms** | **402 ms** | 1,772.7 ms |
+| 10 of 20 columns typed | 500,000 | 171.2 MB | **196.5 ms** | **199 ms** | 971.2 ms |
+| Transferred `ArrayBuffer` | 500,000 | 76.3 MB | **0.7 ms** | **0 ms** | 0.3 ms |
+
+**Columns are cheaper to send and not cheaper to round-trip.** The outbound leg improves by about
+30 % (366.9 vs 510.8 ms at 500k), but the return leg is worse, so the full round trip is *slower*
+for columns than for rows — 1,772.7 vs 1,578.6 ms [33]. The intuition that a columnar table is the
+cheap thing to move is half right, and the half that is wrong is the half that matters if the worker
+sends anything back.
+
+**Keeping numeric columns typed is the one real lever short of transferables.** Ten `Float64Array`
+columns out of twenty roughly halve the send block, 196.5 against 366.9 ms. That interacts with R5's
+type-detection work: a column detected as numeric can be *stored* typed, and the saving is not only
+memory.
+
+### An engine difference worth knowing about
+
+Chromium and Firefox put the deserialize cost in different places. Timestamping the worker's
+`onmessage` entry *before* `.data` is touched shows it plainly [33]:
+
+| `rows` 500k | Chromium 151 | Firefox 153 |
+| --- | ---: | ---: |
+| Send start → worker dispatch | 510.9 ms | 1,315 ms |
+| Cost of touching `.data` | 496.7 ms | 4 ms |
+
+**Chromium deserializes lazily, on first `MessageEvent.data` access; Firefox deserializes eagerly,
+before the event dispatches.** Same total, different scheduling — and in Chromium a receiving thread
+can therefore *defer* paying for a message it already holds. Both behaviours are spec-compatible:
+the HTML Standard splits serialization from deserialization precisely so the second half can be
+delayed until the target realm is known [39], and the split is independently documented as
+Chrome/Safari-lazy versus Firefox-eager [39].
+
+This is not trivia. It cost this probe its first run — a timestamp at the top of `onmessage`
+reported Chromium's deserialize leg as 0.1 ms, wrong by three orders of magnitude — and any
+measurement of worker latency that does not force the payload will report the same fiction.
+
+### The exports, re-measured in a browser
+
+R3 said plainly that every one of its figures is Node. Re-measured from a real `file://` page [34]:
+
+| Export | Rows | Chromium 151 | Firefox 153 | R3 (Node) |
+| --- | ---: | ---: | ---: | ---: |
+| xlsx (write-excel-file 4.1.1) | 100,000 | **4,943.8 ms** | **5,805 ms** | ~3,300–3,400 ms |
+| xlsx | 500,000 | **26,269.7 ms** | **30,558 ms** | ~16,000 ms projected |
+| Parquet SNAPPY (hyparquet-writer 0.16.3) | 100,000 | **1,553.6 ms** | **801 ms** | 273 ms |
+| Parquet SNAPPY | 500,000 | **9,717 ms** | **4,369 ms** | — |
+
+Two things to read carefully here. **xlsx does not scale linearly** — 5× the rows costs 5.3× the
+time in Chromium — so R3's ~16 s projection at half a million rows understates it by about ten
+seconds. And **Parquet reverses the engine ranking**: Firefox is roughly twice as fast as Chromium,
+the opposite of D2's finding that Firefox is 1.5–2× slower on Arquero work. Engine ranking is
+per-operation, not global, and this report now contains examples in both directions.
+
+On the 273 ms: re-running hyparquet-writer in Node 26 against *this* probe's data shape gives
+**933 ms**, so R3's figure describes a narrower dataset and the like-for-like browser penalty is
+**1.65×**, not 5.7× [34].
+
+Moving both to a worker (the export libraries inlined into the worker body, as the build would
+inline them):
+
+| Export | Rows | Main-thread block | Worker block | Worker total | Block removed |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Parquet | 500,000 | 9,717 ms | **294.7 ms** | 10,994.8 ms | 97 % |
+| xlsx | 100,000 | 4,943.8 ms | **242.3 ms** | 5,271.5 ms | 95 % |
+| xlsx | 500,000 | 26,269.7 ms | **1,332 ms** | 26,040.6 ms | 95 % |
+
+Across all eight main-versus-worker pairs the worker **removes 88–98 % of the block** and costs
+between **−0.9 % and +18.8 % in elapsed time** — the overhead is largest on the *shortest* job
+(Parquet at 100k, +18.8 %) and vanishes on the longest (xlsx at 500k, −0.9 %, i.e. inside the noise).
+For an operation measured in tens of seconds that is not a close call; for one measured in hundreds
+of milliseconds it would be.
+
+### Three library traps that only appear on the worker path
+
+**A write-excel-file sheet cannot cross a thread boundary.** Its cell `type` field holds the native
+`Number` / `String` *constructor*, and structured clone refuses it —
+`DataCloneError: function Number() { [native code] } could not be cloned`. The worker must receive
+plain rows and build the sheet itself [34]. This is why the xlsx worker path above sends *rows*
+while the Parquet path sends *columns*, and why xlsx's block is the larger of the two at equal row
+count: it matches the shape table exactly.
+
+**`await writeXlsxFile(sheet)` silently does nothing.** The call returns
+`{ toBlob(), toFile(fileName) }`; awaiting it yields the builder, performs no work, throws nothing.
+This probe measured xlsx export at 37.9 ms for 100,000 rows before the mistake surfaced. The correct
+call is `await writeXlsxFile(sheet).toBlob()`.
+
+This **resolves R3's finding rather than repeating it.** R3 recorded `filePath` as "a documented
+silent no-op" and concluded "verify options took effect rather than trusting its README". The
+mechanism is now identified: the option was **removed in 4.0**, the README documents the removal at
+the top (*"Old: `await writeExcelFile(data, { filePath: … })`" / "New: `await writeExcelFile(data).toFile(…)`"*),
+and the same README still carries a v3 example further down describing `filePath` and `blob: true`
+[41]. The library is not lying; its README disagrees with itself across the 3 → 4 boundary. R3's
+advice stands; its diagnosis should be restated.
+
+**`codec: 'GZIP'` writes a file that Parquet readers refuse.** hyparquet-writer 0.16.3 registers one
+compressor by default and falls back to raw bytes for any other codec — while still recording the
+requested codec in the column metadata. Verified against an independent reader [34][42]:
+
+| Request | Bytes (2,000 × 4 probe) | pyarrow 25.0.0 |
+| --- | ---: | --- |
+| `codec: 'SNAPPY'` (default) | 38,819 | OK |
+| `codec: 'UNCOMPRESSED'` | 101,550 | OK |
+| `codec: 'GZIP'` | **101,550 — byte-identical to uncompressed** | **`OSError: GZipCodec failed: unknown compression method`** |
+| `codec: 'GZIP'` + `compressors: { GZIP: fflate.gzipSync }` | **16,386** | OK |
+
+The default is documented; the *failure mode* is not — an unregistered codec neither throws nor
+warns. The fix is one option, and R3 already put `fflate` in the bundle for exactly this. GZIP is
+**2.4× smaller than SNAPPY** here, so it is worth having rather than avoiding. **This also qualifies
+R3's statement that hyparquet-writer's output "was read correctly by pyarrow 25, DuckDB 1.5.5 and
+Polars 1.43.2 across three codecs":** out of the box, only SNAPPY is safe.
+
+### R3's leftover, settled: `read-excel-file` never creates a worker
+
+R3 left open whether `read-excel-file`'s internal worker (dependency `worker-f`) survives `file://`,
+since its README both claims and retracts it. Read from the shipped 9.3.5 source [38]: the question
+does not arise, because **the worker path is dead code**. `parseSpreadsheetContents.js` hardcodes
+`var CAN_USE_WORKER = false`, the entire `createWorkerFunction` call site is commented out, and
+`worker-f` is imported and passed from argument to argument without ever being invoked. The
+README's retraction is the accurate half.
+
+Had it run, it would have worked: `worker-f`'s browser path constructs
+`new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })))` — a classic worker
+from a blob URL, which is precisely the construction R2 measured as working from `file://` [38]. The
+documented fallback (`read-excel-file/web-worker`) is therefore not needed.
+
+**One consequence reaches beyond this question:** the shipped UMD bundle still contains **2
+occurrences of `new Worker` and 2 of `createObjectURL`** as dead weight [38] — a false positive for
+R6's hard-gate scan of built artefacts. See D3's build-gate finding below.
+
+### The build gate, exercised with a real worker at last
+
+R2 wrote two build rules that no querbeet build had ever tested, because the Editor spike's artefact
+contains zero `new Worker` occurrences. Built both ways, with hyparquet-writer and fflate inlined
+into the worker so the hard case is the one measured [35]:
+
+| | `./exportWorker.js?worker&inline` | `new Worker(new URL(…), {type:'module'})` |
+| --- | --- | --- |
+| Files in `dist/` | **1** (62,612 B) | **2** — a 607 B stub plus a 61,493 B worker chunk |
+| Chromium 151 from `file://` | **worker ran** (56.4 ms) | **`SecurityError: … cannot be accessed from origin 'null'`** |
+| Firefox 153 from `file://` | **worker ran** (47 ms) | **worker ran** (36 ms) |
+
+Both rules hold, and `vite build` reports success in both cases — which is the whole argument for
+making "exactly one file" a gate rather than a habit.
+
+**One thing R2's rule did not have: the idiomatic form fails in Chromium only.** Firefox 153 loads a
+sibling worker script from `file://` without complaint. That makes the trap *worse*, not milder,
+because Chromium is the lead browser: a developer who checks the two-file build in Firefox sees a
+working app and ships an artefact that fails on the browser every colleague has.
+
+**And `new Worker` is now a poor gate signal.** The *correct* artefact contains two occurrences of it
+plus a `createObjectURL`, because inlining a worker **requires** blob-URL construction — the string
+R6's screening treats as a hazard is also the signature of the fix. Together with the dead
+`read-excel-file` occurrences, a built artefact can contain `new Worker` for three reasons and only
+one is a failure. **Grep `new Worker` to start a question, never to answer one.** The reliable gate
+is the file count plus opening the artefact from a real `file://` URL in *both* engines.
+
+### Confidence and what remains open
+
+Every figure in this dimension is an original browser measurement made this run, from a real
+`file://` URL, in both engines, with the harnesses preserved in `imports/`. The `read-excel-file`
+finding is a source read of the shipped package, which is as primary as it gets. Two claims are
+independently corroborated: the lazy/eager deserialize split by the HTML Standard and by a
+third-party write-up [39], and the Parquet GZIP defect by pyarrow 25 refusing the file [42].
+
+Open:
+
+1. **Persisting to IndexedDB from a worker was not measured.** R9 projects ~1.5 s (Chromium) /
+   ~3.7 s (Firefox) at half a million rows and IndexedDB is available inside workers, but the
+   combination — transfer the data once, then persist from the worker — is inferred here rather
+   than measured. Given the transfer cost above, the design that works is "the worker already holds
+   the data", and that is a spike, not research.
+2. **The `typed` shape is a synthetic contrast, not a design.** It shows the lever exists; what
+   fraction of real querbeet columns are numeric is R5's question.
+3. **CSV and JSON parsing were not re-measured in a browser.** R3's figures for those remain Node.
+4. **`toJSON()`'s allocation profile** stays open from D2 and would matter for a JSON export path.
+
+Dimension stopped on **coverage**: every question in the brief is answered, and the load-bearing
+claim — that transfer, not work, decides what belongs in a worker — is measured in both shapes, both
+sizes and both engines.
+
+---
+
+## D4 — Responsiveness patterns
+
+### The short answer
+
+**Nothing in the responsiveness brief turned out to be a problem, and one thing that was assumed to
+be a design question is already answered by the numbers.** The 30-Step graph recomputes in 496 ms
+(Chromium) / 1,394 ms (Firefox) at half a million rows; memoizing per Step drops an edit at the last
+Step to **24 ms**; full-dataset search over 19.5 million cells costs **~430 ms** and chunks to a
+2–3 ms longest block; and the Editor and the table show **no measurable contention at 30 Steps**,
+with the frame interval locked at 60 Hz through real pointer drags and a 30-node ResizeObserver
+storm [36][37].
+
+Four answers, in the brief's own order.
+
+### 1. Recompute-all versus memoize-per-Step: memoize, and it is nearly free
+
+A 30-Step graph at the PRD's full scale — five 100,000-row Sources unioned, left-joined to a 5,000-row
+lookup, filtered, then twenty-two further Steps — costs this [36]:
+
+| | Chromium 151 | Firefox 153 |
+| --- | ---: | ---: |
+| Full recompute, all 30 Steps | **496.4 ms** | **1,394 ms** |
+| Heap for all 30 intermediates held | **180 MB** | — |
+| Sources alone (500,000 rows) | 216.9 MB | — |
+
+The per-Step breakdown extends D2-a's rule from 8 Steps to 30 without amendment: **the join
+(85.6 / 179 ms) and the concat (44.9 / 94 ms) are the price; twenty-two derives at 22–26 ms
+(Chromium) / 90–98 ms (Firefox) are noise.** Branching is free, combining is not — still true at
+30 Steps.
+
+What memoization buys depends entirely on *where* the edit is, and the relationship is close to
+linear in tail length [36]:
+
+| Edit at | Steps in tail | Chromium | Firefox |
+| --- | ---: | ---: | ---: |
+| Step 0 (`union`) | 25 | 578.6 ms | 1,156 ms |
+| Step 10 (`orderby`) | 15 | 251.3 ms | 534 ms |
+| Step 20 (`derive`) | 5 | 88.8 ms | 203 ms |
+| **Step 24 (last)** | **1** | **24.1 ms** | **54 ms** |
+
+**Editing the last Step of a 30-Step graph costs 24 ms memoized against 496 ms recomputed — a factor
+of 20, and 26 in Firefox.** Recompute-all is survivable; at 1.4 s per edit in Firefox it is not
+pleasant. Memoize.
+
+Two things make this an easy call rather than a trade. D2-a already established that holding every
+Step output alive is affordable, and this measures the bill at full scale: **180 MB for a 30-Step
+graph over half a million rows**, on top of Sources that cost more. And the cache has nowhere else
+to live: the Editor spike settled that datasets never enter the graph model and tables live in a
+`shallowRef` registry keyed by id — the per-Step cache is the same registry shape, which is a data
+structure the app already has.
+
+The one case memoization cannot help is an edit at the first Step, which is a full recompute by
+definition (578.6 / 1,156 ms). That is the number to design the progress affordance against.
+
+### 2. Editor / table contention at 30 Steps: there is none
+
+Measured against the Editor spike's own build with a real virtualized table pane beside the canvas —
+D1's shape, 50 rows over a `rowCount × 32 px` spacer, a frozen 100,000 × 20 dataset behind it — with
+the Step count dialable between 6 and 30, and with genuine Playwright pointer drags running
+*concurrently* with a 200-swap loop [37]:
+
+| Case | Swap p50 (Chromium) | Swap p50 (Firefox) | Frame p50 | Frames > 50 ms |
+| --- | ---: | ---: | ---: | ---: |
+| 6 Steps, canvas idle | 3.1 ms | 5 ms | 16.7 / 17.02 ms | **0** |
+| 6 Steps, node dragging | 2.9 ms | 4 ms | 16.7 / 17.02 ms | **0** |
+| 30 Steps, canvas idle | 2.9 ms | 4 ms | 16.7 / 17.02 ms | **0** |
+| **30 Steps, node dragging** | **2.9 ms** | **4 ms** | 16.7 / 17.02 ms | **0** |
+| **30 Steps, all 30 bodies resizing** | **2.9 ms** | **4 ms** | 16.7 / 17.02 ms | **0** |
+
+The swap costs the same at 30 Steps as at 6, the same while a node is dragged as while the canvas is
+idle, and the same during a resize storm. **Not one frame exceeded 50 ms in either engine across
+2,800 swaps**, and the frame interval never left 60 Hz.
+
+**The mechanism the brief named is real, and it is cheap.** Driving every node's height from a CSS
+custom property moves all 30 boxes at once — 38.7–92.2 px to 60.1–113.6 px — firing 30
+`ResizeObserver` callbacks plus the relayout. The whole operation costs **32.2 ms (Chromium) /
+33 ms (Firefox), once**. It is a one-off cost on a deliberate action, not a per-frame tax, and the
+swap loop running through it never noticed.
+
+Cold graph rebuild at 30 Steps: **50.1 ms (Chromium) / 67 ms (Firefox)**; warm rebuilds cost 33 ms.
+That is not the same quantity as R6's 62.4 / 61 ms full page mount at 3–4 nodes, but what the two
+jointly support is that **node count is not where the cost lives**. **This closes R6's open
+question 2.**
+
+The build still gates clean with the second pane and the 30-node graph added: exactly one file,
+251,127 B, zero occurrences of every hazard string, zero requests beyond the document in both
+engines [37].
+
+### 3. Full-dataset search (FR-33): no worker, no index
+
+Scanning the final 500,000 × 39 result — 19.5 million cells — three ways [36]:
+
+| Method | Chromium | Firefox |
+| --- | ---: | ---: |
+| **Column scan** (`t.column(name)`, zero allocation) | **431.6 / 405.5 ms** | **433 / 458 ms** |
+| `t.objects()` then scan rows | 674 / 611.2 ms | 828 / 700 ms |
+| **Chunked column scan**, 25,000 rows per chunk | longest block **2.2 / 1.8 ms** | longest block **3 / 3 ms** |
+
+D2's primitive is the right one: the column scan is 1.6× (Chromium) / 1.9× (Firefox) faster than
+materialising rows and allocates nothing. **Chunking makes it free** — a yield every 25,000 rows puts
+the longest uninterrupted block at 2–3 ms, comfortably inside a frame, with no measurable cost to the
+total. FR-33 needs neither a worker nor an index; it needs a `for` loop with a yield in it.
+
+Worth noting because it is unusual in this report: **the engines are equal here** (431.6 vs 433 ms).
+Firefox's penalty in D2 was on Arquero's own machinery and on `objects()`, not on reading a backing
+array.
+
+### 4. Progress and cancellation for what D3 puts in a worker
+
+**The usual mechanism is unavailable, and the API surface lies about it.** A `file://` page sends no
+headers, so it can never be cross-origin isolated and the `SharedArrayBuffer` constructor is hidden
+in both engines. MDN documents an escape hatch — `new WebAssembly.Memory({shared: true}).buffer` is
+a SharedArrayBuffer regardless [40] — and it does produce one in Chromium 151 and Firefox 153. It is
+still useless: **both engines refuse to post it** [34].
+
+| Engine | `WebAssembly.Memory` buffer | `postMessage(buffer)` |
+| --- | --- | --- |
+| Chromium 151 | `SharedArrayBuffer` | **`DataCloneError: SharedArrayBuffer transfer requires self.crossOriginIsolated.`** |
+| Firefox 153 | `SharedArrayBuffer` | **`DataCloneError: The SharedArrayBuffer object cannot be serialized…`** |
+
+`Atomics.wait` exists in the worker in both engines, so a probe that only checked `typeof Atomics`
+would have concluded the opposite. **There is no shared cancellation flag on this platform.**
+
+That turns out not to matter, because the message queue is fast enough and the chunking a worker
+needs anyway is what makes it work [34]:
+
+| Chunk size (work between yields) | Cancel latency, Chromium | Firefox |
+| --- | ---: | ---: |
+| ≈5 ms | **3.0 ms** | **2 ms** |
+| ≈50 ms | **17.2 ms** | **7 ms** |
+
+Cancellation latency is a function of chunk size and nothing else. **And progress is effectively
+free:** 100 progress messages over 571 ms of work cost about 15 ms — 2.6 %. There is no reason to be
+stingy with progress granularity.
+
+The practical shape, then: a worker that chunks its work, posts progress freely, and checks a
+plain boolean set by a `cancel` message between chunks. No shared memory, no `Atomics`, nothing
+exotic.
+
+### Confidence and what remains open
+
+Every claim here is an original measurement made this run, in both engines, from a real `file://`
+URL — and the contention measurement runs against the **Editor spike's own build** rather than a
+test double, which is what makes it an answer to R6's question rather than an analogy.
+
+Two of these measurements were wrong before they were right, and both are recorded in the import
+notes because the failure mode is instructive. The swap measurement first read layout *before* Vue
+had patched the DOM and reported 0.1 ms — the cost of laying out the old document. The
+"ResizeObserver storm" first lengthened node *names*, which live in fixed-height inputs, so no node
+height changed and no storm occurred; the giveaway was that the height range was byte-identical to
+the un-stormed cases.
+
+Open:
+
+1. **One non-reproducing observation.** An earlier run of the contention harness showed Firefox at
+   30 Steps with a drag producing 8 frames over 50 ms. It did not reproduce in the clean run (zero
+   long frames). The earlier run shared the machine with an npm install and two Vite builds. The
+   clean run is the result — but the episode is a fair warning that a *loaded* machine degrades this,
+   and users' machines are loaded.
+2. **30 Steps is the PRD's ceiling, not a stress test.** Nothing here says where the cliff is; it
+   says there is no cliff below 30.
+3. **The graph is one shape.** A 30-Step graph with several joins rather than one would cost more,
+   and joins are the whole price — a 5-join graph is the case to check before anyone promises a
+   number.
+4. **Search was measured on synthetic ~16-character strings.** Wider real values raise the scan time
+   roughly proportionally.
+5. **Firefox heap figures are absent throughout**, as in D2 — the engine exposes no
+   `performance.memory`.
+
+Dimension stopped on **coverage**: all four brief questions are answered with measurements, and the
+one that was structural — where a per-Step cache lives — was already settled by the Editor spike.
+
+---
+
 ## Sources
 
 | # | Source | Publisher | Date | Accessed |
@@ -675,6 +1137,16 @@ documented with a route out.
 | 30 | [uwdata/arquero releases](https://github.com/uwdata/arquero/releases) | uwdata/arquero | 8.0.0–8.0.3 | 2026-08-01 |
 | 31 | **Original measurement** — `imports/arquero-browser-measurement-2026-08-01.md`, raw data in `imports/arquero-probe-chromium.json` and `imports/arquero-probe-firefox.json`; harness `imports/arquero-browser-probe.html`, `imports/run-arquero-probe.mjs` | this run — Arquero 8.0.3 in Chromium 151.0.7922.34 / Firefox 153.0, `file://`, headless | 2026-08-01 | 2026-08-01 |
 | 32 | **Original measurement** — Checkpoint D2-a: `imports/arquero-graph-measurement-2026-08-01.md`, raw data in `imports/arquero-graph-chromium.json`; harness `imports/arquero-graph-probe.html`, `imports/run-graph.mjs` | this run — Arquero 8.0.3 in Chromium 151.0.7922.34, `file://`, headless | 2026-08-01 | 2026-08-01 |
+| 33 | **Original measurement** — D3/M1 structured clone across a worker boundary: `imports/transfer-measurement-2026-08-01.md`, raw `imports/transfer-chromium.json`, `imports/transfer-firefox.json`; harness `imports/transfer-probe.html`, `imports/run-transfer.mjs` | this run — Chromium 151.0.7922.34 / Firefox 153.0, `file://`, headless | 2026-08-01 | 2026-08-01 |
+| 34 | **Original measurement** — D3/M2 + D4/M8 export cost, SharedArrayBuffer availability, cancellation and progress: `imports/export-measurement-2026-08-01.md`, raw `imports/export-chromium.json`, `imports/export-firefox.json`, `run-sab.mjs` output; harness `imports/export-probe.html`, `imports/run-export.mjs`, `imports/sab-probe.html`, `imports/run-sab.mjs` | this run — write-excel-file 4.1.1 and hyparquet-writer 0.16.3 in Chromium 151 / Firefox 153, `file://`, headless | 2026-08-01 | 2026-08-01 |
+| 35 | **Original measurement** — D3/M4 one-file build gate with a real Worker: `imports/worker-build-measurement-2026-08-01.md`, raw `imports/worker-build.json`; harness `imports/worker-build-app/` (two Vite builds), `imports/run-worker-build.mjs` | this run — Vite 8.2.0 + vite-plugin-singlefile 2.3.3, Chromium 151 / Firefox 153, `file://` | 2026-08-01 | 2026-08-01 |
+| 36 | **Original measurement** — D4/M5 + M7 30-Step recompute, memoization and full-dataset search: `imports/pipeline-measurement-2026-08-01.md`, raw `imports/pipeline-chromium.json`, `imports/pipeline-firefox.json`; harness `imports/pipeline-probe.html`, `imports/run-pipeline.mjs` | this run — Arquero 8.0.3 in Chromium 151 / Firefox 153, `file://`, headless | 2026-08-01 | 2026-08-01 |
+| 37 | **Original measurement** — D4/M6 Editor / table contention at 30 Steps: `imports/contention-measurement-2026-08-01.md`, raw `imports/contention.json`; harness `imports/editor-table-app/` (the Editor spike's build plus a virtualized table pane), `imports/run-contention.mjs` | this run — Vue Flow 1.48.2 in Chromium 151 / Firefox 153, `file://`, headless | 2026-08-01 | 2026-08-01 |
+| 38 | [read-excel-file 9.3.5 shipped source: `modules/xlsx/parseSpreadsheetContents.js`, `modules/export/readXlsxFileBrowser.js`, `bundle/read-excel-file.min.js`; worker-f 0.1.13 `lib/environment/createWorkerInBrowser.js`](https://registry.npmjs.org/read-excel-file) | npm package artefacts, self-inspected | 9.3.5 / worker-f 0.1.13 | 2026-08-01 |
+| 39 | [HTML Living Standard 2.7 "Safe passing of structured data"](https://html.spec.whatwg.org/multipage/structured-data.html) + ["Is postMessage slow?"](https://surma.dev/things/is-postmessage-slow/) | WHATWG / surma.dev | living / — | 2026-08-01 |
+| 40 | [MDN — SharedArrayBuffer](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/SharedArrayBuffer) | MDN Web Docs | last modified 2026-02-10 | 2026-08-01 |
+| 41 | [write-excel-file 4.1.1 README](https://registry.npmjs.org/write-excel-file) + [hyparquet-writer 0.16.3 README and `src/write.js`, `src/parquet-writer.js`, `src/datapage.js`](https://registry.npmjs.org/hyparquet-writer) | npm package artefacts, self-inspected | 4.1.1 / 0.16.3 | 2026-08-01 |
+| 42 | Cross-check of hyparquet-writer output with an independent reader — `pq.read_table()` on files written by `codec: SNAPPY / UNCOMPRESSED / GZIP` and by `GZIP` + explicit `compressors` | pyarrow 25.0.0, run this session | 2026-08-01 | 2026-08-01 |
 
 ## Staleness map
 
@@ -687,5 +1159,11 @@ documented with a route out.
 | Failure-mode reports [3][4][5][6] | 2 years | Patterns, not versions |
 | Arquero version and dependencies [29][30] | 3 months | 8.0.3 is over a year old (2025-05-29); a 9.x would invalidate the verb table |
 | Arquero memory and verb semantics [27][31] | on Arquero major version | Read from 8.0.3 source; internals are not a documented contract |
+| Structured-clone and worker timings [33][34] | on browser major-version change | Re-run `run-transfer.mjs` and `run-export.mjs`; both are self-contained |
+| SharedArrayBuffer availability from `file://` [34][40] | 12 months | A platform policy, not a library one — but policies about opaque origins do move |
+| Export library versions and defects [34][41][42] | 3 months | write-excel-file 4.1.1 and hyparquet-writer 0.16.3; the GZIP defect is a fixable bug and may be fixed |
+| `read-excel-file`'s dead worker path [38] | on minor version | `CAN_USE_WORKER = false` is one line away from being flipped back on |
+| Vite worker build behaviour [35] | on Vite major version | Vite 8.2.0 today; rule 1 is a build-tool behaviour, not a browser one |
+| Contention and 30-Step figures [36][37] | on Vue Flow or Arquero major version | Both harnesses rebuild and re-run in minutes |
 
 A selection report older than two quarters should be refreshed before anyone acts on it.

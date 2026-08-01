@@ -1,0 +1,21 @@
+{
+  "name": "imports",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "dependencies": {
+    "arquero": "^8.0.3",
+    "hyparquet-writer": "^0.16.3",
+    "playwright": "^1.62.1",
+    "read-excel-file": "^9.3.5",
+    "write-excel-file": "^4.1.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

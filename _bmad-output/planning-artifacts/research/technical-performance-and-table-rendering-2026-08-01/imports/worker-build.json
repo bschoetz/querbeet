@@ -1,0 +1,99 @@
+{
+ "variants": {
+  "inline (?worker&inline)": {
+   "build": {
+    "distFiles": [
+     "index.html"
+    ],
+    "singleFile": true,
+    "bytes": 62612,
+    "hazards": {
+     "dynamic import": 0,
+     "fetch(": 0,
+     "new Worker": 2,
+     "importScripts": 0,
+     "@font-face": 0,
+     "XMLHttpRequest": 0,
+     "blob: URL construction": 1
+    },
+    "externalSrc": [],
+    "nonDataUrls": []
+   },
+   "engines": {
+    "chromium": {
+     "version": "151.0.7922.34",
+     "errors": [],
+     "extraRequests": [
+      "blob:null/43d68c42-9c48-43cf-8e18-0ce68d72be25"
+     ],
+     "failedRequests": [],
+     "probe": {
+      "constructed": true,
+      "result": {
+       "bytes": 64801,
+       "ms": 56.399999998509884
+      }
+     }
+    },
+    "firefox": {
+     "version": "153.0",
+     "errors": [],
+     "extraRequests": [],
+     "failedRequests": [],
+     "probe": {
+      "constructed": true,
+      "result": {
+       "bytes": 64801,
+       "ms": 47
+      }
+     }
+    }
+   }
+  },
+  "idiomatic (new Worker(new URL))": {
+   "build": {
+    "distFiles": [
+     "exportWorker-DlJonCmc.js",
+     "index-idiomatic.html"
+    ],
+    "singleFile": false,
+    "bytes": 607,
+    "hazards": {
+     "dynamic import": 0,
+     "fetch(": 0,
+     "new Worker": 1,
+     "importScripts": 0,
+     "@font-face": 0,
+     "XMLHttpRequest": 0,
+     "blob: URL construction": 0
+    },
+    "externalSrc": [],
+    "nonDataUrls": []
+   },
+   "engines": {
+    "chromium": {
+     "version": "151.0.7922.34",
+     "errors": [
+      "SecurityError: Failed to construct 'Worker': Script at 'file:///home/n_to/Github/querbeet/_bmad-output/planning-artifacts/research/technical-performance-and-table-rendering-2026-08-01/imports/worker-build-app/dist-idiomatic/exportWorker-DlJonCmc.js' cannot be accessed from origin 'null'."
+     ],
+     "extraRequests": [],
+     "failedRequests": [],
+     "probe": null
+    },
+    "firefox": {
+     "version": "153.0",
+     "errors": [],
+     "extraRequests": [],
+     "failedRequests": [],
+     "probe": {
+      "constructed": true,
+      "result": {
+       "bytes": 64801,
+       "ms": 36
+      }
+     }
+    }
+   }
+  }
+ }
+}

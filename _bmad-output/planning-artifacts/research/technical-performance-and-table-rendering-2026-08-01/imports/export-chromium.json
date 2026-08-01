@@ -1,0 +1,197 @@
+{
+ "browser": "chromium",
+ "version": "151.0.7922.34",
+ "done": true,
+ "crashed": false,
+ "errors": [],
+ "extraRequests": [
+  "blob:null/bf09e627-9a34-4373-9369-629a4957077b",
+  "blob:null/b18dbebf-ca42-452c-9bd1-78bc673773f3",
+  "blob:null/b18dbebf-ca42-452c-9bd1-78bc673773f3",
+  "blob:null/ee30dadf-a9ee-45d4-95f9-4cdc52a6a304",
+  "blob:null/ee30dadf-a9ee-45d4-95f9-4cdc52a6a304",
+  "blob:null/b18dbebf-ca42-452c-9bd1-78bc673773f3",
+  "blob:null/b18dbebf-ca42-452c-9bd1-78bc673773f3",
+  "blob:null/ee30dadf-a9ee-45d4-95f9-4cdc52a6a304",
+  "blob:null/ee30dadf-a9ee-45d4-95f9-4cdc52a6a304"
+ ],
+ "results": {
+  "env": {
+   "ua": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+   "protocol": "file:",
+   "origin": "file://",
+   "sabOnMain": false,
+   "crossOriginIsolated": false,
+   "hasMemory": true,
+   "libs": {
+    "writeXlsxFile": "function",
+    "HPW": "object"
+   },
+   "wasmSharedMemoryBuffer": "SharedArrayBuffer"
+  },
+  "exports": [
+   {
+    "where": "main",
+    "kind": "parquet",
+    "rows": 100000,
+    "codec": "SNAPPY",
+    "bytes": 9001981,
+    "ms": 1553.6
+   },
+   {
+    "where": "main",
+    "kind": "parquet",
+    "rows": 100000,
+    "codec": "UNCOMPRESSED",
+    "bytes": 22437577,
+    "ms": 1394.3
+   },
+   {
+    "where": "main",
+    "kind": "parquet",
+    "rows": 100000,
+    "codec": "GZIP",
+    "bytes": 22437577,
+    "ms": 1378.3
+   },
+   {
+    "where": "worker",
+    "kind": "parquet",
+    "rows": 100000,
+    "codec": "SNAPPY",
+    "postBlockMs": 59.9,
+    "totalMs": 1845.9,
+    "workMs": 1750.2,
+    "shapeMs": 0,
+    "transferMs": 95.6,
+    "bytes": 9001981,
+    "error": null
+   },
+   {
+    "where": "main",
+    "kind": "xlsx",
+    "rows": 100000,
+    "shapeMs": 34.9,
+    "bytes": 11424784,
+    "ms": 4943.8
+   },
+   {
+    "where": "worker",
+    "kind": "xlsx",
+    "rows": 100000,
+    "postBlockMs": 242.3,
+    "totalMs": 5271.5,
+    "workMs": 4941.2,
+    "shapeMs": 269.9,
+    "transferMs": 330.1,
+    "bytes": 11424784,
+    "error": null
+   },
+   {
+    "where": "main",
+    "kind": "parquet",
+    "rows": 500000,
+    "codec": "SNAPPY",
+    "bytes": 46419546,
+    "ms": 9717
+   },
+   {
+    "where": "main",
+    "kind": "parquet",
+    "rows": 500000,
+    "codec": "UNCOMPRESSED",
+    "bytes": 118846332,
+    "ms": 7926.9
+   },
+   {
+    "where": "main",
+    "kind": "parquet",
+    "rows": 500000,
+    "codec": "GZIP",
+    "bytes": 118846332,
+    "ms": 8095.5
+   },
+   {
+    "where": "worker",
+    "kind": "parquet",
+    "rows": 500000,
+    "codec": "SNAPPY",
+    "postBlockMs": 294.7,
+    "totalMs": 10994.8,
+    "workMs": 10397.1,
+    "shapeMs": 0,
+    "transferMs": 597.5,
+    "bytes": 46419546,
+    "error": null
+   },
+   {
+    "where": "main",
+    "kind": "xlsx",
+    "rows": 500000,
+    "shapeMs": 420.3,
+    "bytes": 56661969,
+    "ms": 26269.7
+   },
+   {
+    "where": "worker",
+    "kind": "xlsx",
+    "rows": 500000,
+    "postBlockMs": 1332,
+    "totalMs": 26040.6,
+    "workMs": 24229.7,
+    "shapeMs": 365.9,
+    "transferMs": 1810.7,
+    "bytes": 56661969,
+    "error": null
+   }
+  ],
+  "worker": {
+   "caps": {
+    "op": "caps",
+    "sab": false,
+    "crossOriginIsolated": false,
+    "atomicsWait": true,
+    "wasmSharedMemoryBuffer": "SharedArrayBuffer",
+    "wasmSharedMemoryError": null
+   }
+  },
+  "cancel": [
+   {
+    "chunk": 1000000,
+    "latencyMs": 3,
+    "doneAt": 55000000
+   },
+   {
+    "chunk": 10000000,
+    "latencyMs": 17.2,
+    "doneAt": 160000000
+   }
+  ],
+  "progress": [
+   {
+    "progressEvery": 0,
+    "totalMs": 571.4,
+    "workerMs": 571.1,
+    "messages": 0
+   },
+   {
+    "progressEvery": 1,
+    "totalMs": 586.2,
+    "workerMs": 586.1,
+    "messages": 100
+   },
+   {
+    "progressEvery": 10,
+    "totalMs": 583.3,
+    "workerMs": 583.2,
+    "messages": 10
+   }
+  ],
+  "notes": [
+   "built 100000 rows, heap 85 MB",
+   "toColumns 100000: 66.5 ms",
+   "built 500000 rows, heap 478.5 MB",
+   "toColumns 500000: 314.1 ms"
+  ]
+ }
+}

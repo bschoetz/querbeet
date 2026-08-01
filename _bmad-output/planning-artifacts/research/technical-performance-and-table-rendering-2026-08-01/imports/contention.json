@@ -1,0 +1,358 @@
+{
+ "build": {
+  "distFiles": [
+   "index.html"
+  ],
+  "singleFile": true,
+  "bytes": 251127,
+  "hazards": {
+   "dynamic import": 0,
+   "fetch(": 0,
+   "new Worker": 0,
+   "importScripts": 0,
+   "@font-face": 0,
+   "XMLHttpRequest": 0
+  },
+  "nonDataUrls": []
+ },
+ "engines": {
+  "chromium": {
+   "engine": "chromium",
+   "version": "151.0.7922.34",
+   "errors": [],
+   "cases": [
+    {
+     "label": "6 Steps, canvas idle",
+     "steps": 6,
+     "table": true,
+     "drag": false,
+     "growMs": 3.5,
+     "mountMs": 33.3,
+     "nodesInDom": 6,
+     "heapMB": 89.1,
+     "nodeHeightSpread": [
+      101.9,
+      187.8
+     ],
+     "swaps": 200,
+     "swapP50": 3.1,
+     "swapP95": 5.1,
+     "swapMax": 6.3,
+     "frameP50": 16.7,
+     "frameP95": 16.7,
+     "frameMax": 16.8,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "6 Steps, node dragging",
+     "steps": 6,
+     "table": true,
+     "drag": true,
+     "growMs": 9.4,
+     "mountMs": 33.3,
+     "nodesInDom": 6,
+     "heapMB": 99.3,
+     "nodeHeightSpread": [
+      101.9,
+      187.8
+     ],
+     "swaps": 200,
+     "swapP50": 2.9,
+     "swapP95": 5.3,
+     "swapMax": 6.2,
+     "frameP50": 16.7,
+     "frameP95": 16.8,
+     "frameMax": 16.8,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "30 Steps, canvas idle",
+     "steps": 30,
+     "table": true,
+     "drag": false,
+     "growMs": 15.8,
+     "mountMs": 50.1,
+     "nodesInDom": 30,
+     "heapMB": 107.1,
+     "nodeHeightSpread": [
+      38.7,
+      92.2
+     ],
+     "swaps": 200,
+     "swapP50": 2.9,
+     "swapP95": 4.3,
+     "swapMax": 6,
+     "frameP50": 16.7,
+     "frameP95": 16.7,
+     "frameMax": 16.8,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "30 Steps, node dragging",
+     "steps": 30,
+     "table": true,
+     "drag": true,
+     "growMs": 9,
+     "mountMs": 33.3,
+     "nodesInDom": 30,
+     "heapMB": 103.3,
+     "nodeHeightSpread": [
+      38.7,
+      92.2
+     ],
+     "swaps": 200,
+     "swapP50": 2.9,
+     "swapP95": 4.4,
+     "swapMax": 7.5,
+     "frameP50": 16.7,
+     "frameP95": 16.7,
+     "frameMax": 16.8,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "30 Steps, all bodies resized",
+     "steps": 30,
+     "table": true,
+     "drag": false,
+     "growMs": 32.2,
+     "mountMs": 33.3,
+     "nodesInDom": 30,
+     "heapMB": 114.1,
+     "nodeHeightSpread": [
+      60.1,
+      113.6
+     ],
+     "swaps": 200,
+     "swapP50": 2.9,
+     "swapP95": 5.4,
+     "swapMax": 7.6,
+     "frameP50": 16.7,
+     "frameP95": 16.7,
+     "frameMax": 16.8,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "30 Steps, no table pane, dragging",
+     "steps": 30,
+     "table": false,
+     "drag": true,
+     "growMs": 20.3,
+     "mountMs": 33.3,
+     "nodesInDom": 30,
+     "heapMB": 103.5,
+     "nodeHeightSpread": [
+      64.4,
+      153.6
+     ],
+     "swaps": 0,
+     "swapP50": null,
+     "swapP95": null,
+     "swapMax": null,
+     "frameP50": 16.7,
+     "frameP95": 16.7,
+     "frameMax": 16.8,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "30 Steps, table back, dragging",
+     "steps": 30,
+     "table": true,
+     "drag": true,
+     "growMs": 12,
+     "mountMs": 33.4,
+     "nodesInDom": 30,
+     "heapMB": 118.7,
+     "nodeHeightSpread": [
+      38.7,
+      92.2
+     ],
+     "swaps": 200,
+     "swapP50": 3,
+     "swapP95": 4.9,
+     "swapMax": 7.4,
+     "frameP50": 16.7,
+     "frameP95": 16.7,
+     "frameMax": 16.8,
+     "longFrames": 0,
+     "timedOut": false
+    }
+   ],
+   "extraRequests": []
+  },
+  "firefox": {
+   "engine": "firefox",
+   "version": "153.0",
+   "errors": [],
+   "cases": [
+    {
+     "label": "6 Steps, canvas idle",
+     "steps": 6,
+     "table": true,
+     "drag": false,
+     "growMs": 31,
+     "mountMs": 33,
+     "nodesInDom": 6,
+     "heapMB": null,
+     "nodeHeightSpread": [
+      101.9,
+      189.9
+     ],
+     "swaps": 200,
+     "swapP50": 5,
+     "swapP95": 8,
+     "swapMax": 24,
+     "frameP50": 17.02,
+     "frameP95": 17.08,
+     "frameMax": 17.42,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "6 Steps, node dragging",
+     "steps": 6,
+     "table": true,
+     "drag": true,
+     "growMs": 31,
+     "mountMs": 33,
+     "nodesInDom": 6,
+     "heapMB": null,
+     "nodeHeightSpread": [
+      101.9,
+      189.9
+     ],
+     "swaps": 200,
+     "swapP50": 4,
+     "swapP95": 7,
+     "swapMax": 12,
+     "frameP50": 17.02,
+     "frameP95": 17.06,
+     "frameMax": 33.14,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "30 Steps, canvas idle",
+     "steps": 30,
+     "table": true,
+     "drag": false,
+     "growMs": 31,
+     "mountMs": 67,
+     "nodesInDom": 30,
+     "heapMB": null,
+     "nodeHeightSpread": [
+      38.7,
+      94
+     ],
+     "swaps": 200,
+     "swapP50": 4,
+     "swapP95": 7,
+     "swapMax": 8,
+     "frameP50": 17.02,
+     "frameP95": 17.1,
+     "frameMax": 33.26,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "30 Steps, node dragging",
+     "steps": 30,
+     "table": true,
+     "drag": true,
+     "growMs": 32,
+     "mountMs": 33,
+     "nodesInDom": 30,
+     "heapMB": null,
+     "nodeHeightSpread": [
+      38.7,
+      94
+     ],
+     "swaps": 200,
+     "swapP50": 4,
+     "swapP95": 6,
+     "swapMax": 8,
+     "frameP50": 17.02,
+     "frameP95": 17.06,
+     "frameMax": 33.08,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "30 Steps, all bodies resized",
+     "steps": 30,
+     "table": true,
+     "drag": false,
+     "growMs": 33,
+     "mountMs": 33,
+     "nodesInDom": 30,
+     "heapMB": null,
+     "nodeHeightSpread": [
+      60.1,
+      115.4
+     ],
+     "swaps": 200,
+     "swapP50": 4,
+     "swapP95": 6,
+     "swapMax": 8,
+     "frameP50": 17.02,
+     "frameP95": 17.06,
+     "frameMax": 17.16,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "30 Steps, no table pane, dragging",
+     "steps": 30,
+     "table": false,
+     "drag": true,
+     "growMs": 37,
+     "mountMs": 33,
+     "nodesInDom": 30,
+     "heapMB": null,
+     "nodeHeightSpread": [
+      64.4,
+      156.6
+     ],
+     "swaps": 0,
+     "swapP50": null,
+     "swapP95": null,
+     "swapMax": null,
+     "frameP50": 17.02,
+     "frameP95": 17.08,
+     "frameMax": 17.38,
+     "longFrames": 0,
+     "timedOut": false
+    },
+    {
+     "label": "30 Steps, table back, dragging",
+     "steps": 30,
+     "table": true,
+     "drag": true,
+     "growMs": 33,
+     "mountMs": 33,
+     "nodesInDom": 30,
+     "heapMB": null,
+     "nodeHeightSpread": [
+      38.7,
+      94
+     ],
+     "swaps": 200,
+     "swapP50": 4,
+     "swapP95": 6,
+     "swapMax": 9,
+     "frameP50": 17.02,
+     "frameP95": 17.06,
+     "frameMax": 17.24,
+     "longFrames": 0,
+     "timedOut": false
+    }
+   ],
+   "extraRequests": []
+  }
+ }
+}
