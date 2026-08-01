@@ -170,7 +170,9 @@ onMounted(async () => {
     </p>
 
     <div class="qb-canvas">
-      <VueFlow :apply-default="false" :delete-key-code="null" :min-zoom="0.2">
+      <!-- Delete rather than Backspace: useKeyPress ignores presses inside
+           inputs, but Backspace in a config field is too easy to mean. -->
+      <VueFlow :apply-default="false" delete-key-code="Delete" :min-zoom="0.2">
         <Background />
         <template #node-source="p"><SourceNode v-bind="p" /></template>
         <template #node-union="p"><UnionNode v-bind="p" /></template>

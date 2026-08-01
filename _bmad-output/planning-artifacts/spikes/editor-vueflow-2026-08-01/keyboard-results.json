@@ -1,0 +1,480 @@
+{
+ "engines": {
+  "chromium": {
+   "engine": "chromium",
+   "version": "151.0.7922.34",
+   "errors": [],
+   "interactions": {
+    "reachCanvas": {
+     "question": "Erreicht die Tabulatortaste die Steps auf der Fläche?",
+     "firstNodeAfterPresses": 8,
+     "anyHandleFocusable": false,
+     "focusOrder": [
+      {
+       "tag": "button",
+       "t": "add-union",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "+ Union"
+      },
+      {
+       "tag": "button",
+       "t": "add-join",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "+ Join"
+      },
+      {
+       "tag": "button",
+       "t": "add-filter",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "+ Filter"
+      },
+      {
+       "tag": "input",
+       "t": "recipe-name",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": ""
+      },
+      {
+       "tag": "button",
+       "t": "save",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "Rezept speichern"
+      },
+      {
+       "tag": "button",
+       "t": "clear",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "Leeren"
+      },
+      {
+       "tag": "button",
+       "t": "load",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "Rezept laden"
+      },
+      {
+       "tag": "div",
+       "t": null,
+       "cls": "vue-flow__node vue-flow__node-source nopan dragg",
+       "node": "q1",
+       "isNodeWrapper": true,
+       "isHandle": false,
+       "text": "Quelle Datei 100.000 Zei"
+      },
+      {
+       "tag": "input",
+       "t": "name-q1",
+       "cls": "qb-name",
+       "node": "q1",
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": ""
+      },
+      {
+       "tag": "input",
+       "t": "file-q1",
+       "cls": "",
+       "node": "q1",
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": ""
+      },
+      {
+       "tag": "div",
+       "t": null,
+       "cls": "vue-flow__node vue-flow__node-source nopan dragg",
+       "node": "q2",
+       "isNodeWrapper": true,
+       "isHandle": false,
+       "text": "Quelle Datei 0 Zeilen, 2"
+      },
+      {
+       "tag": "input",
+       "t": "name-q2",
+       "cls": "qb-name",
+       "node": "q2",
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": ""
+      },
+      {
+       "tag": "input",
+       "t": "file-q2",
+       "cls": "",
+       "node": "q2",
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": ""
+      },
+      {
+       "tag": "div",
+       "t": null,
+       "cls": "vue-flow__node vue-flow__node-source nopan dragg",
+       "node": "kd",
+       "isNodeWrapper": true,
+       "isHandle": false,
+       "text": "Quelle Datei 0 Zeilen, 2"
+      }
+     ],
+     "pass": true
+    },
+    "select": {
+     "question": "Lässt sich ein Step per Tastatur auswählen?",
+     "reachedAfterPresses": 8,
+     "selected": [
+      "q1"
+     ],
+     "pass": true
+    },
+    "multiSelect": {
+     "question": "Lassen sich mehrere Steps auswählen?",
+     "selectedByKeyboard": [
+      "q1"
+     ],
+     "selectedByPointer": [
+      "q1"
+     ],
+     "keyboardOnlyGap": false,
+     "pass": false
+    },
+    "move": {
+     "question": "Lässt sich ein Step per Pfeiltasten verschieben — und kommt das im Modell an?",
+     "posBefore": {
+      "x": 40,
+      "y": 60
+     },
+     "posAfterArrows": {
+      "x": 65,
+      "y": 75
+     },
+     "stepPx": 5,
+     "shiftStepPx": 20,
+     "drift": {
+      "ok": true,
+      "problems": []
+     },
+     "pass": true
+    },
+    "addStep": {
+     "question": "Lässt sich ein Step per Tastatur anlegen?",
+     "reachedAfterPresses": 3,
+     "countBefore": 6,
+     "countAfter": 7,
+     "pass": true
+    },
+    "setResult": {
+     "question": "Lässt sich der Ergebnis-Step per Tastatur setzen?",
+     "reachedAfterPresses": 19,
+     "resultId": "u1",
+     "pass": true
+    },
+    "editConfig": {
+     "question": "Lässt sich die Konfiguration eines Steps per Tastatur ändern?",
+     "reachedAfterPresses": 10,
+     "file": "umsatz-q1.csv-neu",
+     "pass": true
+    },
+    "connect": {
+     "question": "Lassen sich zwei Steps per Tastatur verbinden?",
+     "handles": {
+      "total": 11,
+      "withTabindex": 0,
+      "withRole": 0
+     },
+     "handleReachableByTab": false,
+     "edgesBefore": 5,
+     "edgesAfter": 5,
+     "connectOnClickDefault": true,
+     "pass": false
+    },
+    "deleteStep": {
+     "question": "Lässt sich ein Step per Tastatur löschen — und wird der Nachfolger als defekt markiert?",
+     "countBefore": 6,
+     "countAfter": 5,
+     "broken": [
+      "„Nur Bestand“ braucht 1 Eingänge, hat aber 0."
+     ],
+     "drift": {
+      "ok": true,
+      "problems": []
+     },
+     "pass": true
+    },
+    "panZoom": {
+     "question": "Lässt sich die Fläche per Tastatur verschieben und zoomen?",
+     "before": {
+      "x": 69.37313432835822,
+      "y": 176.7985074626866,
+      "zoom": 0.8656716417910447
+     },
+     "after": {
+      "x": 69.37313432835822,
+      "y": 176.7985074626866,
+      "zoom": 0.8656716417910447
+     },
+     "changed": false,
+     "pass": false
+    }
+   }
+  },
+  "firefox": {
+   "engine": "firefox",
+   "version": "153.0",
+   "errors": [],
+   "interactions": {
+    "reachCanvas": {
+     "question": "Erreicht die Tabulatortaste die Steps auf der Fläche?",
+     "firstNodeAfterPresses": 8,
+     "anyHandleFocusable": false,
+     "focusOrder": [
+      {
+       "tag": "button",
+       "t": "add-union",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "+ Union"
+      },
+      {
+       "tag": "button",
+       "t": "add-join",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "+ Join"
+      },
+      {
+       "tag": "button",
+       "t": "add-filter",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "+ Filter"
+      },
+      {
+       "tag": "input",
+       "t": "recipe-name",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": ""
+      },
+      {
+       "tag": "button",
+       "t": "save",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "Rezept speichern"
+      },
+      {
+       "tag": "button",
+       "t": "clear",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "Leeren"
+      },
+      {
+       "tag": "button",
+       "t": "load",
+       "cls": "",
+       "node": null,
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": "Rezept laden"
+      },
+      {
+       "tag": "div",
+       "t": null,
+       "cls": "vue-flow__node vue-flow__node-source nopan dragg",
+       "node": "q1",
+       "isNodeWrapper": true,
+       "isHandle": false,
+       "text": "Quelle Datei 100.000 Zei"
+      },
+      {
+       "tag": "input",
+       "t": "name-q1",
+       "cls": "qb-name",
+       "node": "q1",
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": ""
+      },
+      {
+       "tag": "input",
+       "t": "file-q1",
+       "cls": "",
+       "node": "q1",
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": ""
+      },
+      {
+       "tag": "div",
+       "t": null,
+       "cls": "vue-flow__node vue-flow__node-source nopan dragg",
+       "node": "q2",
+       "isNodeWrapper": true,
+       "isHandle": false,
+       "text": "Quelle Datei 0 Zeilen, 2"
+      },
+      {
+       "tag": "input",
+       "t": "name-q2",
+       "cls": "qb-name",
+       "node": "q2",
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": ""
+      },
+      {
+       "tag": "input",
+       "t": "file-q2",
+       "cls": "",
+       "node": "q2",
+       "isNodeWrapper": false,
+       "isHandle": false,
+       "text": ""
+      },
+      {
+       "tag": "div",
+       "t": null,
+       "cls": "vue-flow__node vue-flow__node-source nopan dragg",
+       "node": "kd",
+       "isNodeWrapper": true,
+       "isHandle": false,
+       "text": "Quelle Datei 0 Zeilen, 2"
+      }
+     ],
+     "pass": true
+    },
+    "select": {
+     "question": "Lässt sich ein Step per Tastatur auswählen?",
+     "reachedAfterPresses": 8,
+     "selected": [
+      "q1"
+     ],
+     "pass": true
+    },
+    "multiSelect": {
+     "question": "Lassen sich mehrere Steps auswählen?",
+     "selectedByKeyboard": [
+      "q1"
+     ],
+     "selectedByPointer": [
+      "q1"
+     ],
+     "keyboardOnlyGap": false,
+     "pass": false
+    },
+    "move": {
+     "question": "Lässt sich ein Step per Pfeiltasten verschieben — und kommt das im Modell an?",
+     "posBefore": {
+      "x": 40,
+      "y": 60
+     },
+     "posAfterArrows": {
+      "x": 65,
+      "y": 75
+     },
+     "stepPx": 5,
+     "shiftStepPx": 20,
+     "drift": {
+      "ok": true,
+      "problems": []
+     },
+     "pass": true
+    },
+    "addStep": {
+     "question": "Lässt sich ein Step per Tastatur anlegen?",
+     "reachedAfterPresses": 3,
+     "countBefore": 6,
+     "countAfter": 7,
+     "pass": true
+    },
+    "setResult": {
+     "question": "Lässt sich der Ergebnis-Step per Tastatur setzen?",
+     "reachedAfterPresses": 19,
+     "resultId": "u1",
+     "pass": true
+    },
+    "editConfig": {
+     "question": "Lässt sich die Konfiguration eines Steps per Tastatur ändern?",
+     "reachedAfterPresses": 10,
+     "file": "umsatz-q1.csv-neu",
+     "pass": true
+    },
+    "connect": {
+     "question": "Lassen sich zwei Steps per Tastatur verbinden?",
+     "handles": {
+      "total": 11,
+      "withTabindex": 0,
+      "withRole": 0
+     },
+     "handleReachableByTab": false,
+     "edgesBefore": 5,
+     "edgesAfter": 5,
+     "connectOnClickDefault": true,
+     "pass": false
+    },
+    "deleteStep": {
+     "question": "Lässt sich ein Step per Tastatur löschen — und wird der Nachfolger als defekt markiert?",
+     "countBefore": 6,
+     "countAfter": 5,
+     "broken": [
+      "„Nur Bestand“ braucht 1 Eingänge, hat aber 0."
+     ],
+     "drift": {
+      "ok": true,
+      "problems": []
+     },
+     "pass": true
+    },
+    "panZoom": {
+     "question": "Lässt sich die Fläche per Tastatur verschieben und zoomen?",
+     "before": {
+      "x": 68.82627921667722,
+      "y": 170.7391029690461,
+      "zoom": 0.8793430195830702
+     },
+     "after": {
+      "x": 68.82627921667722,
+      "y": 170.7391029690461,
+      "zoom": 0.8793430195830702
+     },
+     "changed": false,
+     "pass": false
+    }
+   }
+  }
+ }
+}

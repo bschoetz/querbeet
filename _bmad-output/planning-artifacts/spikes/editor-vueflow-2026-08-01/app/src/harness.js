@@ -161,6 +161,8 @@ export function installHarness(vf, changeLog = []) {
     rawAddEdges: (edges) => vf.addEdges(edges),
     vfEdgeCount: () => vf.getEdges.value.length,
     vfNodeCount: () => vf.getNodes.value.length,
+    selectedNodeIds: () => vf.getSelectedNodes.value.map((n) => n.id),
+    viewport: () => ({ ...vf.viewport.value }),
     changeLog: () => changeLog.slice(),
     clearChangeLog: () => (changeLog.length = 0),
     // Flipping this at runtime shows whether "the addition never landed" is a

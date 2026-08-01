@@ -200,9 +200,12 @@ graph is replaced only on success.
 
 ## What is still open
 
-- **Keyboard reachability.** Out of scope by project decision, and PRD FR-12 and NFR-7 remain
-  unsatisfied. Vue Flow's mutations are reachable programmatically — the precondition — but no
-  keyboard path exists in the box, and none was built here.
+- **Keyboard reachability.** Checked separately after this spike — see `findings-keyboard.md`.
+  Seven of ten interactions turned out to be keyboard-reachable already, which corrects R6's "no
+  keyboard path exists in the box." Two NFR-7 gaps remain — connecting two Steps, and panning or
+  zooming the canvas — plus a design-B bug the check turned up: multi-selection is dropped for
+  pointer and keyboard alike, because `applyDefault: false` also disables the applier that would
+  have applied it.
 - **Auto-layout and undo/redo.** Still nobody's; unchanged by this spike.
 - **Scale.** The graph carried six to seven Steps. Nothing here says what a fifty-Step Recipe costs
   to render or to re-project.

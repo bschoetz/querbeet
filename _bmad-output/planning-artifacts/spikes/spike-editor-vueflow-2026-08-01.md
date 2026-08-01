@@ -105,6 +105,9 @@ spike, which this unblocks.
 - **Undo/redo.** Vue Flow ships none, and it was never in the hand-built line count either.
 - **Keyboard reachability.** Excluded from the R6 selection by project decision. PRD FR-12 and
   NFR-7 are *not* satisfied and must not be assumed so — but this spike is not where that is fixed.
+  *Checked afterwards anyway, because it was an hour's work:* seven of ten interactions are already
+  keyboard-reachable, two NFR-7 gaps remain (connecting, pan/zoom), and the check found a
+  design-B bug in multi-selection. See `editor-vueflow-2026-08-01/findings-keyboard.md`.
 - **The transformation work itself.** Arquero is settled (R1); this spike is the Editor shell.
 
 ---
