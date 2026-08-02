@@ -1,0 +1,65 @@
+<?xml version="1.0" ?>
+<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="8">
+<numFmt numFmtId="100" formatCode="#,##0.00"/>
+<numFmt numFmtId="101" formatCode="#.##0,00"/>
+<numFmt numFmtId="102" formatCode="[$-407]#,##0.00"/>
+<numFmt numFmtId="103" formatCode="#,##0.00\ &quot;€&quot;"/>
+<numFmt numFmtId="104" formatCode="dd.mm.yyyy"/>
+<numFmt numFmtId="105" formatCode="DD.MM.YYYY"/>
+<numFmt numFmtId="106" formatCode="[$-407]dd.mm.yyyy"/>
+<numFmt numFmtId="107" formatCode="yyyy-mm-dd"/>
+</numFmts>
+<fonts count="2">
+<font>
+<family val="2"/>
+<scheme val="minor"/>
+<color theme="1"/>
+</font>
+<font>
+<family val="2"/>
+<scheme val="minor"/>
+<b/>
+<color theme="1"/>
+</font>
+</fonts>
+<fills count="2">
+<fill>
+<patternFill patternType="none"/>
+</fill>
+<fill>
+<patternFill patternType="gray125"/>
+</fill>
+</fills>
+<borders count="1">
+<border>
+<left/>
+<right/>
+<top/>
+<bottom/>
+<diagonal/>
+</border>
+</borders>
+<cellXfs count="10">
+<xf >
+</xf>
+<xf fontId="1" applyFont="1">
+</xf>
+<xf numFmtId="100" applyNumberFormat="1">
+</xf>
+<xf numFmtId="101" applyNumberFormat="1">
+</xf>
+<xf numFmtId="102" applyNumberFormat="1">
+</xf>
+<xf numFmtId="103" applyNumberFormat="1">
+</xf>
+<xf numFmtId="104" applyNumberFormat="1">
+</xf>
+<xf numFmtId="105" applyNumberFormat="1">
+</xf>
+<xf numFmtId="106" applyNumberFormat="1">
+</xf>
+<xf numFmtId="107" applyNumberFormat="1">
+</xf>
+</cellXfs>
+</styleSheet>

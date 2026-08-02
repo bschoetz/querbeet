@@ -1,0 +1,9 @@
+{
+  "name": "spike-xlsx-german-format",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "read-excel-file": "9.3.5",
+    "write-excel-file": "4.1.1"
+  }
+}

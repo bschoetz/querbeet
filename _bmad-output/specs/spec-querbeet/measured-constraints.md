@@ -84,6 +84,21 @@ A spike built the Editor and opened it from `file://`.
 - **Write cost.** At 100,000 rows the write is comfortably below the threshold where a tab visibly freezes; projected to half a million it lands *on* that threshold in Firefox and below it in Chromium — close enough that CAP-25's progress affordance is required rather than optional.
 - **Storage is about a tenth of the heap:** 100k × 20 rows occupy 8.9 MB stored against ~94 MB live.
 
+## Excel format codes are locale-neutral, and the German-looking one is the trap
+
+Measured 2026-08-02 against the pinned `write-excel-file` 4.1.1, output inspected in `xl/styles.xml` and rendered through LibreOffice under `LC_ALL=de_DE.UTF-8`. Apparatus: `planning-artifacts/spikes/xlsx-german-format-2026-08-02/`.
+
+xlsx stores a format code **locale-neutrally** — `.` is the decimal separator and `,` the thousands separator *inside the code* — and the reading application renders it per the user's locale. So:
+
+- **Write `#,##0.00` and `dd.mm.yyyy`.** Under a German locale these render `1.234,56` and `31.12.2025`.
+- **Never write `#.##0,00`.** It is the code a German-speaking developer reaches for and it is a defect: measured, it renders as `1.234,56000`.
+- **Do not use the `[[$]-407]` locale prefix.** It renders correctly but is unnecessary, and it *pins* output to German rather than following the reader's locale — wrong for a file the recipient may open anywhere.
+- Date codes are case-insensitive; `dd.mm.yyyy` and `DD.MM.YYYY` render identically.
+
+The library passes codes through verbatim and rewrites nothing, so the whole decision sits in querbeet's own adapter. Round-tripped: 7 of 7 numeric cases come back as real numbers, 4 of 4 dates as real dates, `0123` survives as text, and umlauts and the euro sign survive — which matters because a format code applied to a string formats nothing.
+
+Two API facts the adapter will otherwise rediscover: `write-excel-file` 4.1.1 has **no `filePath` option** — the call returns `{ toBuffer, toStream, toFile }`, and the browser path is `toBuffer`; and `read-excel-file` 9.3.5 returns `[{ sheet, data }]` rather than a flat grid when no sheet is named.
+
 ## The prompt block owes a numeric filter example
 
 The block template illustrates a filter twice, and both illustrations are text comparisons. That is why five independent authoring runs had to guess whether a `>` comparison value is a string or a number, and why four of them guessed wrong — against a currency column formatted `1.234,56`, those two readings plus a locale-aware parse give three different answers. The template is the cheapest half of the fix (CAP-27); **the ingest validator (CAP-28) is the half that has to hold regardless**, because a model that never saw the template can still paste a Recipe in.

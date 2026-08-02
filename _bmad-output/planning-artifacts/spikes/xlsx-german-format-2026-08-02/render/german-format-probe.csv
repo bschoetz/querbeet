@@ -1,0 +1,14 @@
+ID;Was geprüft wird;Formatcode;Wert;Erwartet in DE-Excel
+N1;Number, locale-neutral code;#,##0.00;1.234,56;1.234,56
+N2;Number, German-looking literal code;#.##0,00;1.234,56000;1.234,56 — expected to be WRONG
+N3;Number, explicit German locale prefix;[$-407]#,##0.00;1.234,56;1.234,56
+N4;Number, no format at all (General);(keiner);1234,56;1234,56 (no grouping)
+N5;Thousands, locale-neutral code;#,##0.00;1.234.567,89;1.234.567,89
+N6;Negative, locale-neutral code;#,##0.00;-1.234,56;-1.234,56
+N7;Euro currency, locale-neutral code;"#,##0.00\ ""€""";1.234,56 €;1.234,56 €
+D1;Date, lowercase code;dd.mm.yyyy;31.12.2025;31.12.2025
+D2;Date, uppercase code;DD.MM.YYYY;31.12.2025;31.12.2025
+D3;Date, explicit German locale prefix;[$-407]dd.mm.yyyy;31.12.2025;31.12.2025
+D4;Date, ISO code;yyyy-mm-dd;2025-12-31;2025-12-31
+T1;Führende Null bleibt Text;(Text);0123;0123 — nicht 123
+T2;Umlaute und Eurozeichen;(Text);Größenmaß Äöü ß — 12,50 €;unverändert
