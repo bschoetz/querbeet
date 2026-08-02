@@ -2,8 +2,12 @@
 title: 'Story 3 — Typing as Step zero: detection, ambiguity, confirmation, annotations'
 type: 'feature'
 created: '2026-08-02'
-status: 'done'
+status: 'in-review'
 review_loop_iteration: 0
+# The commit the spec was approved at, immediately before implementation.
+# Everything after it is story 3's diff, including the two documentation
+# commits that amended typing.js and typing.spec.js.
+baseline_commit: '65922fcab880a6b2d37f4602b847ea42382650db'
 context:
   - '_bmad-output/planning-artifacts/architecture/architecture-querbeet-2026-08-02/ARCHITECTURE-SPINE.md'
   - '_bmad-output/planning-artifacts/research/technical-type-and-locale-detection-2026-08-01/research.md'

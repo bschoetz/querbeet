@@ -7,7 +7,7 @@ so a later reader can see what was decided rather than only what remains.
 ## Open
 
 - source_spec: `spec-3-typing-step-zero.md`
-  summary: Story 3 shipped without the adversarial review pass that stories 1 and 2 went through, and its `done_checkpoint` is still outstanding.
+  summary: Story 3 shipped without the adversarial review pass that stories 1 and 2 went through, and its `done_checkpoint` is still outstanding. **Being made good: the spec is back at `in-review` with a baseline commit, so the review can run against the real diff.**
   evidence: Stories 1 and 2 ran the three review layers — blind hunter, edge-case hunter, verification-gap reviewer — as independent context-free subagents, and story 2's produced eight patches including two real defects nobody would have found by re-reading their own work (rows expressed in rem against a px geometry; a virtualized table announcing ~50 rows to a screen reader). Story 3 was implemented directly on request and self-reviewed by mutation instead: sampling the column, letting a tie name a winner, opening the gate, carrying a confirmation across a re-read, and dropping an annotation each fail exactly the tests that name them. That is evidence the tests bite, not evidence the design is right. `stories.yaml` also marks story 3 `spec_checkpoint: true` and `done_checkpoint: true`; the spec checkpoint was bypassed by an explicit instruction and the done checkpoint has not happened. Anyone reading the green suite should know both facts before trusting it.
 
 - source_spec: `spec-3-typing-step-zero.md`
