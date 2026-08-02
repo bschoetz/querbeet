@@ -2,7 +2,7 @@
 title: 'Story 2 — Source preview: bounded row window with full-Source counts'
 type: 'feature'
 created: '2026-08-02'
-status: 'ready-for-dev'
+status: 'done'
 review_loop_iteration: 0
 baseline_commit: '0695c4d9a58e415f15daf1b5b2644cbbe39e8c1f'
 context:
@@ -59,11 +59,11 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `core/view/row-window.js` + `row-window.test.js` — geometry + slicing — bounds at start/middle/end, spacers summing to true extent, clamp threshold, page math; edges: 0 rows, fewer rows than window, exactly the clamp boundary.
-- [ ] `ui/RowWindow.vue` — the reusable AD-24 component — story 10 must be able to adopt it unchanged.
-- [ ] `ui/SourcesPane.vue` — embed the preview per Source card, replace chips, extend counts line — CAP-8 surface.
-- [ ] `tests/e2e/csv-sources.spec.js` — re-anchor chip-based assertions to the grid header.
-- [ ] `tests/e2e/source-preview.spec.js` — cover the I/O matrix rows: totals vs. DOM row ceiling, scroll-to-end values, override re-read, header correction, empty Source, German count formatting.
+- [x] `core/view/row-window.js` + `row-window.test.js` — geometry + slicing — bounds at start/middle/end, spacers summing to true extent, clamp threshold, page math; edges: 0 rows, fewer rows than window, exactly the clamp boundary.
+- [x] `ui/RowWindow.vue` — the reusable AD-24 component — story 10 must be able to adopt it unchanged.
+- [x] `ui/SourcesPane.vue` — embed the preview per Source card, replace chips, extend counts line — CAP-8 surface.
+- [x] `tests/e2e/csv-sources.spec.js` — re-anchor chip-based assertions to the grid header.
+- [x] `tests/e2e/source-preview.spec.js` — cover the I/O matrix rows: totals vs. DOM row ceiling, scroll-to-end values, override re-read, header correction, empty Source, German count formatting.
 
 **Acceptance Criteria:**
 - Given a generated 1,500-row fixture, when its card renders, then the DOM holds at most ~50 preview rows while the counts line shows `1.500`.
@@ -85,3 +85,58 @@ context:
 - `npm run lint` — clean; proves `core/view` respects the no-DOM wall.
 - `npm test` — geometry suite green alongside existing suites.
 - `npm run test:e2e` — builds `dist/` and runs both engines from `file://`.
+
+## Suggested Review Order
+
+**The mechanism — what a scroll offset means**
+
+- The whole projection in one pure call; the component below is two lines of glue.
+  [`row-window.js:189`](../../core/view/row-window.js#L189)
+
+- Scroll offset to row index, plus the two spacer heights that make the scrollbar honest.
+  [`row-window.js:106`](../../core/view/row-window.js#L106)
+
+- A row is a stride across columns — the whole table is never materialized.
+  [`row-window.js:152`](../../core/view/row-window.js#L152)
+
+- The clamp: why 16 M px, and why paging is the guard past it.
+  [`row-window.js:50`](../../core/view/row-window.js#L50)
+
+**The surface — DOM on one side of the wall only**
+
+- Imperative update into a `shallowRef`; no rows in `ref`/`reactive`/`computed` (AD-6).
+  [`RowWindow.vue:68`](../../ui/RowWindow.vue#L68)
+
+- Every height bound from `ROW_HEIGHT_PX`, so the CSS and the constant cannot drift.
+  [`RowWindow.vue:112`](../../ui/RowWindow.vue#L112)
+
+- Row coordinates for assistive tech: the table announces its totals, not its window.
+  [`RowWindow.vue:126`](../../ui/RowWindow.vue#L126)
+
+- A re-read mints a new frozen table; identity change resets the window, no subscription.
+  [`RowWindow.vue:85`](../../ui/RowWindow.vue#L85)
+
+- Page controls, hidden for every table below the clamp.
+  [`RowWindow.vue:200`](../../ui/RowWindow.vue#L200)
+
+**The Source card — CAP-8**
+
+- Counts are the Source's totals, never the window's.
+  [`SourcesPane.vue:251`](../../ui/SourcesPane.vue#L251)
+
+- Chips replaced by the grid, whose header row now carries the column names.
+  [`SourcesPane.vue:257`](../../ui/SourcesPane.vue#L257)
+
+**Tests**
+
+- The paged case, unit-tested where the fixture is a number rather than 500 MB of CSV.
+  [`row-window.test.js:241`](../../core/view/row-window.test.js#L241)
+
+- Totals versus the DOM row ceiling — the story's headline promise.
+  [`source-preview.spec.js:87`](../../tests/e2e/source-preview.spec.js#L87)
+
+- The 28 px row survives a browser font size that is not 16 px.
+  [`source-preview.spec.js:192`](../../tests/e2e/source-preview.spec.js#L192)
+
+- Chip-anchored assertions re-anchored to the grid's header role.
+  [`csv-sources.spec.js:76`](../../tests/e2e/csv-sources.spec.js#L76)

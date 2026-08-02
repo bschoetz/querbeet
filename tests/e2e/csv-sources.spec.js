@@ -73,9 +73,12 @@ test('a CP1252 semicolon export becomes a named Source — characters correct, d
   const card = cards(page)
   await expect(card).toHaveCount(1)
 
-  // The 1252 fallback read the umlauts and the euro sign correctly …
-  await expect(card.getByText('Straße', { exact: true })).toBeVisible()
-  await expect(card.getByText('Betrag in €', { exact: true })).toBeVisible()
+  // The 1252 fallback read the umlauts and the euro sign correctly. Anchored on
+  // the preview grid's header row (Story 2), which carries the column names now
+  // that the chips are gone — a plain text match would also accept a cell value
+  // that happens to read the same.
+  await expect(card.getByRole('columnheader', { name: 'Straße', exact: true })).toBeVisible()
+  await expect(card.getByRole('columnheader', { name: 'Betrag in €', exact: true })).toBeVisible()
   // … the semicolon was detected, the ladder verdict is visible …
   await expect(card.getByLabel('Trennzeichen')).toHaveValue(';')
   await expect(card.getByLabel('Zeichenkodierung')).toHaveValue('windows-1252')
@@ -99,14 +102,14 @@ test('switching the encoding re-reads from the retained bytes and the rendered v
 
   const card = cards(page)
   await expect(card.getByLabel('Zeichenkodierung')).toHaveValue('utf-8')
-  await expect(card.getByText('Bäckerei', { exact: true })).toBeVisible()
+  await expect(card.getByRole('columnheader', { name: 'Bäckerei', exact: true })).toBeVisible()
 
   await card.getByLabel('Zeichenkodierung').selectOption('windows-1252')
 
   // 0xc3 0xa4 under the 1252 reading — only a re-decode of the original bytes
   // can produce this (AD-7); a cached string could not.
-  await expect(card.getByText('BÃ¤ckerei', { exact: true })).toBeVisible()
-  await expect(card.getByText('Bäckerei', { exact: true })).toHaveCount(0)
+  await expect(card.getByRole('columnheader', { name: 'BÃ¤ckerei', exact: true })).toBeVisible()
+  await expect(card.getByRole('columnheader', { name: 'Bäckerei', exact: true })).toHaveCount(0)
 })
 
 test('an undetectable delimiter is an explicit question — answerable with Komma, the fallback value', async ({
@@ -185,7 +188,7 @@ test('an unsupported file errors by name while the CSV beside it loads normally'
   // … and the CSV Source beside it is loaded and usable.
   const card = cards(page)
   await expect(card).toHaveCount(1)
-  await expect(card.getByText('Kunde', { exact: true })).toBeVisible()
+  await expect(card.getByRole('columnheader', { name: 'Kunde', exact: true })).toBeVisible()
   await expect(card.getByLabel('Trennzeichen')).toHaveValue(';')
 })
 
@@ -261,7 +264,7 @@ test('a corrected header row re-reads: columns and row count follow', async ({ p
   const card = cards(page)
   // Proposed past the preamble …
   await expect(card.getByLabel('Kopfzeile')).toHaveValue('4')
-  await expect(card.getByText('Ort', { exact: true })).toBeVisible()
+  await expect(card.getByRole('columnheader', { name: 'Ort', exact: true })).toBeVisible()
   await expect(card.getByText('2 Zeilen')).toBeVisible()
 
   // … and correctable: header at line 5 makes that row the columns and leaves
@@ -269,8 +272,8 @@ test('a corrected header row re-reads: columns and row count follow', async ({ p
   await card.getByLabel('Kopfzeile').fill('5')
   await card.getByLabel('Kopfzeile').blur()
 
-  await expect(card.getByText('Berlin', { exact: true })).toBeVisible()
-  await expect(card.getByText('Ort', { exact: true })).toHaveCount(0)
+  await expect(card.getByRole('columnheader', { name: 'Berlin', exact: true })).toBeVisible()
+  await expect(card.getByRole('columnheader', { name: 'Ort', exact: true })).toHaveCount(0)
   await expect(card.getByText('1 Zeilen')).toBeVisible()
 })
 
@@ -286,7 +289,7 @@ test('a file dropped on the drop zone becomes a Source', async ({ page }) => {
 
   await expect(cards(page)).toHaveCount(1)
   await expect(page.getByText('gezogen.csv')).toBeVisible()
-  await expect(cards(page).getByText('Ort', { exact: true })).toBeVisible()
+  await expect(cards(page).getByRole('columnheader', { name: 'Ort', exact: true })).toBeVisible()
 })
 
 test('BOM-less UTF-16 surfaces the NUL question and the override resolves it', async ({
@@ -303,6 +306,6 @@ test('BOM-less UTF-16 surfaces the NUL question and the override resolves it', a
   await card.getByLabel('Zeichenkodierung').selectOption('utf-16le')
 
   await expect(card.getByText('Null-Zeichen')).toHaveCount(0)
-  await expect(card.getByText('Ort', { exact: true })).toBeVisible()
+  await expect(card.getByRole('columnheader', { name: 'Ort', exact: true })).toBeVisible()
   await expect(card.getByText('1 Zeilen')).toBeVisible()
 })

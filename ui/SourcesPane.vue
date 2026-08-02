@@ -11,6 +11,7 @@
 
 import { shallowRef } from 'vue'
 import { ENCODINGS } from '@core/types/encoding.js'
+import RowWindow from '@ui/RowWindow.vue'
 
 const props = defineProps({ store: { type: Object, required: true } })
 
@@ -244,19 +245,20 @@ const setHeaderRow = (id, raw) => {
           </button>
         </div>
 
+        <!-- The counts are the Source's totals, never the preview window's:
+             the grid below holds ~50 rows whatever this says (AD-24). -->
         <p class="mt-2 text-sm text-slate-500">
-          {{ s.fileName }} — {{ nf(s.table.rowCount) }} Zeilen
+          {{ s.fileName }} — {{ nf(s.table.rowCount) }} Zeilen, {{ nf(s.table.columns.length) }} Spalten
         </p>
 
-        <p class="mt-2 flex flex-wrap gap-1">
-          <span
-            v-for="(col, i) in s.table.columns"
-            :key="i"
-            class="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700"
-          >
-            {{ col.name }}
-          </span>
-        </p>
+        <!-- The column names are the grid's header row now; the chips that used
+             to carry them would have been the same names twice. Damaged rows
+             stay out of this table and inspectable in the report below (CAP-39). -->
+        <RowWindow
+          class="mt-2"
+          :table="s.table"
+          :label="'Vorschau: ' + s.name"
+        />
 
         <div class="mt-3 flex flex-wrap items-end gap-4 text-sm">
           <label class="flex flex-col gap-1">
