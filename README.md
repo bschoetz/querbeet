@@ -32,7 +32,7 @@ Nowhere, unless you send it.
 
 🚧 Early stage — the feature list above describes the goal. Planning and technical research are done and live under `_bmad-output/planning-artifacts/`; the product contract is the PRD there, and the architecture's load-bearing rules are the numbered decisions in `ARCHITECTURE-SPINE.md`.
 
-Two of twenty-three stories are done and a third is in review. What runs today:
+Three of twenty-three stories are built; the third is awaiting its human checkpoint. What runs today:
 
 - **CSV Sources.** Load files as named, removable Sources. The encoding ladder — BOM, strict UTF-8 probe, Windows-1252 — with a visible override, delimiter and header-row detection you can correct, and structurally damaged rows reported and kept as raw text rather than guessed into alignment.
 - **Source preview.** A bounded row window over each Source's parsed table. The counts are always the Source's totals while the DOM holds about fifty rows, and past ~571,000 rows the view pages rather than scrolls, because a spacer taller than roughly 17.2 M px collapses to zero height in Firefox.
