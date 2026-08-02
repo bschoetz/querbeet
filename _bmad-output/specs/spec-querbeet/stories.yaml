@@ -1,0 +1,279 @@
+# Derived from .memlog.md by bmad-spec Story Breakdown, 2026-08-02.
+# Execution order is list order. Ids per assets/stories-schema.md.
+- id: "1"
+  title: CSV Sources — load, encoding, delimiter, damage detection
+  description: >-
+    CAP-1 (CSV scope), CAP-2, CAP-3, CAP-39: load CSV files as named removable
+    Sources, run the encoding ladder with a visible override, propose delimiter
+    and header row correctably, and report structural damage instead of parsing
+    a plausible table. Establishes the AD-7 registry (original bytes plus raw
+    parsed table) and the SourceReader port with the csv adapter.
+  invoke_dev_with: >-
+    Parser type coercion is permanently off; typing is Step zero, elsewhere
+    (AD-7, conventions). The encoding ladder (BOM, strict UTF-8, Windows-1252)
+    lives in core/types, not the adapter — ui/ hands over an ArrayBuffer (AD-3).
+- id: "2"
+  title: Source preview
+  description: >-
+    CAP-8, tabular part: every loaded Source shows detected columns and a
+    bounded row window whose counts are the Source's totals. The JSON/NDJSON
+    structure view is story 17's.
+  invoke_dev_with: >-
+    Previews render through the same fixed-height row windowing as the Result
+    (AD-24, ~50-row window); tables reach ui/ only via shallowRef, never
+    reactive state (AD-6).
+- id: "3"
+  title: Typing as Step zero with confirmation gate, column annotations
+  description: >-
+    CAP-9, CAP-10: detect type and locale per column over every value, report
+    irreducible ambiguity as such, block execution until each Source's mapping
+    is confirmed once, and let the user annotate columns into the Recipe.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Detection reads every value, never a sample (CAP-9). Unparsed values become
+    boxed cells the TableEngine adapter alone understands (AD-22); dates
+    normalize to UTC-midnight epoch ms (AD-21); native columns still get the
+    missing-value sweep (AD-20). The gate belongs to core/exec, not the UI
+    (AD-29), even while the scheduler is still minimal.
+- id: "4"
+  title: XLSX and Parquet Sources
+  description: >-
+    CAP-1 remainder except JSON: read .xlsx and Parquet as Sources whose
+    readers declare per-column what they delivered (text vs native type), so
+    the confirmation gate presents them as pre-typed but still confirmable.
+  invoke_dev_with: >-
+    SourceReader declares text or native:<type> per column (AD-20).
+    read-excel-file 9.3.5 returns [{sheet,data}], not a flat grid, when no
+    sheet is named; its own fflate blob-URL workers are permitted — AD-15
+    constrains only querbeet's code.
+- id: "5"
+  title: Step graph model and Editor
+  description: >-
+    CAP-11, CAP-12: deliberate Editor entry, a DAG of named Steps with one
+    Result Step, cycle refusal with a named reason, broken and orphan Steps
+    marked, keyboard-editable. Establishes named commands and the GraphView
+    port with the Vue Flow adapter.
+  invoke_dev_with: >-
+    All mutation goes through named commands; the cycle guard runs in the
+    command path before the editor library sees the edge — Vue Flow ships no
+    cycle detection (AD-10). The graph model holds ids, never data (AD-6).
+    Connect-by-keyboard is an open UX question in SPEC.md — leave the gap
+    named rather than inventing a scheme silently.
+- id: "6"
+  title: Execution walking skeleton — engine adapter, Filter and Columns Steps
+  description: >-
+    CAP-15, CAP-16, CAP-19: first end-to-end execution of a linear pipeline —
+    the TableEngine port with the Arquero adapter, the Filter and
+    Select/Rename/Reorder Step kinds, and a per-Step preview carrying counts
+    and warnings.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    A Step is a pure sync function receiving the engine as a parameter (AD-4);
+    a Table handle crosses boundaries and rows() materializes only at real
+    edges (AD-5). Arquero 8.0.3 pinned and vendored; the adapter absorbs the
+    measured hazards, Step kinds never do (AD-19, AD-22). Filter comparison
+    values live in canonical machine form and type disagreement is refused
+    (CAP-15).
+- id: "7"
+  title: Execution full build — cache, cancellation, execution modes
+  description: >-
+    CAP-38: content-addressed per-Step cache that replays diagnostics,
+    cancellation between Steps, and the live/explicit mode switch at a stated
+    row threshold with the mode in force always visible.
+  invoke_dev_with: >-
+    Cache key per AD-8 — key(source) = hash(byteDigest + parseConfig), never
+    the Source id; entries store table and diagnostics together and a hit
+    replays them. Cancellation only between Steps; SharedArrayBuffer is hidden
+    from file:// and typeof lies about it (AD-9). The mode is scheduler state
+    the UI reads, never decides (AD-29).
+- id: "8"
+  title: Union and Join Steps
+  description: >-
+    CAP-13, CAP-14: union with explicit column mapping where partial columns
+    are listed before the Step runs, and join reporting unmatched left rows,
+    row-count growth with its factor, explicit null-key handling and the
+    duplicate audit.
+  invoke_dev_with: >-
+    The adapter reports null-key counts and refuses the sentinel fix —
+    measured at 28k source rows exploding to 2.69M join rows (AD-19). Union
+    computes an explicit column union first. Row-range chunking is forbidden
+    for Union, Join and Aggregate (AD-9).
+- id: "9"
+  title: Computed column and Aggregate Steps
+  description: >-
+    CAP-17, CAP-18: computed columns from fixed operation lists as plain data
+    (no free text to parse), and aggregation where null groups stay visible
+    and input/output row counts are reported.
+  invoke_dev_with: >-
+    Division by zero and boxed inputs yield a marked empty cell through the
+    adapter's box handling — never a crash, never a silent zero (AD-22). No
+    chunking for Aggregate (AD-9).
+- id: "10"
+  title: Result table at design scale
+  description: >-
+    CAP-31: the Result as a windowed table smooth at 100k rows, headers fixed,
+    German display conventions regardless of read locale, unparsed cells
+    visually marked.
+  invoke_dev_with: >-
+    Clamp the spacer below the engine scroll-extent limit — Firefox collapses
+    it to zero at ~614k rows at 28 px — and page beyond the clamp; the guard
+    ships regardless of Firefox's fate (AD-24). Display locale is rendering
+    only and never reaches a Table or Recipe (AD-21).
+- id: "11"
+  title: View filter, sort, promotion and full-dataset search
+  description: >-
+    CAP-32, CAP-33: transient view filters and sorting over the full Result,
+    announced as a view, promotable into a Filter Step in one action; search
+    over every row with match count and jump navigation.
+  invoke_dev_with: >-
+    The view predicate lives in core/ so promotion is the same value, not a
+    re-expression (AD-24). Search runs over the data, not the DOM (CAP-33).
+- id: "12"
+  title: Run status
+  description: >-
+    CAP-34: a run status distinguishing warned runs from clean ones at a
+    glance, aggregating every Step warning. The Pre-flight and repair facets
+    land with stories 15 and 17; until then their absence is rendered
+    honestly, not implied clean.
+  invoke_dev_with: >-
+    The status is pure aggregation of the AD-13 diagnostic stream and adds
+    nothing of its own; severity includes 'unresolved' for states awaiting a
+    person. It carries the run id and timestamp from the Clock port (AD-25).
+- id: "13"
+  title: "Data export — milestone: reports in, consolidated table out"
+  description: >-
+    CAP-36: export the Result as CSV, JSON, XLSX and Parquet in German
+    conventions with progress and no frozen interface. Closes the
+    PowerQuery-replacing path.
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Follow spike xlsx-german-format-2026-08-02: locale-neutral format codes
+    (#,##0.00 / dd.mm.yyyy), never German-looking codes, never the [$-407]
+    prefix. write-excel-file 4.1.1 has no filePath — use toBuffer. Workers
+    exist for XLSX and Parquet export only: classic script from a blob URL,
+    ?worker&inline, format iife (AD-15). CSV gets a BOM and semicolon default;
+    never send a dataset to a worker to compute on it.
+- id: "14"
+  title: Recipe save and load
+  description: >-
+    CAP-20: the Recipe as a versioned, data-free file carrying Steps,
+    configurations, confirmations, annotations, Dashboard and Input Contract,
+    refused on unknown version. Establishes the canonical serializer and the
+    one validator all three doors will share.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    One canonical serializer with fixed key order serves both the file and the
+    cache-key hash; byte-identical round trip is a test (conventions, AD-8).
+    Unrecognised fields are refused, not ignored (AD-11); a version mismatch
+    names both versions (AD-12). Ids are short readable strings, no UUIDs
+    (AD-14). C-13: a linear pipeline must be the trivial case of the format.
+- id: "15"
+  title: Input Contract, Pre-flight Check and column mapping
+  description: >-
+    CAP-21, CAP-22, CAP-23: derive a contract covering only the columns the
+    Pipeline reads, validate loaded files against it before any Step runs with
+    fits/missing/doubtful verdicts, and map the Consumer's real columns onto
+    unmet requirements, savable back into the Recipe.
+  invoke_dev_with: >-
+    'Doubtful' is severity 'unresolved', not a warning (AD-13). The Pre-flight
+    gate lives in the scheduler next to the type gate — no caller can reach
+    execution around it (AD-29). Mapping goes through the mapContractColumn
+    command (AD-10).
+- id: "16"
+  title: Session persistence and deletion
+  description: >-
+    CAP-25: Recipe and Source data survive closing the tool via the
+    SessionStore port over IndexedDB, one obvious action deletes everything, a
+    partial restore says so and offers a clean start.
+  invoke_dev_with: >-
+    Never await navigator.storage.persist() unguarded — it never settles on
+    Firefox file:// and deadlocked a probe for 180 s (AD-16). Namespacing
+    makes collisions legible but isolates nothing; no interface text may imply
+    isolation, and the rule is untestable under Playwright's Firefox (AD-16).
+- id: "17"
+  title: JSON and NDJSON Sources with repair and structure view
+  description: >-
+    CAP-1 (JSON/NDJSON scope), CAP-4, CAP-5, CAP-6, CAP-7, CAP-8 (structure
+    view): strict-parse detection of malformed JSON, user-triggered repair
+    with disclosed diff, explicit three-option array flattening stored in the
+    Recipe, and the collapsible structure view in the preview.
+  invoke_dev_with: >-
+    Repair only on user action via jsonrepair; the file on disk is never
+    modified and a failed repair leaves the Source unloaded (CAP-5). The
+    repair fact travels into the run status (CAP-6, AD-13). Re-flattening
+    re-reads the retained bytes (AD-7) and re-parses under a new cache key
+    (AD-8).
+- id: "18"
+  title: Column Profile and prompt block
+  description: >-
+    CAP-26, CAP-27: a structural profile of the loaded Sources with no cell
+    values, shown in full before use, and a one-action copy block carrying
+    question, profile, current Pipeline and both format specifications.
+  invoke_dev_with: >-
+    Everything that may leave is assembled in core/profile into one Disclosure
+    value, and the Clipboard port accepts nothing else — no second path out
+    (AD-23, NFR-8).
+- id: "19"
+  title: Accept a model's Recipe
+  description: >-
+    CAP-28: paste a model's answer, validate it through the same validator as
+    file and Editor, refuse with text specific enough to paste back, and load
+    a valid Recipe as inspectable Steps without silently replacing the
+    Pipeline.
+  invoke_dev_with: >-
+    One validator, three doors (AD-11) — this story adds a door, not a
+    validator. The refusal text is machine-facing prose from core/recipe, the
+    sole exception to codes-only (AD-11, AD-13). Coercion is by named rule:
+    canonical numeric strings coerce; grouping separators, decimal commas,
+    non-ISO dates and type disagreements are refused naming the character or
+    both types (CAP-28).
+- id: "20"
+  title: Probe Query and explicit sample release
+  description: >-
+    CAP-29, CAP-30: run a model-authored query locally in the Step vocabulary
+    with its result shown before any return, and release sample values per
+    column per exchange, off by default and never persisted into the Recipe.
+  invoke_dev_with: >-
+    A Probe Query introduces no second query language and is validated on
+    exactly CAP-28's terms, unrecognised fields refused (AD-11). Its result
+    and released samples flow through the same single Disclosure value
+    (AD-23). A Consumer never inherits an Author's disclosure decision
+    (CAP-30).
+- id: "21"
+  title: Dashboard from Tiles
+  description: >-
+    CAP-35: add, configure, order and size Tiles over the Result through one
+    small form on a fixed grid with keyboard-reachable ordering; the Dashboard
+    definition is stored in the Recipe.
+  invoke_dev_with: >-
+    Register ECharts' SVG renderer alone — with both registered, SVG requests
+    silently return PNG (AD-26). Every tile sets a long-label strategy and a
+    max bar width; resize is explicit, the renderer observes nothing (AD-26).
+    Tiles are edited only through the configureTile command (AD-10).
+- id: "22"
+  title: Package export and import
+  description: >-
+    CAP-24: bundle a Recipe with its Source data into one compressed file,
+    visibly distinct from a Recipe, size stated before writing, importing
+    nothing on read failure. The container format is an open question in
+    SPEC.md — expect a spike before committing.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    R9 answered only the IndexedDB gate; whether the container is a zip and
+    whether data rides as Parquet inside is undecided — and whether
+    compressing 500k rows stays responsive is unmeasured. The Package embeds
+    the retained original bytes of AD-7 and respects AD-16's namespacing.
+- id: "23"
+  title: View document export
+  description: >-
+    CAP-37: a self-contained static HTML document and a paginated PDF carrying
+    Result, Dashboard, run status and run identity, with vector charts whose
+    labels are selectable text. R8 is written and unrun — run or decide it
+    first; library vs print-to-PDF is the open question.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    ports/DocumentWriter is defined and deliberately unimplemented (AD-28) —
+    bind to it, not to TableWriter. Charts stay vector with real text (AD-26);
+    the document names Recipe, date, Sources and run status with AD-25's run
+    identity, and must open with no network access (AD-17).
