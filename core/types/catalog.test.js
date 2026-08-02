@@ -12,8 +12,10 @@ import {
   BOOLEAN,
   DATE,
   DATETIME,
+  DURATION,
   NUMBER,
   TEXT,
+  TIME,
   TYPES,
   declaredNativeType,
   isNativeType,
@@ -26,22 +28,29 @@ import {
 
 describe('the catalogue', () => {
   it('is the whole vocabulary, frozen, in one order', () => {
-    expect(typeCodes()).toEqual([TEXT, NUMBER, DATE, DATETIME, BOOLEAN])
+    expect(typeCodes()).toEqual([TEXT, NUMBER, DATE, DATETIME, TIME, DURATION, BOOLEAN])
     expect(Object.isFrozen(TYPES)).toBe(true)
     expect(TYPES.every((type) => Object.isFrozen(type))).toBe(true)
   })
 
   it('separates what a user may set from what a reader may declare', () => {
-    // The two are not the same list and never were. `datetime` and `boolean`
-    // exist because XLSX and Parquet deliver them; no text column can be
-    // retyped into one until detection can reach them from text (story 4a).
-    expect(settableTypes()).toEqual([TEXT, NUMBER, DATE])
+    // The two are not the same list and never were, and story 4a pulls them
+    // apart in both directions at once. `datetime` and `boolean` became settable
+    // the moment detection could reach them from text — they were display-only
+    // only because no text column could ever become one. `time` and `duration`
+    // go the other way: every user may choose either, and **no reader may
+    // declare one**. Parquet's TIME is still a refused declaration, so a column
+    // arrives as `duration` because a person said so or because the values pass
+    // 24:00, never because a file announced it.
+    expect(settableTypes()).toEqual([TEXT, NUMBER, DATE, DATETIME, TIME, DURATION, BOOLEAN])
     expect(TYPES.filter((t) => t.native).map((t) => t.code)).toEqual([
       NUMBER,
       DATE,
       DATETIME,
       BOOLEAN,
     ])
+    expect(isNativeType(TIME)).toBe(false)
+    expect(isNativeType(DURATION)).toBe(false)
   })
 
   it('never lets a reader declare text natively', () => {
@@ -52,7 +61,7 @@ describe('the catalogue', () => {
   })
 
   it('answers false for a word it has never heard of', () => {
-    for (const word of ['decimal', 'time', 'interval', 'int96', '', 'TEXT']) {
+    for (const word of ['decimal', 'interval', 'int96', '', 'TEXT']) {
       expect(isSettableType(word)).toBe(false)
       expect(isNativeType(word)).toBe(false)
     }

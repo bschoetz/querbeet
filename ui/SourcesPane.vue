@@ -167,6 +167,13 @@ const GERMAN = {
   'typing.ambiguous_locale': (v) =>
     `Spalte „${v.column}“: nichts entscheidet zwischen zwei Lesarten. Bitte unter ` +
     `„Spalten & Typen“ wählen.`,
+  'typing.ambiguous_kind': (v) =>
+    `Spalte „${v.column}“: nichts entscheidet zwischen ${v.alternatives.map(typeLabel).join(' und ')}. ` +
+    `Bitte unter „Spalten & Typen“ den Typ wählen.`,
+  'typing.mixed_affixes': (v) =>
+    `Spalte „${v.column}“ enthält Werte mit verschiedenen Einheiten (${v.affixes.join(' und ')}) — ` +
+    `sie wird als Text gelesen, damit nicht versehentlich Beträge verschiedener Einheiten ` +
+    `zusammengerechnet werden.`,
   'typing.unparsed_values': (v) =>
     v.unparsed === 1
       ? `Spalte „${v.column}“: ein Wert von ${nf(v.readable)} lässt sich unter der ` +
@@ -190,13 +197,16 @@ const renderText = (d) => GERMAN[d.code]?.(d.values) ?? 'Unbekannte Meldung aus 
 
 // The type select offers exactly what the catalogue calls settable, in its
 // order, labelled from `ui/type-labels.js` — no list of types is restated here
-// (AD-13). `datetime` and `boolean` are deliberately absent from it: the formats
-// deliver them, no text column can be retyped into one, and a select offering a
-// type detection cannot reach would be a dead end with a German word on it.
+// (AD-13). As of story 4a that is every type there is: detection reaches
+// `datetime`, `time`, `duration` and `boolean` from text, so none of them is a
+// dead end a user could pick and nothing could read.
 const SETTABLE_TYPES = settableTypeLabels()
 
-/** A date pattern in German field letters — TT.MM.JJJJ, not dd.MM.yyyy. */
-const patternLabel = (pattern) => pattern.replace(/dd/g, 'TT').replace(/yyyy/g, 'JJJJ')
+/** A date pattern in German field letters — TT.MM.JJJJ, not dd.MM.yyyy. The
+ *  four-digit year is replaced before the two-digit one, or `dd.MM.yyyy` would
+ *  come out as `TT.MM.JJJJ` on its first half and nonsense on its second. */
+const patternLabel = (pattern) =>
+  pattern.replace(/dd/g, 'TT').replace(/yyyy/g, 'JJJJ').replace(/yy/g, 'JJ')
 
 const NUMBER_LABEL = {
   'de-DE': 'Deutsch (1.234,56)',
@@ -210,9 +220,30 @@ const formatLabel = (format) =>
       ? patternLabel(format.pattern)
       : (NUMBER_LABEL[format.locale] ?? format.locale)
 
-/** What a reading is called when a sentence has to mention it. */
+/**
+ * What an alternative is called when a sentence has to mention it.
+ *
+ * Two questions arrive here. A reading ambiguity names formats — a date pattern
+ * in German field letters, a number reading by its locale, a boolean pair by its
+ * two words. The time-against-duration ambiguity names *types*, so it is
+ * labelled from the catalogue's German words instead: "zwischen Uhrzeit und
+ * Dauer" is the question, and it is answered with the type select.
+ */
 const readingLabel = (column, key) =>
-  column.type === 'date' ? patternLabel(key) : (NUMBER_LABEL[key] ?? key)
+  isKindQuestion(column) ? typeLabel(key) : (NUMBER_LABEL[key] ?? patternLabel(key))
+
+/** Is this column's open question about its type rather than about a reading?
+ *  The core says so on the evidence; deriving it from the type here would be a
+ *  second opinion that drifts the moment another pair of types competes. */
+const isKindQuestion = (column) => column.evidence?.over === 'kind'
+
+/** The type select cannot show the proposal while the proposal is the question.
+ *  Re-selecting the value a select already displays fires no change event, so a
+ *  column proposed as `Dauer` and asking "Uhrzeit or Dauer?" could never be
+ *  answered with `Dauer` — the gate would stay shut for good. Same placeholder,
+ *  same reason, as the reading select and the delimiter select before it. */
+const typeUndecided = (column) =>
+  column.verdict === 'unresolved' && column.chosen === null && isKindQuestion(column)
 
 const formatChoices = (type) => candidatesFor(type)
 
@@ -258,7 +289,11 @@ const hitRate = (c) => {
 const verdictText = (c) => {
   if (c.verdict === 'unresolved') {
     const [a, b] = c.evidence.alternatives.map((k) => readingLabel(c, k))
-    return `Nichts in dieser Spalte entscheidet zwischen ${a} und ${b} — bitte wählen.`
+    // Which control answers it is named, because the two questions are answered
+    // in different places: a reading in the Lesart select, a type in the Typ one.
+    return isKindQuestion(c)
+      ? `Nichts in dieser Spalte entscheidet zwischen ${a} und ${b} — bitte den Typ wählen.`
+      : `Nichts in dieser Spalte entscheidet zwischen ${a} und ${b} — bitte wählen.`
   }
   if (c.verdict === 'decisive') {
     const [winner, other] = c.evidence.alternatives.map((k) => readingLabel(c, k))
@@ -771,11 +806,23 @@ const unconfirm = (id) => {
                 >
                   <span class="text-xs text-slate-500">Typ</span>
                   <select
-                    :value="col.type"
+                    :value="typeUndecided(col) ? '' : col.type"
                     :aria-label="'Typ: ' + columnLabel(s, at)"
                     class="rounded border border-slate-200 px-2 py-1"
                     @change="setType(s.id, at, $event.target.value)"
                   >
+                    <!-- The question is which type this column is, so the select
+                         must not already show one of the two answers: the value
+                         a select displays cannot be chosen, and the gate would
+                         never open. Disabled, so it is a prompt and never an
+                         answer — the reading select does the same thing. -->
+                    <option
+                      v-if="typeUndecided(col)"
+                      value=""
+                      disabled
+                    >
+                      Bitte wählen
+                    </option>
                     <!-- Only while a choice of the user's stands. Without it,
                          overriding a type is one-way: nothing in the pane puts
                          the column back to the proposal, and a re-read is the
@@ -850,6 +897,16 @@ const unconfirm = (id) => {
                     </option>
                   </select>
                 </label>
+
+                <!-- The unit the column's numbers carry. It is a property of
+                     the column, not of a cell: the stored number is the number
+                     in the field (12,5 for `12,5 %`), and this is where the
+                     percent sign went. -->
+                <span
+                  v-if="col.affix"
+                  data-testid="typing-affix"
+                  class="pb-1 text-xs text-slate-500"
+                >Einheit: {{ col.affix }}</span>
 
                 <span
                   data-testid="typing-hitrate"

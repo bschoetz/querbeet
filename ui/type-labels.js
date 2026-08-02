@@ -5,9 +5,10 @@
 // `core/types/catalog.js` without a word here should fail a test, not print
 // `datetime` on a Source card in a German interface.
 //
-// Two of these words label types no user can choose. `datetime` and `boolean`
-// are display-only for now — XLSX and Parquet deliver them, and a natively typed
-// column still has to say what it is.
+// Every word here labels a type a user may now choose. `datetime` and `boolean`
+// were display-only while only a reader could produce them; detection reaches
+// them from text as of story 4a, and `time` and `duration` arrive with it —
+// `Uhrzeit` for a clock reading, `Dauer` for a span that may pass 24 hours.
 
 import { TYPES } from '@core/types/catalog.js'
 
@@ -16,6 +17,8 @@ const LABEL = Object.freeze({
   number: 'Zahl',
   date: 'Datum',
   datetime: 'Zeitstempel',
+  time: 'Uhrzeit',
+  duration: 'Dauer',
   boolean: 'Wahrheitswert',
 })
 

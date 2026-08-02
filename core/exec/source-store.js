@@ -37,10 +37,28 @@ const typingDiagnostics = (typing) => {
   const out = []
   for (const column of typing.columns) {
     if (column.verdict === 'unresolved' && column.chosen === null) {
+      // Two questions, two codes. A locale ambiguity asks which *reading* of the
+      // digits is meant; the time-against-duration ambiguity asks what the
+      // column *is*, and it is answered with the type select rather than the
+      // reading select. Overloading one code would make the card point at the
+      // wrong control, so the alternatives (`[time, duration]`, type codes
+      // rather than readings) travel under their own name.
       out.push(
-        unresolved('typing.ambiguous_locale', {
+        unresolved(
+          column.evidence.over === 'kind' ? 'typing.ambiguous_kind' : 'typing.ambiguous_locale',
+          { column: column.name, alternatives: column.evidence.alternatives },
+        ),
+      )
+    }
+    // Two units in one column is not a number column: `12 €` and `12 $` cannot
+    // be summed, and a proposal of `number` would invite exactly that sum. The
+    // column is text and both affixes are named, because "this column mixes
+    // units" is only actionable if the user learns which two.
+    if (column.mixedAffixes) {
+      out.push(
+        warning('typing.mixed_affixes', {
           column: column.name,
-          alternatives: column.evidence.alternatives,
+          affixes: column.mixedAffixes,
         }),
       )
     }
@@ -534,11 +552,16 @@ export function createSourceStore(readers) {
    */
   const resolveFormat = (cells, type, format, missingTokens) => {
     if (type === TEXT) return null
+    // `time` and `duration` offer no reading at all: the choice between them is
+    // the type, and it has already been made by the time this runs. A column
+    // with no candidates has no reading to demand and none to refuse.
+    const candidates = candidatesFor(type)
+    if (candidates.length === 0) return null
     if (format === undefined) return bestFormat(cells, type, missingTokens)
     if (format === null) throw new TypeError(`a ${type} column needs a reading`)
 
     const key = format.pattern ?? format.locale
-    const found = candidatesFor(type).find((c) => (c.pattern ?? c.locale) === key)
+    const found = candidates.find((c) => (c.pattern ?? c.locale) === key)
     if (!found) throw new TypeError(`unknown ${type} reading: ${key}`)
     return found
   }

@@ -7,15 +7,22 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  BOOLEAN,
   DATE,
+  DATETIME,
   DEFAULT_MISSING,
+  DURATION,
   NUMBER,
   TEXT,
+  TIME,
   bestFormat,
+  candidatesFor,
   canonicalTypeGaps,
   detectColumn,
   detectTable,
+  expandTwoDigitYear,
   numberCandidates,
+  scorableTypeGaps,
   scoreColumn,
   unresolvedColumns,
 } from './typing.js'
@@ -428,6 +435,409 @@ describe('a natively typed column (AD-20)', () => {
     for (const domain of ['native:number', 'native:date', 'native:datetime', 'native:boolean']) {
       expect(detectColumn(['x'], { domain }).format).toBeNull()
     }
+  })
+})
+
+// ------------------------------------------------------------- story 4a
+//
+// Six pieces, in the order their risk falls. What each of them is for is the
+// same sentence: a column that could only ever be `text` before is now the type
+// it actually is — and the one that was reported as a `number` and was not.
+
+describe('piece 1 — the overflow guard', () => {
+  it('leaves a column of 19-digit order numbers as text, whole', () => {
+    // Reported as `number`, `settled`, 100 % readable, this column loses its
+    // last digits the moment story 6 converts it. Story 4 already names the
+    // same defect for a Parquet INT64 (C-10); this is it arriving through the
+    // text path, where nothing was watching at all.
+    const r = detectColumn(['1234567890123456789', '1234567890123456780', '5'])
+
+    expect(r.type).toBe(TEXT)
+    expect(r.counts).toMatchObject({ parsed: 3, unparsed: 0 })
+  })
+
+  it('sees through the grouping separator to the digits underneath', () => {
+    // `9.007.199.254.740.993` is a German number of sixteen integer digits, and
+    // the last one of them is the one no float can hold.
+    expect(detectColumn(['9.007.199.254.740.993', '1.000,00']).type).toBe(TEXT)
+  })
+
+  it('compares as digits rather than through a float round trip', () => {
+    // `Number('9007199254740993') === Number('9007199254740992')` is exactly the
+    // equality that loses the information, so the float is the wrong witness to
+    // ask. One digit apart, one on each side of the boundary.
+    expect(detectColumn(['9007199254740991', '12']).type).toBe(NUMBER)
+    expect(detectColumn(['9007199254740992', '12']).type).toBe(TEXT)
+  })
+
+  it('disqualifies the whole column, exactly as one leading zero does', () => {
+    // Not "98 % readable with two unparsed values". The column *is* identifiers,
+    // and a proposal of `number` at 98 % would invite confirming precision loss
+    // on the other 2 %.
+    const mostly = [...Array.from({ length: 50 }, (_, i) => `${i + 1}`), '12345678901234567890']
+
+    expect(detectColumn(mostly).type).toBe(TEXT)
+  })
+
+  it('is not fooled by leading zeros inside the digits', () => {
+    // `0009007199254740993` has nineteen characters and sixteen significant
+    // digits. It is also a leading-zero column, so it is text twice over — the
+    // case exists so the digit comparison is not silently length-based.
+    expect(detectColumn(['0009007199254740993']).type).toBe(TEXT)
+  })
+})
+
+describe('piece 2 — datetime, and the two-digit year', () => {
+  it('reads the ISO family under one name, because it is one', () => {
+    // Seconds optional, a fraction of 1–9 digits optional, `Z` / `±HH:mm` /
+    // `±HHmm` all accepted. Spelling that as `yyyy-MM-dd'T'HH:mm:ss` would put a
+    // lie in front of the user, so the candidate is named for the standard.
+    const r = detectColumn([
+      '2025-12-31T14:30:00Z',
+      '2025-01-01T00:00+02:00',
+      '2024-02-29T23:59:59.123456789-0500',
+      '2025-06-15T08:00:00',
+    ])
+
+    expect(r).toMatchObject({ type: DATETIME, verdict: 'settled' })
+    expect(r.format.pattern).toBe('ISO 8601')
+    expect(r.counts.parsed).toBe(4)
+  })
+
+  it('refuses an impossible instant as firmly as an impossible day', () => {
+    for (const cell of [
+      '2025-02-30T12:00:00Z',
+      '2025-12-31T24:00:00Z',
+      '2025-12-31T12:60:00Z',
+      '2025-12-31T12:00:60Z',
+      '2025-12-31T12:00:00+25:00',
+      '2025-12-31T12:00:00.1234567890Z',
+      '2025-12-31 T12:00',
+    ]) {
+      expect([cell, detectColumn([cell, ...Array(9).fill('2025-01-01T00:00Z')]).counts.parsed]).toEqual([cell, 9])
+    }
+  })
+
+  it('reads the three shapes an office export actually writes', () => {
+    const cases = [
+      [['2025-12-31 14:30:00', '2025-01-01 00:00'], 'yyyy-MM-dd HH:mm'],
+      [['31.12.2025 14:30', '01.03.2026 08:00:59'], 'dd.MM.yyyy HH:mm'],
+      [['31.12.25 14:30', '01.03.26 08:00'], 'dd.MM.yy HH:mm'],
+    ]
+
+    for (const [cells, pattern] of cases) {
+      const r = detectColumn(cells)
+      expect([pattern, r.type, r.format.pattern, r.counts.parsed]).toEqual([
+        pattern,
+        DATETIME,
+        pattern,
+        cells.length,
+      ])
+    }
+  })
+
+  it('offers no MM/dd datetime mirror, and says so on purpose', () => {
+    // A candidate enters with a real Source that needs it — the rule
+    // `NUMBER_LOCALES` already follows. Nothing seen so far carries an American
+    // datetime, so `12/31/2025 14:30` is text rather than a guess.
+    expect(candidatesFor(DATETIME).map((c) => c.pattern)).toEqual([
+      'ISO 8601',
+      'yyyy-MM-dd HH:mm',
+      'dd.MM.yyyy HH:mm',
+      'dd.MM.yy HH:mm',
+    ])
+    expect(detectColumn(['12/31/2025 14:30', '01/02/2026 08:00']).type).toBe(TEXT)
+  })
+
+  it('reads a two-digit year as its own pattern, not as a loose four-digit one', () => {
+    const r = detectColumn(['31.12.25', '01.03.26', '15.06.99'])
+
+    expect(r.type).toBe(DATE)
+    expect(r.format.pattern).toBe('dd.MM.yy')
+    expect(r.verdict).toBe('settled')
+    // Strict widths still: the two patterns cannot blur into each other.
+    expect(detectColumn(['31.12.25', '31.12.2025']).type).toBe(TEXT)
+  })
+
+  it('pivots the century at Excel’s fixed boundary, never at a sliding one', () => {
+    // 00–29 is 20yy, 30–99 is 19yy. A sliding window relative to the current
+    // year would make a Recipe read a different date in 2031 than it read in
+    // 2026, over data that never changed.
+    expect([0, 29, 30, 99].map(expandTwoDigitYear)).toEqual([2000, 2029, 1930, 1999])
+
+    // Visible in a verdict rather than only in the helper: 2028 is a leap year
+    // and 1930 is not, so the same `29.02.` is a real day under one and not
+    // under the other.
+    expect(detectColumn(['29.02.28', '01.01.28']).type).toBe(DATE)
+    expect(detectColumn(['29.02.30', '01.01.30', '02.02.30']).type).toBe(TEXT)
+  })
+})
+
+describe('piece 3 — time against duration', () => {
+  it('cannot settle a column of clock times, and does not pretend to', () => {
+    // Every time-readable value is duration-readable, so a column that never
+    // passes 24:00 carries no evidence at all. This is story 3's second
+    // ambiguity state, over types rather than over readings — and the gate stays
+    // shut until a person answers.
+    const r = detectColumn(['08:15', '17:20', '9:05'])
+
+    expect(r.verdict).toBe('unresolved')
+    expect(r.evidence).toEqual({ over: 'kind', alternatives: [DURATION, TIME] })
+    expect(r.counts.parsed).toBe(3)
+    expect(r.format).toBeNull() // there is no reading to choose, only a type
+  })
+
+  it('is settled by one value past 24:00, and names the count', () => {
+    const r = detectColumn(['08:15', '17:20', '36:15'])
+
+    expect(r.type).toBe(DURATION)
+    expect(r.verdict).toBe('decisive')
+    expect(r.evidence).toMatchObject({ over: 'kind', decidedBy: 1, contested: 0 })
+
+    // 24:00 itself is the boundary, and it is duration-only evidence too.
+    expect(detectColumn(['08:15', '17:20', '24:00']).type).toBe(DURATION)
+    expect(detectColumn(['136:15', '08:00']).type).toBe(DURATION)
+  })
+
+  it('reads neither for a value no clock has', () => {
+    // 60 minutes is not a time and not a duration — it is a typo, and it counts
+    // as one. Nine good values carry the column past the threshold so the
+    // finding is a count rather than a collapse to text.
+    const r = detectColumn([...Array.from({ length: 9 }, () => '08:15'), '12:60'])
+
+    expect(r.counts).toMatchObject({ parsed: 9, unparsed: 1 })
+    expect(detectColumn(['12:60', '1:5', '25']).type).toBe(TEXT)
+  })
+
+  it('accepts a one-digit hour for a time and any number of them for a duration', () => {
+    expect(scoreColumn(['9:05', '08:15', '23:59:59'], { type: TIME }).counts.unparsed).toBe(0)
+    expect(scoreColumn(['24:00', '99:59', '136:15'], { type: TIME }).counts.unparsed).toBe(3)
+    expect(scoreColumn(['24:00', '99:59', '136:15'], { type: DURATION }).counts.unparsed).toBe(0)
+  })
+
+  it('offers neither of them a reading, because the question is the type', () => {
+    expect(candidatesFor(TIME)).toEqual([])
+    expect(candidatesFor(DURATION)).toEqual([])
+    expect(bestFormat(['08:15'], TIME)).toBeNull()
+  })
+})
+
+describe('piece 4 — boolean pairs', () => {
+  it('reads the four pairs, word pairs case and all', () => {
+    // German Excel writes WAHR/FALSCH. That is the same pair as wahr/falsch, not
+    // a fifth one — a case-sensitive match would leave every German workbook's
+    // boolean column as text.
+    const cases = [
+      [['true', 'FALSE', 'True'], 'true/false'],
+      [['WAHR', 'FALSCH', 'wahr'], 'wahr/falsch'],
+      [['ja', 'Nein', 'JA'], 'ja/nein'],
+    ]
+
+    for (const [cells, pattern] of cases) {
+      const r = detectColumn(cells)
+      expect([pattern, r.type, r.format.pattern]).toEqual([pattern, BOOLEAN, pattern])
+    }
+  })
+
+  it('counts a declared missing token as an absence, not as a broken flag', () => {
+    const r = detectColumn(['ja', 'Nein', 'k.A.', 'ja'])
+
+    expect(r).toMatchObject({ type: BOOLEAN, verdict: 'settled' })
+    expect(r.counts).toMatchObject({ total: 4, missing: 1, parsed: 3, unparsed: 0 })
+  })
+
+  it('never mixes one pair with another', () => {
+    // A column that spells its yes two ways was not exported by one system, and
+    // reading it as a boolean would decide which half is wrong.
+    expect(detectColumn(['ja', 'false']).type).toBe(TEXT)
+    expect(detectColumn(['wahr', 'nein']).type).toBe(TEXT)
+  })
+
+  it('proposes number for 1/0 — the reading that loses less — and keeps boolean settable', () => {
+    // `1`/`0` is a perfectly good number, and a tie across kinds goes to number.
+    // Nothing is lost by that: the user is one choice away, and the choice is
+    // scored the moment it is made.
+    const r = detectColumn(['1', '0', '1', '0'])
+    expect(r).toMatchObject({ type: NUMBER, verdict: 'settled' })
+
+    const chosen = scoreColumn(['1', '0', '1', '0'], {
+      type: BOOLEAN,
+      format: bestFormat(['1', '0'], BOOLEAN),
+    })
+    expect(chosen.format.pattern).toBe('1/0')
+    expect(chosen.counts).toMatchObject({ parsed: 4, unparsed: 0 })
+
+    // A stray `2` is not a flag under that pair.
+    expect(detectColumn(['1', '0', '2']).type).toBe(NUMBER)
+  })
+})
+
+describe('pieces 5 and 6 — affixed numbers and accounting signs', () => {
+  it('reads a percent column as a number and puts the sign on the column', () => {
+    // The stored number is the number in the field: 12,5 for `12,5 %`, never
+    // 0,125. Percent is a decisive marker with no second reading — the argument
+    // that it might mean 0,125 was a storage question, and this is the answer.
+    const r = detectColumn(['12,5 %', '80,0 %', '7,25 %'])
+
+    expect(r).toMatchObject({ type: NUMBER, affix: '%' })
+    expect(r.counts.parsed).toBe(3)
+    expect(r.format.locale).toBe('de-DE')
+  })
+
+  it('takes an affix on either side, with or without one space', () => {
+    for (const cells of [
+      ['12,5 %', '80,0 %'],
+      ['12,5%', '80,0%'],
+      ['€ 1.234,56', '€ 80,00'],
+      ['1.234,56 €', '80,00 €'],
+      ['$1,234.56', '$80.00'],
+    ]) {
+      expect([cells[0], detectColumn(cells).type]).toEqual([cells[0], NUMBER])
+    }
+
+    // Exactly one space. A second one stays in the body and is not a number.
+    expect(detectColumn(['12,5  %', '80,0  %']).type).toBe(TEXT)
+  })
+
+  it('requires the column’s affix of every value it counts readable', () => {
+    // A bare number in a percent column is not a percentage, and counting it
+    // readable would put an unmarked figure into a column of marked ones.
+    const r = detectColumn([...Array.from({ length: 20 }, () => '12,5 %'), '13'])
+
+    expect(r).toMatchObject({ type: NUMBER, affix: '%' })
+    expect(r.counts).toMatchObject({ parsed: 20, unparsed: 1 })
+  })
+
+  it('does not let one stray marked value make a plain column an affixed one', () => {
+    // The bare reading and the affixed one are both scored, and the one that
+    // covers more values wins. Without the comparison a single `1.000,00 €` in a
+    // thousand plain numbers would count the other 999 unparsed.
+    const r = detectColumn([...Array.from({ length: 40 }, (_, i) => `${i + 1},00`), '1.000,00 €'])
+
+    expect(r).toMatchObject({ type: NUMBER, affix: null })
+    expect(r.counts).toMatchObject({ parsed: 40, unparsed: 1 })
+  })
+
+  it('refuses a column that mixes two affixes, and names both', () => {
+    // Two currencies in one column cannot be summed, and a proposal of `number`
+    // would invite exactly that sum.
+    const r = detectColumn(['12 €', '12 $'])
+
+    expect(r.type).toBe(TEXT)
+    expect(r.mixedAffixes).toEqual(['€', '$'])
+  })
+
+  it('does not read an affix out of prose', () => {
+    // The finding is "two units are in use", not "two symbols occur". A text
+    // column mentioning both reads as a number under neither, so neither is used.
+    const r = detectColumn(['Preis in €', 'Preis in $'])
+
+    expect(r).toMatchObject({ type: TEXT, mixedAffixes: null })
+  })
+
+  it('reads both accounting negatives, under both locales', () => {
+    for (const cells of [
+      ['(1.234,56)', '1.234,56-', '80,00'],
+      ['(1,234.56)', '1,234.56-', '80.00'],
+    ]) {
+      const r = detectColumn(cells)
+      expect([cells[0], r.type, r.counts.unparsed]).toEqual([cells[0], NUMBER, 0])
+      expect(r.verdict).not.toBe('unresolved') // one warning-free column
+    }
+  })
+
+  it('combines an accounting sign with an affix', () => {
+    expect(detectColumn(['(1.234,56 €)', '80,00 €']).affix).toBe('€')
+    expect(detectColumn(['($1,234.56)', '$80.00']).affix).toBe('$')
+  })
+
+  it('reads two sign marks as no number at all', () => {
+    // `(1.234,56-)` is negated twice, or it is a typo. Either way it is not a
+    // figure this product will silently pick a sign for.
+    const r = detectColumn([...Array.from({ length: 20 }, () => '(1.234,56)'), '(1.234,56-)'])
+
+    expect(r.counts).toMatchObject({ parsed: 20, unparsed: 1 })
+    expect(detectColumn(['(-1.234,56)', '(-80,00)']).type).toBe(TEXT)
+  })
+
+  it('still sees a leading zero through a sign and an affix', () => {
+    // The zeros are the information wherever they sit. `(0123)` is an article
+    // number in parentheses, not minus one hundred and twenty-three.
+    expect(detectColumn(['(0123)', '(0456)', '789']).type).toBe(TEXT)
+    expect(detectColumn(['0123 €', '0456 €']).type).toBe(TEXT)
+  })
+})
+
+describe('the cross-kind competition', () => {
+  it('scores the kinds independently and proposes the highest hit rate', () => {
+    const cases = [
+      [['1.234,56', '80,00'], NUMBER],
+      [['31.12.2025', '01.03.2026'], DATE],
+      [['31.12.2025 14:30', '01.03.2026 08:00'], DATETIME],
+      [['36:15', '08:00'], DURATION],
+      [['ja', 'nein'], BOOLEAN],
+      [['Anna', 'Bernd'], TEXT],
+    ]
+
+    for (const [cells, type] of cases) {
+      expect([cells[0], detectColumn(cells).type]).toEqual([cells[0], type])
+    }
+  })
+
+  it('holds the 0.9 threshold across every new kind, not only the old two', () => {
+    // Two of three readable is not a datetime column any more than it is a
+    // number one — and once it is text there is nothing unreadable left in it.
+    const r = detectColumn(['31.12.2025 14:30', 'demnächst', 'unbekannt'])
+
+    expect(r).toMatchObject({ type: TEXT, verdict: 'settled' })
+    expect(r.counts).toMatchObject({ parsed: 3, unparsed: 0 })
+  })
+
+  it('can score every type a user may choose', () => {
+    // The sibling of `canonicalTypeGaps`, for the other half of the vocabulary.
+    // A type added to the catalogue and forgotten in the reader dispatch would
+    // count every value readable and put a 100 % hit rate on a column nothing
+    // had read — a rubber stamp with a number on it.
+    expect(scorableTypeGaps()).toEqual([])
+    expect(canonicalTypeGaps()).toEqual([])
+  })
+
+  it('gives a tie to number', () => {
+    // `1`/`0` reads fully as both. Number is the reading that loses less if it
+    // is wrong, and the rule is the declaration order rather than a special case.
+    expect(detectColumn(['1', '0']).type).toBe(NUMBER)
+  })
+})
+
+describe('the story-3 verdicts, unchanged', () => {
+  // Five new kinds compete for every column now. This block is the guard that
+  // none of them quietly took one of story 3's columns away from it — the
+  // regressions would be silent, and each of these is a shape a real German
+  // export carries.
+  it('still reads what it read before, with the same counts and the same evidence', () => {
+    expect(detectColumn(['1.234,56', '80,00', '7', '-12,5'])).toMatchObject({
+      type: NUMBER,
+      verdict: 'decisive', // `1.234,56` reads only as German, and says so
+      counts: { parsed: 4, unparsed: 0 },
+    })
+    expect(detectColumn(['0123', '0456', '789']).type).toBe(TEXT)
+    expect(detectColumn(['3.4.2025', '5.6.2025']).type).toBe(TEXT)
+    expect(detectColumn([...Array.from({ length: 20 }, (_, i) => `${i + 1}.234,00`), '1.23.456']))
+      .toMatchObject({ type: NUMBER, counts: { parsed: 20, unparsed: 1 } })
+
+    const ambiguous = detectColumn(['03.04.2025', '05.06.2025', '01.02.2024'])
+    expect(ambiguous.verdict).toBe('unresolved')
+    // The reading ambiguity's evidence keeps exactly the shape it shipped with,
+    // field for field: `over` marks the *type* question and nothing else.
+    expect(ambiguous.evidence).toEqual({ alternatives: ['dd.MM.yyyy', 'MM.dd.yyyy'] })
+
+    const numbers = detectColumn(['1.234', '5.678', '9.012'])
+    expect(numbers.evidence).toEqual({ alternatives: ['de-DE', 'en-US'] })
+    expect(detectColumn(['1', '2', '42', '2019'])).toMatchObject({
+      type: NUMBER,
+      verdict: 'settled',
+      evidence: null,
+    })
   })
 })
 

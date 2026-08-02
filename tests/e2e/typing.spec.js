@@ -185,6 +185,93 @@ test('declaring a missing token recounts the column without answering its questi
   await expect(betrag.getByTestId('typing-hitrate')).toHaveText('2 von 2 Werten lesbar, 1 leer')
 })
 
+test('an ERP export is typed past text, and the type question blocks the gate', async ({ page }) => {
+  // Story 4a's whole reason to exist, as one journey. Before it, every column
+  // below was `text`: a timestamp, a clock time, a ja/nein flag, a percentage
+  // and an accounting negative — and the 19-digit order number was worse than
+  // text, because it was `number`, `settled` and one confirmation away from
+  // losing its last four digits.
+  await pick(
+    page,
+    csv(
+      'auftraege.csv',
+      'Auftrag;Zeitpunkt;Beginn;Freigegeben;Marge;Saldo\n' +
+        '1234567890123456789;31.12.2025 14:30;08:15;ja;12,5 %;(1.234,56)\n' +
+        '1234567890123456780;01.03.2026 08:00;17:20;Nein;80,0 %;1.234,56-\n',
+    ),
+  )
+
+  const card = cards(page)
+
+  // The digits are the information — the whole column stays text rather than
+  // being proposed as a number nobody can convert without losing it.
+  await expect(card.getByLabel('Typ: Auftrag')).toHaveValue('text')
+
+  await expect(card.getByLabel('Typ: Zeitpunkt')).toHaveValue('datetime')
+  await expect(card.getByLabel('Lesart: Zeitpunkt')).toHaveValue('dd.MM.yyyy HH:mm')
+  await expect(card.getByLabel('Typ: Freigegeben')).toHaveValue('boolean')
+  await expect(card.getByLabel('Lesart: Freigegeben')).toHaveValue('ja/nein')
+
+  // The number keeps its digits and the sign rides on the column beside it.
+  await expect(card.getByLabel('Typ: Marge')).toHaveValue('number')
+  await expect(columnRow(page, 'Marge').getByTestId('typing-affix')).toHaveText('Einheit: %')
+  await expect(card.getByLabel('Typ: Saldo')).toHaveValue('number')
+  await expect(columnRow(page, 'Saldo').getByTestId('typing-hitrate')).toHaveText(
+    '2 von 2 Werten lesbar',
+  )
+
+  // Nothing in a column of clock times says whether it is a time of day or a
+  // span, so the question is asked as a type — and the select must not already
+  // show one of the two answers, or it could never receive it as one.
+  await expect(columnRow(page, 'Beginn').getByTestId('typing-verdict')).toContainText(
+    'zwischen Dauer und Uhrzeit — bitte den Typ wählen',
+  )
+  await expect(card.getByLabel('Typ: Beginn')).toHaveValue('')
+  await expect(card.getByTestId('typing')).toContainText('Noch offen: Beginn.')
+
+  await card.getByRole('button', { name: 'Typen bestätigen: auftraege' }).click()
+  await expect(card.getByTestId('typing-refusal')).toContainText('Beginn')
+
+  await card.getByLabel('Typ: Beginn').selectOption('time')
+
+  await expect(card.getByLabel('Typ: Beginn')).toHaveValue('time')
+  await expect(card.getByTestId('typing-refusal')).toHaveCount(0)
+
+  await card.getByRole('button', { name: 'Typen bestätigen: auftraege' }).click()
+  await expect(card.getByTestId('typing')).toContainText('Typen bestätigt.')
+})
+
+test('a duration column settles itself, and a mixed unit refuses to be a number', async ({
+  page,
+}) => {
+  await pick(
+    page,
+    csv(
+      'zeiten.csv',
+      'Dauer;Betrag\n08:15;12 €\n17:20;12 $\n36:15;7 €\n',
+    ),
+  )
+
+  const card = cards(page)
+
+  // One value past 24:00 is evidence no clock time can carry, so this column is
+  // decided rather than asked about — and the count that decided it is named.
+  await expect(card.getByLabel('Typ: Dauer')).toHaveValue('duration')
+  await expect(columnRow(page, 'Dauer').getByTestId('typing-verdict')).toContainText(
+    '1 Wert lässt sich nur als Dauer lesen, nicht als Uhrzeit — daher Dauer.',
+  )
+
+  // Two currencies in one column cannot be summed, so it is text and both are
+  // named. The card says so in German; the code never reaches the screen.
+  await expect(card.getByLabel('Typ: Betrag')).toHaveValue('text')
+  await expect(card).toContainText(
+    'Spalte „Betrag“ enthält Werte mit verschiedenen Einheiten (€ und $)',
+  )
+
+  // A duration needs no reading, so nothing offers one.
+  await expect(card.getByLabel('Lesart: Dauer')).toHaveCount(0)
+})
+
 test('an annotation is the user’s own text, and it survives a re-read', async ({ page }) => {
   await pick(page, csv('umsatz.csv', 'Kunde;Betrag\nAnna;1.234,56\n'))
 

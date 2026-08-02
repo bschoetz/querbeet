@@ -6,15 +6,20 @@ so a later reader can see what was decided rather than only what remains.
 
 ## Open
 
+- source_spec: `spec-4a-report-types.md`
+  summary: A two-digit year reads as `dd.MM.yy` and nothing competes with it, so `03.04.25` out of an American export is read as 3 April rather than 4 March — quietly, where the same shape at four digits would be an open question.
+  evidence: The four-digit patterns have their `MM.dd` mirror and are reported as `unresolved` when nothing in the column settles them; that is the whole of story 3's second ambiguity state, and `core/types/typing.test.js` pins it. The two-digit list has no mirror, so the one column shape that raises a question at four digits is settled silently at two. Story 4a's Boundaries name the candidate list as closed and make any addition an Ask First, so this was implemented exactly as specified rather than widened during dev.
+  status: **open, deliberately — the frozen list is the list, and this is the observation it costs.** Adding `MM.dd.yy` is one entry in `DATE_PATTERNS` and restores the symmetry, at the price of turning every German `03.04.25` column into a question the user has to answer. Which of those is the better trade needs a real Source carrying the shape — the same rule `NUMBER_LOCALES` follows, and the same one the deliberately absent `MM/dd` *datetime* mirror follows. Noticed and decided during dev without the project owner (he was away): recorded rather than acted on, because widening a frozen candidate list is his call.
+
+- source_spec: `spec-4a-report-types.md`
+  summary: One stray `$` beside one stray `€` in an otherwise plain number column takes the whole column to `text`, because "a column mixing two affixes is text" is unconditional.
+  evidence: The Boundaries are unqualified — "A column mixing two affixes is `text` plus a warning naming both" — and the implementation follows them: two affixes each carried by at least one value that reads as a number disqualify the number reading for the whole column. That is the right answer for `12 €` beside `12 $`, which is the case the rule was written for and which cannot be summed. It is a heavy answer for 998 plain numbers with two mistyped cells, where the honest report would be two unparsed values. The guard against false positives is already in: an affix only counts as *used* where the value around it reads as a number, so a text column mentioning `€` and `$` in prose triggers nothing (`core/types/typing.test.js`, "does not read an affix out of prose").
+  status: open as a threshold question, not as a defect — the conservative answer is never wrong, only sometimes blunt. The route out is a share test rather than a presence test (a minority affix counts its values unparsed instead of disqualifying the column), which is a Boundaries change and therefore the owner's. No Source has produced the shape yet.
+
 - source_spec: `spec-4-xlsx-parquet-sources.md`
   summary: ZSTD, LZ4 and LZ4_RAW are decompression paths with no fixture — nothing in this tree can *write* those codecs.
   evidence: `hyparquet-writer` compresses through a synchronous function the caller supplies, and Node's own `zlib` provides one for gzip and brotli only. `fzstd` decompresses and does not compress, and no lz4 compressor is present. So four of the six codecs `hyparquet-compressors` supplies are round-tripped against real compressed bytes in `adapters/parquet/parquet-reader.test.js` — SNAPPY, UNCOMPRESSED, GZIP, BROTLI, each with the recorded codec asserted so an identity function cannot pass for compression — and two are not. The gap is a fixture gap, not a code gap: all six reach hyparquet through the same `compressors` map with no branching of ours in between.
   status: **TODO, accepted 2026-08-02 by the project owner — to be done, but not now.** The route is a synchronous zstd/lz4 compressor as a devDependency (or a committed fixture, now that binary fixtures are allowed). Deliberately not bundled into story 4's close: the risk is a fixture gap on a path with no branching of ours, so it does not gate anything shipping. Named here rather than left implied by a suite that looks complete.
-
-- source_spec: `spec-4-xlsx-parquet-sources.md`
-  summary: `native:datetime` holds milliseconds, so a Parquet TIMESTAMP in MICROS or NANOS loses its sub-millisecond digits, and INT96 loses them twice over.
-  evidence: hyparquet hands over a `Date`, which is millisecond-resolution by construction, so the finer digits are gone before the adapter sees the value — there is nothing this story could have kept. The loss is now named per column (`parquet.timestamp_precision`, with the unit) rather than silent, which is the same discipline the INT64 case got. What is deferred is the *representation*: AD-21 fixes a Table's temporal column as UTC epoch milliseconds, and carrying microseconds would change that rule rather than this adapter.
-  status: open — the representation question belongs to story 4a, which owns the temporal vocabulary. This entry is the pointer; the warning is what holds the line meanwhile.
 
 - source_spec: `spec-4-xlsx-parquet-sources.md`
   summary: The reader's `sheets.length === 0` branch — `xlsx.empty` with `sheet: ''` — is unreachable, and now for a measured reason: `read-excel-file` 9.3.5 crashes on a workbook that declares no sheet, before it can return one.
@@ -57,6 +62,11 @@ so a later reader can see what was decided rather than only what remains.
   status: open — carried into story 10's `invoke_dev_with` in `_bmad-output/specs/spec-querbeet/stories.yaml` (2026-08-02). Deliberately not solved now: a seam invented without a second consumer is guessed rather than measured.
 
 ## Closed
+
+- source_spec: `spec-4-xlsx-parquet-sources.md`
+  summary: `native:datetime` holds milliseconds, so a Parquet TIMESTAMP in MICROS or NANOS loses its sub-millisecond digits, and INT96 loses them twice over.
+  evidence: hyparquet hands over a `Date`, which is millisecond-resolution by construction, so the finer digits were gone before the adapter ever saw the value — there was nothing story 4 could have kept. What was deferred was never the adapter but the *representation*: AD-21 fixes a Table's temporal column as UTC epoch milliseconds, and carrying microseconds would change that rule rather than any one reader.
+  status: **closed 2026-08-02 by story 4a — the resolution stays milliseconds, and AD-21 now says so out loud.** The amendment adds the two representations story 4a introduces (a `time` column holds milliseconds since midnight, a `duration` column plain milliseconds) and states the resolution for all four temporal types in one line. Sub-millisecond digits are out of the representation and stay out: nothing in the MVP reads, filters, groups or reports below a millisecond, and `parquet.timestamp_precision` names the loss per column with its unit rather than letting it be silent. Detection of an ISO fraction follows the same line — up to nine digits are counted readable and truncated at conversion. Reopen only with a Source whose sub-millisecond digits are load-bearing for an answer a user needs; none seen so far.
 
 - source_spec: `spec-4-xlsx-parquet-sources.md`
   summary: Five Parquet and XLSX shapes were carried as untestable — INT96, a byte-array-backed DECIMAL, a repeated Parquet column name, a password-protected workbook, and a zero-sheet workbook — on the strength of a rule ("no binaries in git") that was never the project owner's.

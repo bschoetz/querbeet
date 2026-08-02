@@ -142,6 +142,88 @@ describe('the two ambiguity sentences', () => {
   })
 })
 
+describe('the question that is about a type rather than a reading', () => {
+  // A column of clock times is `time` or `duration` and nothing in it says
+  // which. That question is answered in the Typ select, not the Lesart one, so
+  // both the sentence and the placeholder have to move with it.
+  const undecidedKind = () =>
+    column('Beginn', {
+      type: 'duration',
+      format: null,
+      verdict: 'unresolved',
+      evidence: { over: 'kind', alternatives: ['duration', 'time'] },
+    })
+
+  it('names the two types in German and points at the type select', async () => {
+    const w = await render(stubStore(source([undecidedKind()])))
+
+    const verdict = w.find('[data-testid="typing-verdict"]').text()
+    expect(verdict).toBe(
+      'Nichts in dieser Spalte entscheidet zwischen Dauer und Uhrzeit — bitte den Typ wählen.',
+    )
+  })
+
+  it('shows a placeholder in the type select rather than one of the two answers', async () => {
+    // The trap the reading select and the delimiter select were both fixed for:
+    // re-selecting the value a select already displays fires no change event, so
+    // a column proposed as `Dauer` while asking "Uhrzeit or Dauer?" could never
+    // be answered with `Dauer` and the gate would stay shut for good.
+    const store = stubStore(source([undecidedKind()]))
+    const w = await render(store)
+    const select = w.get('select[aria-label="Typ: Beginn"]')
+
+    expect(select.element.value).toBe('')
+    expect(select.text()).toContain('Bitte wählen')
+    expect(select.find('option[value=""]').attributes('disabled')).toBeDefined()
+
+    await select.setValue('duration')
+    const [, id, at, patch] = store.calls.find((c) => c[0] === 'setColumnTyping')
+    expect([id, at, patch]).toEqual(['src:daten', 0, { type: 'duration' }])
+  })
+
+  it('offers no reading select at all, because there is no reading to choose', async () => {
+    const w = await render(stubStore(source([undecidedKind()])))
+
+    expect(w.find('select[aria-label="Lesart: Beginn"]').exists()).toBe(false)
+  })
+
+  it('names the deciding count in types once one value settles it', async () => {
+    const w = await render(
+      stubStore(
+        source([
+          column('Beginn', {
+            type: 'duration',
+            format: null,
+            verdict: 'decisive',
+            evidence: { over: 'kind', alternatives: ['duration', 'time'], decidedBy: 1, contested: 0 },
+          }),
+        ]),
+      ),
+    )
+
+    expect(w.find('[data-testid="typing-verdict"]').text()).toBe(
+      '1 Wert lässt sich nur als Dauer lesen, nicht als Uhrzeit — daher Dauer.',
+    )
+    // Settled by evidence, so the select shows the answer rather than a prompt.
+    expect(w.get('select[aria-label="Typ: Beginn"]').element.value).toBe('duration')
+  })
+})
+
+describe('the unit a number column carries', () => {
+  it('shows the affix on the card, and only where there is one', async () => {
+    // The stored number is the number in the field — 12,5 for `12,5 %` — so this
+    // is where the percent sign went, and it has to be visible or the column
+    // reads as a bare figure.
+    const w = await render(
+      stubStore(source([column('Quote', { type: 'number', affix: '%' }), column('Kunde')])),
+    )
+
+    const affixes = w.findAll('[data-testid="typing-affix"]')
+    expect(affixes).toHaveLength(1)
+    expect(affixes[0].text()).toBe('Einheit: %')
+  })
+})
+
 describe('the German of a single value', () => {
   // The counts line already has its own singular test, and three entries in the
   // diagnostic map branch on a count of one. Every count in this panel can be
@@ -229,6 +311,47 @@ describe('the reading select', () => {
     const [, id, at, patch] = store.calls.find((c) => c[0] === 'setColumnTyping')
     expect([id, at]).toEqual(['src:daten', 0])
     expect(patch.format.pattern).toBe('dd.MM.yyyy')
+  })
+
+  it('spells a datetime pattern in German field letters, two-digit year included', async () => {
+    // `yyyy` becomes JJJJ before `yy` becomes JJ, or `dd.MM.yyyy` would come out
+    // right on its first half and as nonsense on its second.
+    const w = await render(
+      stubStore(
+        source([
+          column('Zeitpunkt', {
+            type: 'datetime',
+            format: { pattern: 'dd.MM.yy HH:mm' },
+            chosen: { type: 'datetime', format: { pattern: 'dd.MM.yy HH:mm' } },
+          }),
+        ]),
+      ),
+    )
+    const options = w.get('select[aria-label="Lesart: Zeitpunkt"]').findAll('option')
+
+    expect(options.map((o) => o.text())).toEqual([
+      'ISO 8601',
+      'JJJJ-MM-TT HH:mm',
+      'TT.MM.JJJJ HH:mm',
+      'TT.MM.JJ HH:mm',
+    ])
+  })
+
+  it('names a boolean pair by its two words', async () => {
+    const w = await render(
+      stubStore(
+        source([
+          column('Aktiv', {
+            type: 'boolean',
+            format: { pattern: 'ja/nein' },
+            chosen: { type: 'boolean', format: { pattern: 'ja/nein' } },
+          }),
+        ]),
+      ),
+    )
+
+    expect(w.get('select[aria-label="Lesart: Aktiv"]').element.value).toBe('ja/nein')
+    expect(w.get('select[aria-label="Lesart: Aktiv"]').text()).toContain('wahr/falsch')
   })
 
   it('shows the chosen reading once the question is answered', async () => {
@@ -621,6 +744,10 @@ describe('the column edits', () => {
       ['text', 'Text'],
       ['number', 'Zahl'],
       ['date', 'Datum'],
+      ['datetime', 'Zeitstempel'],
+      ['time', 'Uhrzeit'],
+      ['duration', 'Dauer'],
+      ['boolean', 'Wahrheitswert'],
     ])
     // …and every type the catalogue admits natively has a word too, since a
     // native column renders one and can never render a select.
@@ -656,6 +783,35 @@ describe('the typing diagnostics in German', () => {
     expect(text).toContain('Spalte „Datum“: nichts entscheidet zwischen zwei Lesarten')
     expect(text).toContain('Spalte „Betrag“: 58 von 900 Werten lassen sich')
     expect(text).toContain('Die Spaltentypen sind noch nicht bestätigt')
+    expect(text).not.toContain('Unbekannte Meldung aus dem Kern.')
+  })
+
+  it('has a sentence for the two codes story 4a added', async () => {
+    // Both name what the user has to do about them: which control answers the
+    // type question, and which two units the mixed column is carrying.
+    const w = await render(
+      stubStore(
+        source([column('Kunde')], {
+          diagnostics: [
+            {
+              severity: 'unresolved',
+              code: 'typing.ambiguous_kind',
+              values: { column: 'Beginn', alternatives: ['duration', 'time'] },
+            },
+            {
+              severity: 'warning',
+              code: 'typing.mixed_affixes',
+              values: { column: 'Wert', affixes: ['€', '$'] },
+            },
+          ],
+        }),
+      ),
+    )
+
+    const text = w.text()
+    expect(text).toContain('Spalte „Beginn“: nichts entscheidet zwischen Dauer und Uhrzeit')
+    expect(text).toContain('Bitte unter „Spalten & Typen“ den Typ wählen.')
+    expect(text).toContain('Spalte „Wert“ enthält Werte mit verschiedenen Einheiten (€ und $)')
     expect(text).not.toContain('Unbekannte Meldung aus dem Kern.')
   })
 
@@ -817,7 +973,15 @@ describe('the typing diagnostics in German', () => {
     // was settled by its format.
     expect(w.find('[data-testid="typing-native"]').exists()).toBe(false)
     const select = w.get('select[aria-label="Typ: Preis"]')
-    expect(select.findAll('option').map((o) => o.text())).toEqual(['Text', 'Zahl', 'Datum'])
+    expect(select.findAll('option').map((o) => o.text())).toEqual([
+      'Text',
+      'Zahl',
+      'Datum',
+      'Zeitstempel',
+      'Uhrzeit',
+      'Dauer',
+      'Wahrheitswert',
+    ])
     expect(select.element.value).toBe('number')
 
     await select.setValue('text')

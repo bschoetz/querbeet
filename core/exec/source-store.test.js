@@ -743,6 +743,109 @@ describe('the typing as diagnostics (CAP-34)', () => {
   })
 })
 
+describe('the questions story 4a added, as diagnostics and as a gate', () => {
+  const CLOCK = { name: 'Beginn', cells: ['08:15', '17:20'] }
+
+  it('gives the time-against-duration question its own code, not the locale one', async () => {
+    // Two questions, two codes. A locale ambiguity asks which reading of the
+    // digits is meant and is answered in the Lesart select; this one asks what
+    // the column *is* and is answered in the Typ select. One code for both
+    // would point the card at the wrong control.
+    const { store, source } = await withColumns([CLOCK])
+
+    expect(codes(source)).toEqual([
+      ['unresolved', 'typing.ambiguous_kind'],
+      ['unresolved', 'typing.unconfirmed'],
+    ])
+    expect(source.diagnostics[0].values).toEqual({
+      column: 'Beginn',
+      alternatives: ['duration', 'time'],
+    })
+
+    // And it blocks the gate exactly as the locale case does.
+    expect(store.confirmTyping(source.id).unresolved).toEqual(['Beginn'])
+
+    const answered = store.setColumnTyping(source.id, 0, { type: 'time' })
+    expect(answered.typing.columns[0]).toMatchObject({
+      type: 'time',
+      format: null, // no reading to resolve — the choice was the type
+      verdict: 'settled',
+    })
+    expect(store.confirmTyping(source.id).source.typing.confirmed).toBe(true)
+  })
+
+  it('warns about a column that mixes two units, and names both', async () => {
+    const { source } = await withColumns([{ name: 'Wert', cells: ['12 €', '12 $'] }])
+
+    expect(codes(source)).toEqual([
+      ['warning', 'typing.mixed_affixes'],
+      ['unresolved', 'typing.unconfirmed'],
+    ])
+    expect(source.diagnostics[0].values).toEqual({ column: 'Wert', affixes: ['€', '$'] })
+    expect(source.typing.columns[0].type).toBe('text')
+  })
+
+  it('resolves a reading for the kinds that have one, and none for the kinds that do not', async () => {
+    const { store, source } = await withColumns([
+      { name: 'Zeitpunkt', cells: ['31.12.2025 14:30', '01.03.2026 08:00'] },
+      { name: 'Flag', cells: ['ja', 'nein'] },
+      CLOCK,
+    ])
+
+    // Detection's own proposals first — a datetime pattern and a boolean pair
+    // are formats, and `resolveFormat` has to be able to key on each of them.
+    expect(source.typing.columns.map((c) => c.format?.pattern ?? null)).toEqual([
+      'dd.MM.yyyy HH:mm',
+      'ja/nein',
+      null,
+    ])
+
+    // …and the same keys survive a round trip through the command boundary,
+    // which resolves a named reading against the candidate list rather than
+    // trusting it.
+    const patched = store.setColumnTyping(source.id, 0, {
+      type: 'datetime',
+      format: { pattern: 'yyyy-MM-dd HH:mm' },
+    })
+    expect(patched.typing.columns[0]).toMatchObject({
+      type: 'datetime',
+      counts: { parsed: 0, unparsed: 2 }, // a wrong choice shows what it costs
+    })
+    expect(() =>
+      store.setColumnTyping(source.id, 1, { type: 'boolean', format: { pattern: 'oui/non' } }),
+    ).toThrow(TypeError)
+  })
+
+  it('keeps the affix on the record when the user overrides the reading', async () => {
+    // The affix is not part of the format — the format answers which locale
+    // reads the digits, the affix answers what unit rides on the column — so it
+    // has to be re-derived on a re-score rather than carried on the choice.
+    const { store, source } = await withColumns([{ name: 'Quote', cells: ['12,5 %', '80,0 %'] }])
+    expect(source.typing.columns[0]).toMatchObject({ type: 'number', affix: '%' })
+
+    const overridden = store.setColumnTyping(source.id, 0, {
+      type: 'number',
+      format: { locale: 'en-US' },
+    })
+
+    expect(overridden.typing.columns[0].affix).toBe('%')
+    // …and it survives a re-read, where the whole record is rebuilt.
+    const reread = await store.overrideEncoding(source.id, 'windows-1252')
+    expect(reread.typing.columns[0].affix).toBe('%')
+  })
+
+  it('leaves a 19-digit order number as text rather than confirmable digits', async () => {
+    // The gate's whole purpose. Proposed as `number` at 100 % readable, this
+    // column would be confirmed by anyone and lose its last digits at story 6.
+    const { store, source } = await withColumns([
+      { name: 'Auftrag', cells: ['1234567890123456789', '1234567890123456780'] },
+    ])
+
+    expect(source.typing.columns[0]).toMatchObject({ type: 'text', counts: { unparsed: 0 } })
+    expect(codes(store.confirmTyping(source.id).source)).toEqual([])
+  })
+})
+
 describe('confirmTyping — the first of AD-29 three gates', () => {
   it('refuses while a column is undecided, and names it', async () => {
     const { store, source } = await withColumns([GERMAN, AMBIGUOUS])

@@ -17,11 +17,15 @@
 //   settable  whether a *user* may choose it for a column
 //   native    whether a *reader* may declare it as `native:<code>` (AD-20)
 //
-// The two flags are independent on purpose. `datetime` and `boolean` are
-// display-only this story: the formats deliver them, so a reader must be able to
-// declare them, but no text column can be retyped into one until detection can
-// reach them from text (story 4a). And `text` is never a native declaration —
-// a reader that delivers strings declares the domain `text`, not `native:text`.
+// The two flags are independent on purpose, and story 4a is where they come
+// apart in the other direction. `datetime` and `boolean` were display-only while
+// only a reader could produce them; now that detection reaches them from text
+// they are settable too, and the same table is typed whether it arrives as XLSX
+// or as CSV. `time` and `duration` go the other way: a user may choose either,
+// and **no reader may declare one** — Parquet's TIME is still a refused
+// declaration (story 4's closed list), and nothing in `adapters/` says the word.
+// And `text` is never a native declaration — a reader that delivers strings
+// declares the domain `text`, not `native:text`.
 //
 // German words for these codes live in `ui/` (AD-13). This file is the list they
 // are keyed off, so a type without a word is a failing test rather than a raw
@@ -31,6 +35,8 @@ export const TEXT = 'text'
 export const NUMBER = 'number'
 export const DATE = 'date'
 export const DATETIME = 'datetime'
+export const TIME = 'time'
+export const DURATION = 'duration'
 export const BOOLEAN = 'boolean'
 
 /** The prefix a reader's domain declaration carries in front of a type (AD-20). */
@@ -40,8 +46,10 @@ export const TYPES = Object.freeze([
   Object.freeze({ code: TEXT, settable: true, native: false }),
   Object.freeze({ code: NUMBER, settable: true, native: true }),
   Object.freeze({ code: DATE, settable: true, native: true }),
-  Object.freeze({ code: DATETIME, settable: false, native: true }),
-  Object.freeze({ code: BOOLEAN, settable: false, native: true }),
+  Object.freeze({ code: DATETIME, settable: true, native: true }),
+  Object.freeze({ code: TIME, settable: true, native: false }),
+  Object.freeze({ code: DURATION, settable: true, native: false }),
+  Object.freeze({ code: BOOLEAN, settable: true, native: true }),
 ])
 
 const BY_CODE = new Map(TYPES.map((type) => [type.code, type]))
