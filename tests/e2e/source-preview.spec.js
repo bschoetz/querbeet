@@ -267,7 +267,7 @@ test('a corrected header row shifts the preview header and its rows', async ({ p
   await expect(card.getByRole('columnheader', { name: 'Ort', exact: true })).toHaveCount(0)
   await expect(previewRows(page)).toHaveCount(1)
   await expect(card.getByRole('cell', { name: 'Köln', exact: true })).toBeVisible()
-  await expect(card.getByText('1 Zeilen, 3 Spalten')).toBeVisible()
+  await expect(card.getByText('1 Zeile, 3 Spalten')).toBeVisible()
 
   // Header on the last line: columns remain, no data row is left, and the grid
   // says so in German rather than rendering an unexplained empty body.
@@ -277,6 +277,33 @@ test('a corrected header row shifts the preview header and its rows', async ({ p
   await expect(card.getByText('0 Zeilen, 3 Spalten')).toBeVisible()
   await expect(previewRows(page)).toHaveCount(0)
   await expect(card.getByText('Keine Datenzeilen')).toBeVisible()
+})
+
+test('a Source of one row and one column counts in the German singular', async ({ page }) => {
+  // "1 Zeilen, 1 Spalten" is what a plural-only counts line produces, and it is
+  // the shape a German reader notices first (AD-13). The damage sentences in
+  // this pane already decline correctly; the counts line did not.
+  await pick(page, csv('einzel.csv', 'Ort\nBerlin\n'))
+
+  const card = cards(page)
+  await expect(card.getByText('1 Zeile, 1 Spalte')).toBeVisible()
+  await expect(card.getByText('Zeilen')).toHaveCount(0)
+  await expect(card.getByText('Spalten')).toHaveCount(0)
+})
+
+test('the preview sits below the correction controls, not above them', async ({ page }) => {
+  // Order is the whole point of the placement: the knobs that correct the read
+  // come first, the grid is the payoff you look at once they are right. Above
+  // them, a ~310 px scroll region per card pushed the controls a screen apart
+  // on a three-Source pane. Asserted geometrically, since a reader sees
+  // position rather than DOM order.
+  await pick(page, generated(200))
+
+  const card = cards(page)
+  const header = await card.getByLabel('Kopfzeile').boundingBox()
+  const grid = await card.getByTestId('preview').boundingBox()
+
+  expect(grid.y, 'the preview moved back above the correction controls').toBeGreaterThan(header.y)
 })
 
 test('an empty Source reads 0 Zeilen and shows a German empty state instead of a grid', async ({

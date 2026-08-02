@@ -26,6 +26,12 @@ const refresh = () => {
 
 const nf = (n) => n.toLocaleString('de-DE')
 
+// German counts one of a thing differently, and the diagnostic sentences below
+// already do it — "Eine Zeile weicht ab" against "3 Zeilen weichen ab". The
+// counts line was the one place that said "1 Zeilen" (AD-13).
+const rowsLabel = (n) => (n === 1 ? '1 Zeile' : `${nf(n)} Zeilen`)
+const colsLabel = (n) => (n === 1 ? '1 Spalte' : `${nf(n)} Spalten`)
+
 const DELIMITERS = [
   { value: ',', label: 'Komma (,)' },
   { value: ';', label: 'Semikolon (;)' },
@@ -246,19 +252,10 @@ const setHeaderRow = (id, raw) => {
         </div>
 
         <!-- The counts are the Source's totals, never the preview window's:
-             the grid below holds ~50 rows whatever this says (AD-24). -->
+             the grid further down holds ~50 rows whatever this says (AD-24). -->
         <p class="mt-2 text-sm text-slate-500">
-          {{ s.fileName }} — {{ nf(s.table.rowCount) }} Zeilen, {{ nf(s.table.columns.length) }} Spalten
+          {{ s.fileName }} — {{ rowsLabel(s.table.rowCount) }}, {{ colsLabel(s.table.columns.length) }}
         </p>
-
-        <!-- The column names are the grid's header row now; the chips that used
-             to carry them would have been the same names twice. Damaged rows
-             stay out of this table and inspectable in the report below (CAP-39). -->
-        <RowWindow
-          class="mt-2"
-          :table="s.table"
-          :label="'Vorschau: ' + s.name"
-        />
 
         <div class="mt-3 flex flex-wrap items-end gap-4 text-sm">
           <label class="flex flex-col gap-1">
@@ -343,6 +340,20 @@ const setHeaderRow = (id, raw) => {
             <span>{{ renderText(d) }}</span>
           </li>
         </ul>
+
+        <!-- The preview sits below the correction controls, not above them.
+             Everything that explains or corrects the read comes first — the
+             knobs, then what went wrong — and the grid is the payoff you look
+             at once those are right. Above the knobs it pushed them a screen
+             apart on a three-Source pane. The column names are this grid's
+             header row now; the chips that used to carry them would have been
+             the same names twice. Damaged rows stay out of the table and
+             inspectable in the report directly below it (CAP-39). -->
+        <RowWindow
+          class="mt-3"
+          :table="s.table"
+          :label="'Vorschau: ' + s.name"
+        />
 
         <details
           v-if="s.damage.mismatches.length"

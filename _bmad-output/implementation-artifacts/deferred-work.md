@@ -1,23 +1,34 @@
 # Deferred Work
 
-Issues surfaced by review that were not this story's problem to solve. Append-only.
+Issues surfaced by review that were not the originating story's problem to solve.
+Entries move to **Closed** with a note saying where they went — they are not deleted,
+so a later reader can see what was decided rather than only what remains.
+
+## Open
 
 - source_spec: `spec-2-source-preview.md`
   summary: The paging controls in `ui/RowWindow.vue` — the buttons, their German labels, their disabled states — are rendered by no test in any envelope; only the page math underneath them is covered.
   evidence: Paging engages above `PAGE_ROWS` (571,428 rows), which no affordable e2e fixture reaches, and there is no `ui/` component-test envelope — `vitest.config.js` includes only `core/**`, `ports/**` and `adapters/**` under `environment: 'node'`, and the repo carries no component-test dependency. Adding one is marked "Ask First" in this story's spec, so it needs a human decision rather than a patch.
+  status: open — research queued as **R10** in `research-plan.md` (2026-08-02), to be answered before story 10 makes `RowWindow` its second consumer. Interim discipline, applied in story 2's review: push the interesting states down into `core/` as pure data so the template stays thin enough for e2e.
 
 - source_spec: `spec-2-source-preview.md`
-  summary: `ui/RowWindow.vue` is billed as reusable by story 10 unchanged, but carries the Source story's vocabulary and a fixed height — `preview*` test ids, the default label `Tabellenvorschau`, and a hardcoded `max-h-[308px]` with no height prop.
+  summary: `ui/RowWindow.vue` is billed as reusable by story 10 unchanged, but carries the Source story's vocabulary and a fixed height — `preview*` test ids, the default label `Tabellenvorschau`, and a hardcoded `VIEWPORT_ROWS = 10` with no height prop.
   evidence: Story 10's Result table wants a pane-filling grid; adopting the component at any taller height breaks the invariant that the container must stay under `WINDOW_SIZE` rows. The shared `preview` test id would also make the existing page-scoped `getByTestId('preview')` assertions match the Result table once both render.
+  status: open — carried into story 10's `invoke_dev_with` in `_bmad-output/specs/spec-querbeet/stories.yaml` (2026-08-02). Deliberately not solved now: a seam invented without a second consumer is guessed rather than measured.
+
+## Closed
 
 - source_spec: `spec-2-source-preview.md`
-  summary: The Source card's counts line has no German singular — a one-row, one-column Source reads `1 Zeilen, 1 Spalten`.
-  evidence: `ui/SourcesPane.vue` renders both nouns in the plural unconditionally, and the e2e suite pins `1 Zeilen, 3 Spalten`. The row noun shipped that way in story 1; this story added the column noun. AD-13 makes German the product surface, so the fix belongs in a pass over the app's count formatting rather than in one line here.
+  summary: The Source card's counts line had no German singular — a one-row, one-column Source read `1 Zeilen, 1 Spalten`.
+  evidence: `ui/SourcesPane.vue` rendered both nouns in the plural unconditionally, and the e2e suite pinned `1 Zeilen, 3 Spalten`. The row noun shipped that way in story 1; story 2 added the column noun. AD-13 makes German the product surface.
+  status: fixed 2026-08-02 — `rowsLabel` / `colsLabel` in `ui/SourcesPane.vue`, matching the declension the pane's damage sentences already do, plus the same for the per-page count in `ui/RowWindow.vue`. Pinned by a one-row one-column e2e case.
 
 - source_spec: `spec-2-source-preview.md`
-  summary: The diagnostic-code scan in `tests/e2e/csv-sources.spec.js` now reads parsed cell values, so fixture data can fail it as a leak that never happened.
-  evidence: The scan runs `/\b[a-z]+\.[a-z]+_[a-z_]+\b/` over `body.innerText` to prove no raw core vocabulary reaches the screen. Before this story the body held only column names and product chrome; the preview now puts arbitrary user data there. Today's fixtures contain no such token, so it passes — the fragility is latent, and the scan should be scoped away from user data.
+  summary: The diagnostic-code scan in `tests/e2e/csv-sources.spec.js` read parsed cell values, so fixture data could fail it as a leak that never happened.
+  evidence: The scan runs `/\b[a-z]+\.[a-z]+_[a-z_]+\b/` over `body.innerText` to prove no raw core vocabulary reaches the screen. Before story 2 the body held only column names and product chrome; the preview put arbitrary user data there.
+  status: fixed 2026-08-02 — the preview grids are hidden for the duration of the scan and restored inside the same `evaluate`, so `innerText` keeps its visibility semantics and the scan sees product chrome only.
 
 - source_spec: `spec-2-source-preview.md`
-  summary: The preview sits between the file-name line and the parse-correction controls on every Source card, with no way to collapse it.
-  evidence: A ~310 px scroll region per card pushes story 1's `Zeichenkodierung` / `Trennzeichen` / `Kopfzeile` controls roughly a screen apart with three Sources, and a wheel event over a card now scrolls the preview instead of the pane. Neither the ordering nor a collapse affordance is discussed in the spec.
+  summary: The preview sat between the file-name line and the parse-correction controls on every Source card, with no way to collapse it.
+  evidence: A ~310 px scroll region per card pushed story 1's `Zeichenkodierung` / `Trennzeichen` / `Kopfzeile` controls roughly a screen apart with three Sources, and a wheel event over a card scrolled the preview instead of the pane.
+  status: fixed 2026-08-02 — the grid moved below the controls and the diagnostics, so everything that explains or corrects the read comes first and the excluded-rows report sits directly under the table it is missing from. A collapse toggle was considered and rejected: more state and more clicks for a problem ordering already solves. Pinned by a geometric e2e assertion.

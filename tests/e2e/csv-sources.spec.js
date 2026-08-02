@@ -241,7 +241,25 @@ test('no raw core vocabulary reaches the screen while diagnostics are showing', 
   await expect(page.getByText('Fehler', { exact: true })).toBeVisible()
   await expect(page.getByText('Ungeklärt', { exact: true })).toBeVisible()
 
-  const shown = (await page.locator('body').innerText()).toLowerCase()
+  // Scanned with the preview grids hidden. Since Story 2 the body also holds
+  // parsed cell values, and this scan looks for a `namespace.some_code` shape
+  // that a cell can innocently contain — a fixture with a value like
+  // `foo.bar_baz` would be reported as a leak that never happened. User data is
+  // not core vocabulary. The grids are hidden rather than the text subtracted,
+  // so `innerText` keeps its visibility semantics; the style is restored before
+  // the evaluate returns.
+  const shown = (
+    await page.evaluate(() => {
+      const grids = [...document.querySelectorAll('[data-testid="preview"]')]
+      const before = grids.map((g) => g.style.display)
+      for (const g of grids) g.style.display = 'none'
+      const text = document.body.innerText
+      grids.forEach((g, i) => {
+        g.style.display = before[i]
+      })
+      return text
+    })
+  ).toLowerCase()
   for (const enumValue of ['info', 'warning', 'error', 'unresolved']) {
     expect(shown, `severity "${enumValue}" reached the screen untranslated`).not.toMatch(
       new RegExp(`\\b${enumValue}\\b`),
@@ -274,7 +292,7 @@ test('a corrected header row re-reads: columns and row count follow', async ({ p
 
   await expect(card.getByRole('columnheader', { name: 'Berlin', exact: true })).toBeVisible()
   await expect(card.getByRole('columnheader', { name: 'Ort', exact: true })).toHaveCount(0)
-  await expect(card.getByText('1 Zeilen')).toBeVisible()
+  await expect(card.getByText('1 Zeile,')).toBeVisible()
 })
 
 test('a file dropped on the drop zone becomes a Source', async ({ page }) => {
@@ -307,5 +325,5 @@ test('BOM-less UTF-16 surfaces the NUL question and the override resolves it', a
 
   await expect(card.getByText('Null-Zeichen')).toHaveCount(0)
   await expect(card.getByRole('columnheader', { name: 'Ort', exact: true })).toBeVisible()
-  await expect(card.getByText('1 Zeilen')).toBeVisible()
+  await expect(card.getByText('1 Zeile,')).toBeVisible()
 })

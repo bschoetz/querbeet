@@ -119,7 +119,19 @@
     Clamp the spacer below the engine scroll-extent limit — Firefox collapses
     it to zero at ~614k rows at 28 px — and page beyond the clamp; the guard
     ships regardless of Firefox's fate (AD-24). Display locale is rendering
-    only and never reaches a Table or Recipe (AD-21).
+    only and never reaches a Table or Recipe (AD-21). The mechanism exists:
+    core/view/row-window.js and ui/RowWindow.vue were built in story 2 to be
+    adopted here. Adopting them means paying three debts story 2 left, all
+    recorded in deferred-work.md. The component carries the Source story's
+    vocabulary — test ids preview/preview-row/preview-pages and the default
+    label Tabellenvorschau — so a page-scoped getByTestId('preview') will
+    match both tables once both render; give the ids a per-consumer prefix.
+    Its viewport is VIEWPORT_ROWS = 10 hardcoded, and a Result table wants a
+    pane-filling grid: make the height a prop, and keep the invariant that the
+    container stays under WINDOW_SIZE rows, or a blank band appears below the
+    window (the e2e assertion on clientHeight must move with it). And the
+    paging branch itself is rendered by no test, because paging engages only
+    above 571,428 rows — see R10 in research-plan.md.
 - id: "11"
   title: View filter, sort, promotion and full-dataset search
   description: >-

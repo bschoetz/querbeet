@@ -65,6 +65,9 @@ const page = shallowRef(0)
 
 const nf = (n) => n.toLocaleString('de-DE')
 
+// The last page can carry a single row, and German counts that differently.
+const rowsLabel = (n) => (n === 1 ? '1 Zeile' : `${nf(n)} Zeilen`)
+
 function update() {
   view.value = buildWindow(props.table, page.value, scroller.value?.scrollTop ?? 0)
   page.value = view.value.page
@@ -218,7 +221,7 @@ watch(
           Weiter
         </button>
         <span class="text-slate-400">
-          {{ nf(pageRowCount(view.page, props.table.rowCount)) }} Zeilen auf dieser Seite
+          {{ rowsLabel(pageRowCount(view.page, props.table.rowCount)) }} auf dieser Seite
         </span>
       </div>
     </template>
