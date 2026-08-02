@@ -54,6 +54,54 @@
     counts missing values — and the confirmation gate still requires a person,
     which is the whole point (AD-20). If a real XLSX column does not fit that
     shape, the assumption is wrong here, not in story 3's tests.
+- id: "4a"
+  title: Typing reaches the types a report actually holds
+  description: >-
+    CAP-9 remainder: detection covers datetime, time, boolean and numbers
+    carrying an affix, so a timestamp, a margin and an amount stop being text.
+    Closes the asymmetry where the same table is typed as XLSX and untyped as
+    CSV.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Story 3 detects three types — text, number, date — and story 4 gives
+    datetime and boolean their words without giving a text column any way to
+    reach them. Every type here goes into core/types/catalog.js, the single
+    declaration story 4 established, and each becomes settable there rather
+    than in a second list. Nothing here converts a value; story 6 still owns
+    that (AD-21, AD-22). Six pieces, in the order their risk falls. (1) The
+    MAX_SAFE_INTEGER guard for the text path — a 19-digit order number is
+    reported today as number, settled, 100 % readable and loses its last
+    digits when story 6 converts it. Story 4 already refuses the same defect
+    for Parquet INT64 from the other side (C-10); one rule in typing.js next
+    to hasLeadingZero covers both entries, and the column stays text, for the
+    same reason a leading zero keeps one. (2) datetime from text — ISO with T,
+    ISO with a space, Z and numeric offsets, and dd.MM.yyyy HH:mm. AD-21
+    already holds the representation, so this is candidates, not
+    architecture. (3) time from text, which is the one piece that opens the
+    architecture: AD-21 knows date and datetime only, and a clock time with no
+    date needs a third representation — milliseconds since midnight — added to
+    it. It also carries a real ambiguity, clock time against duration: a
+    duration sums and passes 24:00, a clock time does not, and 36:15 settles
+    the column while 08:15 does not. That is story 3's unresolved machinery,
+    used for what it was built for, not a default picked quietly. (4) boolean
+    from text — true/false, ja/nein, 1/0. The 1/0 form needs a rule, because
+    it is also a perfectly good number. (5) Numbers carrying an affix, percent
+    and currency. There is no detection ambiguity here: % and € are decisive
+    markers competing with no second reading, exactly like a leading zero, and
+    the number in front carries only the ordinary de/en question. What was
+    open was storage, and it is decided — the affix is split off, the number
+    stored is the number in the field (12,5 for "12,5 %", never 0,125), the
+    affix rides on the column record as a property, and export writes it back.
+    A column mixing € and $ is text plus a warning, not a question anyone can
+    answer. (6) Accounting signs, (1.234,56) and 1.234,56-, the same parser
+    branch as (5) and the one place here that can produce a wrong number
+    rather than no number: strip the parentheses without carrying the sign and
+    the value flips. Both are SAP and bookkeeping exports. Two-digit years
+    (31.12.25) ride along with (2) and need a century rule stated in the spec,
+    not chosen in code. Deliberately out, all recorded in deferred-work.md
+    with reasons: a space as grouping separator (waits on a real Source),
+    month names, exponential notation, ISO weeks and quarters, and integer as
+    a type distinct from number.
 - id: "5"
   title: Step graph model and Editor
   description: >-
