@@ -40,11 +40,11 @@ const recordingReader = () => {
 }
 
 describe('addSource', () => {
-  it('registers a named Source with retained bytes and the ladder verdict', () => {
+  it('registers a named Source with retained bytes and the ladder verdict', async () => {
     const store = createSourceStore({ csv: lineReader })
     const bytes = utf8('a\nb')
 
-    const { source } = store.addSource({ bytes, fileName: 'umsatz.csv' })
+    const { source } = await store.addSource({ bytes, fileName: 'umsatz.csv' })
 
     expect(source).toMatchObject({
       id: 'src:umsatz',
@@ -59,10 +59,10 @@ describe('addSource', () => {
     expect(Object.isFrozen(source)).toBe(true)
   })
 
-  it('reports the fallback rung for CP1252 bytes', () => {
+  it('reports the fallback rung for CP1252 bytes', async () => {
     const store = createSourceStore({ csv: lineReader })
 
-    const { source } = store.addSource({
+    const { source } = await store.addSource({
       bytes: new Uint8Array([0xe4]), // ä in CP1252, invalid as UTF-8
       fileName: 'alt.csv',
     })
@@ -71,63 +71,63 @@ describe('addSource', () => {
     expect(source.table.columns[0].cells).toEqual(['ä'])
   })
 
-  it('slugs a German file name into a readable id (AD-14)', () => {
+  it('slugs a German file name into a readable id (AD-14)', async () => {
     const store = createSourceStore({ csv: lineReader })
 
-    const { source } = store.addSource({ bytes: utf8('x'), fileName: 'Umsätze 2024.csv' })
+    const { source } = await store.addSource({ bytes: utf8('x'), fileName: 'Umsätze 2024.csv' })
 
     expect(source.id).toBe('src:umsatze-2024')
     expect(source.name).toBe('Umsätze 2024')
   })
 
-  it('keeps ids unique across same-named files', () => {
+  it('keeps ids unique across same-named files', async () => {
     const store = createSourceStore({ csv: lineReader })
 
-    const a = store.addSource({ bytes: utf8('1'), fileName: 'umsatz.csv' }).source
-    const b = store.addSource({ bytes: utf8('2'), fileName: 'umsatz.csv' }).source
+    const a = (await store.addSource({ bytes: utf8('1'), fileName: 'umsatz.csv' })).source
+    const b = (await store.addSource({ bytes: utf8('2'), fileName: 'umsatz.csv' })).source
 
     expect(a.id).toBe('src:umsatz')
     expect(b.id).toBe('src:umsatz-2')
     expect(store.list()).toHaveLength(2)
   })
 
-  it('never reuses an id after a removal (AD-14)', () => {
+  it('never reuses an id after a removal (AD-14)', async () => {
     const store = createSourceStore({ csv: lineReader })
 
-    const first = store.addSource({ bytes: utf8('1'), fileName: 'umsatz.csv' }).source
+    const first = (await store.addSource({ bytes: utf8('1'), fileName: 'umsatz.csv' })).source
     store.removeSource(first.id)
-    const second = store.addSource({ bytes: utf8('2'), fileName: 'umsatz.csv' }).source
+    const second = (await store.addSource({ bytes: utf8('2'), fileName: 'umsatz.csv' })).source
 
     expect(second.id).toBe('src:umsatz-2')
     expect(store.get('src:umsatz')).toBeNull()
   })
 
-  it('refuses an unsupported extension with a named error and no Source', () => {
+  it('refuses an unsupported extension with a named error and no Source', async () => {
     const store = createSourceStore({ csv: lineReader })
 
-    const { source, diagnostics } = store.addSource({ bytes: utf8('x'), fileName: 'bericht.xlsx' })
+    const { source, diagnostics } = await store.addSource({ bytes: utf8('x'), fileName: 'bericht.ods' })
 
     expect(source).toBeNull()
     expect(diagnostics).toHaveLength(1)
     expect(diagnostics[0]).toMatchObject({
       severity: 'error',
       code: 'source.unsupported_format',
-      values: { fileName: 'bericht.xlsx', extension: 'xlsx' },
+      values: { fileName: 'bericht.ods', extension: 'ods' },
     })
   })
 
-  it('isolates failure per file — the Sources beside it stay loaded and loadable', () => {
+  it('isolates failure per file — the Sources beside it stay loaded and loadable', async () => {
     const store = createSourceStore({ csv: lineReader })
 
-    store.addSource({ bytes: utf8('a'), fileName: 'erste.csv' })
-    store.addSource({ bytes: utf8('x'), fileName: 'bericht.xlsx' })
-    const after = store.addSource({ bytes: utf8('b'), fileName: 'zweite.csv' }).source
+    await store.addSource({ bytes: utf8('a'), fileName: 'erste.csv' })
+    await store.addSource({ bytes: utf8('x'), fileName: 'bericht.ods' })
+    const after = (await store.addSource({ bytes: utf8('b'), fileName: 'zweite.csv' })).source
 
     expect(store.list().map((s) => s.fileName)).toEqual(['erste.csv', 'zweite.csv'])
     expect(after.table.columns[0].cells).toEqual(['b'])
   })
 
-  it('turns a throwing reader into source.unreadable, not a crash', () => {
+  it('turns a throwing reader into source.unreadable, not a crash', async () => {
     const store = createSourceStore({
       csv: {
         media: 'text',
@@ -137,7 +137,7 @@ describe('addSource', () => {
       },
     })
 
-    const { source, diagnostics } = store.addSource({ bytes: utf8('x'), fileName: 'kaputt.csv' })
+    const { source, diagnostics } = await store.addSource({ bytes: utf8('x'), fileName: 'kaputt.csv' })
 
     expect(source).toBeNull()
     expect(diagnostics[0]).toMatchObject({
@@ -149,13 +149,13 @@ describe('addSource', () => {
 })
 
 describe('the NUL-byte trap (BOM-less UTF-16)', () => {
-  it('flags NUL-riddled decoded text as an unresolved encoding question', () => {
+  it('flags NUL-riddled decoded text as an unresolved encoding question', async () => {
     // ASCII content in BOM-less UTF-16LE is *valid* UTF-8 — the frozen ladder
     // passes it — so the trap must surface as a question, not parse silently.
     const store = createSourceStore({ csv: lineReader })
     const bytes = new Uint8Array([0x41, 0x00, 0x42, 0x00]) // 'AB' in UTF-16LE
 
-    const { source } = store.addSource({ bytes, fileName: 'roh.csv' })
+    const { source } = await store.addSource({ bytes, fileName: 'roh.csv' })
 
     expect(source.encoding.chosen).toBe('utf-8') // the ladder itself is unchanged
     expect(source.diagnostics.map((d) => [d.severity, d.code])).toContainEqual([
@@ -167,12 +167,12 @@ describe('the NUL-byte trap (BOM-less UTF-16)', () => {
     })
   })
 
-  it('clears the question when the override names the real encoding', () => {
+  it('clears the question when the override names the real encoding', async () => {
     const store = createSourceStore({ csv: lineReader })
     const bytes = new Uint8Array([0x41, 0x00, 0x42, 0x00])
-    const { source } = store.addSource({ bytes, fileName: 'roh.csv' })
+    const { source } = await store.addSource({ bytes, fileName: 'roh.csv' })
 
-    const updated = store.overrideEncoding(source.id, 'utf-16le')
+    const updated = await store.overrideEncoding(source.id, 'utf-16le')
 
     expect(updated.diagnostics.map((d) => d.code)).not.toContain('encoding.nul_bytes')
     expect(updated.table.columns[0].cells).toEqual(['AB'])
@@ -180,9 +180,9 @@ describe('the NUL-byte trap (BOM-less UTF-16)', () => {
 })
 
 describe('renameSource / removeSource', () => {
-  it('renames without touching id, bytes or table', () => {
+  it('renames without touching id, bytes or table', async () => {
     const store = createSourceStore({ csv: lineReader })
-    const { source } = store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
+    const { source } = await store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
 
     const renamed = store.renameSource(source.id, 'Umsatz August')
 
@@ -192,16 +192,16 @@ describe('renameSource / removeSource', () => {
     expect(store.get('src:umsatz').name).toBe('Umsatz August')
   })
 
-  it('throws on an unknown id — a programming error, not a Diagnostic', () => {
+  it('throws on an unknown id — a programming error, not a Diagnostic', async () => {
     const store = createSourceStore({ csv: lineReader })
 
     expect(() => store.renameSource('src:nichts', 'x')).toThrow()
     expect(() => store.removeSource('src:nichts')).toThrow()
   })
 
-  it('trims the name, and keeps the current one when the new name trims to nothing', () => {
+  it('trims the name, and keeps the current one when the new name trims to nothing', async () => {
     const store = createSourceStore({ csv: lineReader })
-    const { source } = store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
+    const { source } = await store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
 
     expect(store.renameSource(source.id, '  Neu  ').name).toBe('Neu')
 
@@ -212,12 +212,12 @@ describe('renameSource / removeSource', () => {
 })
 
 describe('overrideEncoding', () => {
-  it('re-reads from the retained bytes — the rendered values change', () => {
+  it('re-reads from the retained bytes — the rendered values change', async () => {
     const store = createSourceStore({ csv: lineReader })
-    const { source } = store.addSource({ bytes: utf8('ä'), fileName: 'umsatz.csv' })
+    const { source } = await store.addSource({ bytes: utf8('ä'), fileName: 'umsatz.csv' })
     expect(source.table.columns[0].cells).toEqual(['ä'])
 
-    const updated = store.overrideEncoding(source.id, 'windows-1252')
+    const updated = await store.overrideEncoding(source.id, 'windows-1252')
 
     // 0xc3 0xa4 read as CP1252 — proof the parse started from the bytes again.
     expect(updated.table.columns[0].cells).toEqual(['Ã¤'])
@@ -229,9 +229,9 @@ describe('overrideEncoding', () => {
     expect(updated.bytes).toBe(source.bytes)
   })
 
-  it('refuses an encoding outside the override list', () => {
+  it('refuses an encoding outside the override list', async () => {
     const store = createSourceStore({ csv: lineReader })
-    const { source } = store.addSource({ bytes: utf8('x'), fileName: 'a.csv' })
+    const { source } = await store.addSource({ bytes: utf8('x'), fileName: 'a.csv' })
 
     expect(() => store.overrideEncoding(source.id, 'koi8-r')).toThrow(TypeError)
   })
@@ -253,13 +253,13 @@ describe('re-read failure isolation', () => {
     }
   }
 
-  it('turns a throwing reader on overrideEncoding into a Diagnostic, keeping the table', () => {
+  it('turns a throwing reader on overrideEncoding into a Diagnostic, keeping the table', async () => {
     const { state, reader } = flakyReader()
     const store = createSourceStore({ csv: reader })
-    const { source } = store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
+    const { source } = await store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
 
     state.shouldThrow = true
-    const updated = store.overrideEncoding(source.id, 'windows-1252')
+    const updated = await store.overrideEncoding(source.id, 'windows-1252')
 
     // No exception escaped; the previous table survives (the bytes are still
     // there) and the failure is on record.
@@ -273,44 +273,316 @@ describe('re-read failure isolation', () => {
     ])
   })
 
-  it('guards reconfigureParse the same way', () => {
+  it('guards reconfigureParse the same way', async () => {
     const { state, reader } = flakyReader()
     const store = createSourceStore({ csv: reader })
-    const { source } = store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
+    const { source } = await store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
 
     state.shouldThrow = true
-    const updated = store.reconfigureParse(source.id, { delimiter: ';' })
+    const updated = await store.reconfigureParse(source.id, { delimiter: ';' })
 
     expect(updated.table).toBe(source.table)
     expect(updated.parseConfig.delimiter).toBe(';')
     expect(updated.diagnostics[0].code).toBe('source.unreadable')
   })
+
+  it('lets a reader say what is actually wrong instead of guessing three times', async () => {
+    // `source.unreadable` reads "damaged, password-protected, or not the format
+    // its extension claims" — three guesses, all three wrong for a valid Parquet
+    // written with a codec this build cannot decompress. A reader that knows
+    // better attaches a code, and that becomes the diagnostic.
+    const store = createSourceStore({
+      parquet: {
+        media: 'binary',
+        read() {
+          const failure = new Error('parquet.unsupported_codec')
+          failure.code = 'parquet.unsupported_codec'
+          failure.values = { codec: 'GZIP' }
+          throw failure
+        },
+      },
+    })
+
+    const { source, diagnostics } = await store.addSource({
+      bytes: utf8('x'),
+      fileName: 'umsatz.parquet',
+    })
+
+    expect(source).toBeNull()
+    expect(diagnostics[0]).toMatchObject({
+      severity: 'error',
+      code: 'parquet.unsupported_codec',
+      values: { fileName: 'umsatz.parquet', codec: 'GZIP' },
+    })
+  })
+
+  it('falls back to the generic failure for a throw that names nothing', async () => {
+    const store = createSourceStore({
+      csv: {
+        media: 'text',
+        read() {
+          throw new TypeError('undefined is not a function')
+        },
+      },
+    })
+
+    const { diagnostics } = await store.addSource({ bytes: utf8('x'), fileName: 'kaputt.csv' })
+
+    expect(diagnostics[0].code).toBe('source.unreadable')
+  })
+})
+
+describe('the parse decisions that were actually in force', () => {
+  // A reader does not always honour what it was sent: a header row past the end
+  // of the sheet is clamped, and a named sheet that no longer exists falls back
+  // to the first. Keeping the unhonoured value splits the truth in two — the
+  // control shows one thing, the config holds another.
+  const workbookReader = {
+    media: 'binary',
+    read: async (_bytes, config) => {
+      const sheets = ['Eins', 'Zwei']
+      const sheet = sheets.includes(config.sheet) ? config.sheet : sheets[0]
+      const headerRow = Math.min(config.headerRow ?? 1, 2) // the sheet is 2 rows tall
+      return {
+        table: { columns: [{ name: 'Wert', domain: 'text', cells: ['x'] }], rowCount: 1 },
+        proposal: { headerRow, sheet, sheets },
+        damage: { mismatches: [], unclosedQuoteRow: null },
+        diagnostics: [],
+      }
+    },
+  }
+
+  const workbook = async () => {
+    const store = createSourceStore({ xlsx: workbookReader })
+    const { source } = await store.addSource({ bytes: utf8('x'), fileName: 'bericht.xlsx' })
+    return { store, source }
+  }
+
+  it('adopts a clamped header row instead of remembering the one it refused', async () => {
+    // Otherwise `parseConfig.headerRow` stays 99 while the bound control shows
+    // 2, and a later re-read against a taller sheet resurrects the 99.
+    const { store, source } = await workbook()
+
+    const clamped = await store.reconfigureParse(source.id, { headerRow: 99 })
+
+    expect(clamped.proposal.headerRow).toBe(2)
+    expect(clamped.parseConfig.headerRow).toBe(2)
+  })
+
+  it('adopts the sheet that was read when the named one is gone', async () => {
+    // The dead name in the config is what made the fallback unclearable: the
+    // select shows the sheet actually read, and re-selecting a displayed value
+    // fires no change event, so there was no single action back to a good state.
+    const { store, source } = await workbook()
+
+    const fallen = await store.reconfigureParse(source.id, { sheet: 'Vertrieb' })
+
+    expect(fallen.proposal.sheet).toBe('Eins')
+    expect(fallen.parseConfig.sheet).toBe('Eins')
+
+    // And the next choice is an ordinary one, not a fight with a stale name.
+    const switched = await store.reconfigureParse(fallen.id, { sheet: 'Zwei' })
+    expect(switched.parseConfig.sheet).toBe('Zwei')
+  })
+
+  it('names the sheet from the first read, so choosing it again is not a switch', async () => {
+    // `null` and the name of the very same sheet were two spellings of one
+    // state, and the comparison that decides whether to drop the header row
+    // read them as different — so selecting the sheet already on screen threw
+    // away a header-row correction.
+    const { store, source } = await workbook()
+    expect(source.parseConfig.sheet).toBe('Eins')
+
+    const corrected = await store.reconfigureParse(source.id, { headerRow: 2 })
+    const reselected = await store.reconfigureParse(corrected.id, { sheet: 'Eins' })
+
+    expect(reselected.parseConfig).toMatchObject({ sheet: 'Eins', headerRow: 2 })
+  })
+
+  it('leaves a decision the user never made as null', async () => {
+    // Adoption is about corrections that were not honoured, not about freezing
+    // a proposal into a correction the user never issued.
+    const { source } = await workbook()
+
+    expect(source.parseConfig.headerRow).toBeNull()
+    expect(source.parseConfig.delimiter).toBeNull()
+  })
+})
+
+describe('two parse commands at once', () => {
+  // Every other test in this file awaits each command before issuing the next,
+  // so none of them can represent an overlap — and an overlap is ordinary use on
+  // the binary formats, where a read takes seconds. The reader below resolves
+  // only when the test says so, which is the only way to hold two reads open at
+  // the same time.
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  const deferredReader = () => {
+    const pending = []
+    return {
+      pending,
+      /** Let the queue reach its next read, then release it. Serialized
+       *  commands start their read only once the one before them has committed,
+       *  so a caller cannot release what has not been asked for yet. */
+      async settleAll() {
+        for (let waited = 0; waited < 50 && pending.length === 0; waited += 1) await tick()
+        for (const resolve of pending.splice(0)) resolve()
+        await tick()
+      },
+      reader: {
+        media: 'binary',
+        read(_bytes, config) {
+          const seen = { ...config }
+          return new Promise((resolve) => {
+            pending.push(() =>
+              resolve({
+                table: {
+                  columns: [
+                    {
+                      name: 'Wert',
+                      domain: 'text',
+                      cells: [`${seen.sheet ?? '-'}|${seen.headerRow ?? '-'}`],
+                    },
+                  ],
+                  rowCount: 1,
+                },
+                proposal: { headerRow: seen.headerRow ?? 1, sheet: seen.sheet ?? 'Eins', sheets: ['Eins', 'Zwei'] },
+                damage: { mismatches: [], unclosedQuoteRow: null },
+                diagnostics: [],
+              }),
+            )
+          })
+        },
+      },
+    }
+  }
+
+  const load = async (harness) => {
+    const store = createSourceStore({ xlsx: harness.reader })
+    const loading = store.addSource({ bytes: utf8('x'), fileName: 'bericht.xlsx' })
+    await harness.settleAll()
+    const { source } = await loading
+    return { store, source }
+  }
+
+  it('keeps both corrections when neither call was awaited', async () => {
+    // Choose a sheet, then correct the header row before the sheet has landed.
+    // Unserialized, the second command merged against the entry as it stood
+    // *before* the first — so the sheet switch vanished and the file was read on
+    // the wrong sheet, with a card that said otherwise.
+    const harness = deferredReader()
+    const { store, source } = await load(harness)
+
+    const first = store.reconfigureParse(source.id, { sheet: 'Zwei' })
+    const second = store.reconfigureParse(source.id, { headerRow: 3 })
+
+    // Both reads are queued; releasing them lets the chain run in order.
+    await harness.settleAll()
+    await first
+    await harness.settleAll()
+    const after = await second
+
+    expect(after.parseConfig).toMatchObject({ sheet: 'Zwei', headerRow: 3 })
+    expect(after.table.columns[0].cells).toEqual(['Zwei|3'])
+  })
+
+  it('does not let a finished read commit over an edit made while it ran', async () => {
+    // A read holds a snapshot of the entry for as long as it takes. An
+    // annotation or a chosen type set meanwhile lives on the *current* entry,
+    // and committing the snapshot would throw that edit away without a word.
+    const harness = deferredReader()
+    const { store, source } = await load(harness)
+
+    const reading = store.reconfigureParse(source.id, { headerRow: 2 })
+    store.annotateColumn(source.id, 0, 'Stück, nicht Kilo')
+    store.setColumnTyping(source.id, 0, { missingTokens: ['-'] })
+
+    await harness.settleAll()
+    const after = await reading
+
+    expect(after.typing.columns[0].annotation).toBe('Stück, nicht Kilo')
+    expect(after.typing.columns[0].missingTokens).toEqual(['-'])
+    expect(after.parseConfig.headerRow).toBe(2)
+  })
+
+  it('keeps serving the Source after a read fails, rather than wedging it', async () => {
+    // The queue continues through a rejection; one bad read must not make every
+    // later correction hang.
+    let fail = true
+    const store = createSourceStore({
+      xlsx: {
+        media: 'binary',
+        read: async (_bytes, config) => {
+          if (fail) {
+            fail = false
+            throw new Error('reader broke')
+          }
+          return {
+            table: { columns: [{ name: 'Wert', domain: 'text', cells: ['ok'] }], rowCount: 1 },
+            proposal: { headerRow: config.headerRow ?? 1 },
+            damage: { mismatches: [], unclosedQuoteRow: null },
+            diagnostics: [],
+          }
+        },
+      },
+    })
+
+    fail = false
+    const { source } = await store.addSource({ bytes: utf8('x'), fileName: 'bericht.xlsx' })
+    fail = true
+
+    const broken = await store.reconfigureParse(source.id, { headerRow: 2 })
+    expect(broken.diagnostics[0].code).toBe('source.unreadable')
+
+    const recovered = await store.reconfigureParse(source.id, { headerRow: 3 })
+    expect(recovered.table.columns[0].cells).toEqual(['ok'])
+  })
 })
 
 describe('reconfigureParse', () => {
-  it('passes corrections to the reader and keeps them across re-reads', () => {
+  it('passes corrections to the reader and keeps them across re-reads', async () => {
     const { calls, reader } = recordingReader()
     const store = createSourceStore({ csv: reader })
-    const { source } = store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
+    const { source } = await store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
 
-    expect(calls.at(-1)).toEqual({ delimiter: null, headerRow: null })
+    expect(calls.at(-1)).toEqual({ delimiter: null, headerRow: null, sheet: null })
 
-    store.reconfigureParse(source.id, { delimiter: ';' })
-    expect(calls.at(-1)).toEqual({ delimiter: ';', headerRow: null })
+    await store.reconfigureParse(source.id, { delimiter: ';' })
+    expect(calls.at(-1)).toEqual({ delimiter: ';', headerRow: null, sheet: null })
 
     // A user correction survives an encoding re-read (CAP-3).
-    store.overrideEncoding(source.id, 'windows-1252')
-    expect(calls.at(-1)).toEqual({ delimiter: ';', headerRow: null })
+    await store.overrideEncoding(source.id, 'windows-1252')
+    expect(calls.at(-1)).toEqual({ delimiter: ';', headerRow: null, sheet: null })
 
     // And a later correction merges instead of resetting.
-    const updated = store.reconfigureParse(source.id, { headerRow: 4 })
-    expect(calls.at(-1)).toEqual({ delimiter: ';', headerRow: 4 })
-    expect(updated.parseConfig).toEqual({ delimiter: ';', headerRow: 4 })
+    const updated = await store.reconfigureParse(source.id, { headerRow: 4 })
+    expect(calls.at(-1)).toEqual({ delimiter: ';', headerRow: 4, sheet: null })
+    expect(updated.parseConfig).toEqual({ delimiter: ';', headerRow: 4, sheet: null })
   })
 
-  it('validates at the command boundary — AD-10 does not rely on a polite UI', () => {
+  it('carries a sheet choice to the reader, and lets go of the header row with it', async () => {
+    // The sheet travels the same way a delimiter does — but a header row does
+    // not travel with it. It was corrected against the sheet being left; the
+    // new sheet proposes its own, exactly as a freshly loaded one would.
+    const { calls, reader } = recordingReader()
+    const store = createSourceStore({ xlsx: reader })
+    const { source } = await store.addSource({ bytes: utf8('a'), fileName: 'bericht.xlsx' })
+
+    await store.reconfigureParse(source.id, { headerRow: 3 })
+    expect(calls.at(-1)).toMatchObject({ headerRow: 3, sheet: null })
+
+    const switched = await store.reconfigureParse(source.id, { sheet: 'Zwei' })
+    expect(calls.at(-1)).toMatchObject({ headerRow: null, sheet: 'Zwei' })
+    expect(switched.parseConfig.sheet).toBe('Zwei')
+
+    // A correction made *on* the new sheet then sticks to it.
+    await store.reconfigureParse(source.id, { headerRow: 2 })
+    expect(calls.at(-1)).toMatchObject({ headerRow: 2, sheet: 'Zwei' })
+  })
+
+  it('validates at the command boundary — AD-10 does not rely on a polite UI', async () => {
     const store = createSourceStore({ csv: lineReader })
-    const { source } = store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
+    const { source } = await store.addSource({ bytes: utf8('a'), fileName: 'umsatz.csv' })
 
     expect(() => store.reconfigureParse(source.id, { delimiter: '' })).toThrow(TypeError)
     expect(() => store.reconfigureParse(source.id, { delimiter: 7 })).toThrow(TypeError)
@@ -318,10 +590,16 @@ describe('reconfigureParse', () => {
     expect(() => store.reconfigureParse(source.id, { headerRow: -3 })).toThrow(TypeError)
     expect(() => store.reconfigureParse(source.id, { headerRow: 2.5 })).toThrow(TypeError)
     expect(() => store.reconfigureParse(source.id, { headerRow: NaN })).toThrow(TypeError)
+    expect(() => store.reconfigureParse(source.id, { sheet: '' })).toThrow(TypeError)
+    expect(() => store.reconfigureParse(source.id, { sheet: 2 })).toThrow(TypeError)
 
-    // null is "back to propose" for both fields, and is legal.
-    const back = store.reconfigureParse(source.id, { delimiter: null, headerRow: null })
-    expect(back.parseConfig).toEqual({ delimiter: null, headerRow: null })
+    // null is "back to propose" for every field, and is legal.
+    const back = await store.reconfigureParse(source.id, {
+      delimiter: null,
+      headerRow: null,
+      sheet: null,
+    })
+    expect(back.parseConfig).toEqual({ delimiter: null, headerRow: null, sheet: null })
   })
 })
 
@@ -352,9 +630,9 @@ const columnReader = (columns) => ({
   },
 })
 
-const withColumns = (columns) => {
+const withColumns = async (columns) => {
   const store = createSourceStore({ csv: columnReader(columns) })
-  const { source } = store.addSource({ bytes: utf8('x'), fileName: 'daten.csv' })
+  const { source } = await store.addSource({ bytes: utf8('x'), fileName: 'daten.csv' })
   return { store, source }
 }
 
@@ -366,8 +644,8 @@ const MM = { pattern: 'MM.dd.yyyy', separator: '.', order: 'mdy' }
 const codes = (entry) => entry.diagnostics.map((d) => [d.severity, d.code])
 
 describe('typing arrives with the Source', () => {
-  it('proposes a type per column and starts unconfirmed', () => {
-    const { source } = withColumns([GERMAN, { name: 'Kunde', cells: ['Anna', 'Bernd'] }])
+  it('proposes a type per column and starts unconfirmed', async () => {
+    const { source } = await withColumns([GERMAN, { name: 'Kunde', cells: ['Anna', 'Bernd'] }])
 
     expect(source.typing.confirmed).toBe(false)
     expect(source.typing.columns.map((c) => [c.name, c.type])).toEqual([
@@ -377,19 +655,19 @@ describe('typing arrives with the Source', () => {
     expect(Object.isFrozen(source.typing)).toBe(true)
   })
 
-  it('does not ask a question whose two answers are the same number', () => {
+  it('does not ask a question whose two answers are the same number', async () => {
     // Separator-free integers read identically under both number readings, so
     // there is nothing for a person to decide. Reported as an ambiguity, this
     // would hold the gate shut over the most common column type there is.
-    const { store, source } = withColumns([{ name: 'Menge', cells: ['1', '2', '42', '2019'] }])
+    const { store, source } = await withColumns([{ name: 'Menge', cells: ['1', '2', '42', '2019'] }])
     const column = source.typing.columns[0]
 
     expect(column).toMatchObject({ type: 'number', verdict: 'settled', evidence: null })
     expect(store.confirmTyping(source.id).source.typing.confirmed).toBe(true)
   })
 
-  it('still asks when the two readings mean different numbers', () => {
-    const { source } = withColumns([{ name: 'Wert', cells: ['1.234', '5.678'] }])
+  it('still asks when the two readings mean different numbers', async () => {
+    const { source } = await withColumns([{ name: 'Wert', cells: ['1.234', '5.678'] }])
 
     expect(source.typing.columns[0]).toMatchObject({
       type: 'number',
@@ -400,8 +678,8 @@ describe('typing arrives with the Source', () => {
 })
 
 describe('the typing as diagnostics (CAP-34)', () => {
-  it('reports the open question, the unreadable values and the open gate', () => {
-    const { store, source } = withColumns([
+  it('reports the open question, the unreadable values and the open gate', async () => {
+    const { store, source } = await withColumns([
       AMBIGUOUS,
       {
         name: 'Datum2',
@@ -433,8 +711,32 @@ describe('the typing as diagnostics (CAP-34)', () => {
     expect(codes(store.confirmTyping(source.id).source)).toEqual([])
   })
 
-  it('keeps the reader’s own diagnostics as the load result', () => {
-    const { store, source } = withColumns([GERMAN])
+  it('reports unreadable values in a native column too — the gate is not a rubber stamp', async () => {
+    // The same code, from the other branch. A `native:number` column's stray
+    // string is exactly what AD-20's sweep exists to catch, and until story 4
+    // the branch scored every non-missing cell as parsed, so this code could
+    // never be emitted for one. Only the inferred branch was ever asserted.
+    const { store, source } = await withColumns([
+      { name: 'Menge', domain: 'native:number', cells: ['12', 'k.A.', 'x', '7'] },
+    ])
+
+    expect(codes(source)).toEqual([
+      ['warning', 'typing.unparsed_values'],
+      ['unresolved', 'typing.unconfirmed'],
+    ])
+    // `k.A.` is a default missing token, so it is an absence rather than one of
+    // the values the hit rate is a share of.
+    expect(source.diagnostics[0].values).toEqual({ column: 'Menge', unparsed: 1, readable: 3 })
+
+    // Declaring the stray absent is the way out, and it does not retype the
+    // column — a native column is never retyped (AD-20).
+    const after = store.setColumnTyping(source.id, 0, { missingTokens: ['k.A.', 'x'] })
+    expect(after.typing.columns[0]).toMatchObject({ domain: 'native:number', type: 'number' })
+    expect(codes(store.confirmTyping(source.id).source)).toEqual([])
+  })
+
+  it('keeps the reader’s own diagnostics as the load result', async () => {
+    const { store, source } = await withColumns([GERMAN])
 
     expect(source.readDiagnostics).toEqual([])
     expect(codes(store.get(source.id))).toEqual([['unresolved', 'typing.unconfirmed']])
@@ -442,8 +744,8 @@ describe('the typing as diagnostics (CAP-34)', () => {
 })
 
 describe('confirmTyping — the first of AD-29 three gates', () => {
-  it('refuses while a column is undecided, and names it', () => {
-    const { store, source } = withColumns([GERMAN, AMBIGUOUS])
+  it('refuses while a column is undecided, and names it', async () => {
+    const { store, source } = await withColumns([GERMAN, AMBIGUOUS])
 
     const refused = store.confirmTyping(source.id)
 
@@ -452,8 +754,8 @@ describe('confirmTyping — the first of AD-29 three gates', () => {
     expect(store.get(source.id).typing.confirmed).toBe(false)
   })
 
-  it('lets the Source through once the user has answered', () => {
-    const { store, source } = withColumns([GERMAN, AMBIGUOUS])
+  it('lets the Source through once the user has answered', async () => {
+    const { store, source } = await withColumns([GERMAN, AMBIGUOUS])
     store.setColumnTyping(source.id, 1, { type: 'date', format: DD })
 
     const confirmed = store.confirmTyping(source.id)
@@ -462,8 +764,32 @@ describe('confirmTyping — the first of AD-29 three gates', () => {
     expect(confirmed.source.typing.confirmed).toBe(true)
   })
 
-  it('reopens on request — the gate stops a run, it does not trap a user', () => {
-    const { store, source } = withColumns([GERMAN])
+  it('lets a Source through that has columns and no rows at all', async () => {
+    // The end of the matrix's "empty Parquet" row: a schema with zero rows
+    // yields its columns and is *confirmable*. Nothing about a column of no
+    // values is undecided, so the gate has nothing to hold it shut over — and a
+    // gate that refused it would block a report whose data arrives next month.
+    const { store, source } = await withColumns([
+      { name: 'Kunde', domain: 'text', cells: [] },
+      { name: 'Betrag', domain: 'native:number', cells: [] },
+    ])
+
+    expect(source.table.rowCount).toBe(0)
+    expect(source.typing.columns.map((c) => [c.name, c.type])).toEqual([
+      ['Kunde', 'text'],
+      ['Betrag', 'number'],
+    ])
+    expect(source.typing.columns.every((c) => c.verdict === 'settled')).toBe(true)
+    expect(codes(source)).toEqual([['unresolved', 'typing.unconfirmed']])
+
+    const { source: confirmed, unresolved: blocking } = store.confirmTyping(source.id)
+    expect(blocking).toEqual([])
+    expect(confirmed.typing.confirmed).toBe(true)
+    expect(codes(confirmed)).toEqual([])
+  })
+
+  it('reopens on request — the gate stops a run, it does not trap a user', async () => {
+    const { store, source } = await withColumns([GERMAN])
     store.confirmTyping(source.id)
 
     expect(store.unconfirmTyping(source.id).typing.confirmed).toBe(false)
@@ -483,8 +809,8 @@ describe('evidence on both sides', () => {
     return { name: 'Termin', cells }
   }
 
-  it('settles nothing, and the gate holds', () => {
-    const { store, source } = withColumns([symmetric()])
+  it('settles nothing, and the gate holds', async () => {
+    const { store, source } = await withColumns([symmetric()])
 
     expect(source.typing.columns[0]).toMatchObject({
       verdict: 'unresolved',
@@ -493,9 +819,9 @@ describe('evidence on both sides', () => {
     expect(store.confirmTyping(source.id).unresolved).toEqual(['Termin'])
   })
 
-  it('names both counts once one side outweighs the other', () => {
+  it('names both counts once one side outweighs the other', async () => {
     const column = symmetric()
-    const { source } = withColumns([{ ...column, cells: [...column.cells, '26.07.2025'] }])
+    const { source } = await withColumns([{ ...column, cells: [...column.cells, '26.07.2025'] }])
 
     expect(source.typing.columns[0]).toMatchObject({
       verdict: 'decisive',
@@ -506,28 +832,28 @@ describe('evidence on both sides', () => {
 })
 
 describe('what a confirmation survives', () => {
-  it('survives a rename — the name is display state, the mapping is not', () => {
-    const { store, source } = withColumns([GERMAN])
+  it('survives a rename — the name is display state, the mapping is not', async () => {
+    const { store, source } = await withColumns([GERMAN])
     store.confirmTyping(source.id)
 
     expect(store.renameSource(source.id, 'Umsatz August').typing.confirmed).toBe(true)
   })
 
-  it('does not survive a re-read, even one that leaves the columns identical', () => {
+  it('does not survive a re-read, even one that leaves the columns identical', async () => {
     // A different encoding changes every value in the table while the column
     // names stay put. A confirmation carried across would be a person vouching
     // for data they never saw.
-    const { store, source } = withColumns([GERMAN])
+    const { store, source } = await withColumns([GERMAN])
     store.confirmTyping(source.id)
 
-    expect(store.overrideEncoding(source.id, 'windows-1252').typing.confirmed).toBe(false)
+    expect((await store.overrideEncoding(source.id, 'windows-1252')).typing.confirmed).toBe(false)
 
     store.confirmTyping(source.id)
-    expect(store.reconfigureParse(source.id, { headerRow: 2 }).typing.confirmed).toBe(false)
+    expect((await store.reconfigureParse(source.id, { headerRow: 2 })).typing.confirmed).toBe(false)
   })
 
-  it('does not survive a change to the mapping it stood for', () => {
-    const { store, source } = withColumns([GERMAN])
+  it('does not survive a change to the mapping it stood for', async () => {
+    const { store, source } = await withColumns([GERMAN])
     store.confirmTyping(source.id)
 
     const after = store.setColumnTyping(source.id, 0, { type: 'text' })
@@ -536,8 +862,8 @@ describe('what a confirmation survives', () => {
 })
 
 describe('setColumnTyping', () => {
-  it('re-scores under the choice, so a wrong one shows what it costs', () => {
-    const { store, source } = withColumns([{ name: 'Datum', cells: ['31.12.2025', '01.01.2026'] }])
+  it('re-scores under the choice, so a wrong one shows what it costs', async () => {
+    const { store, source } = await withColumns([{ name: 'Datum', cells: ['31.12.2025', '01.01.2026'] }])
 
     const after = store.setColumnTyping(source.id, 0, { type: 'date', format: MM })
     const column = after.typing.columns[0]
@@ -546,11 +872,11 @@ describe('setColumnTyping', () => {
     expect(column.chosen.format.pattern).toBe('MM.dd.yyyy')
   })
 
-  it('takes the best-scoring reading when the user names only a type', () => {
+  it('takes the best-scoring reading when the user names only a type', async () => {
     // The user asked for a number, not for German. Handing over the first
     // candidate would collapse the hit rate with nothing on screen to say the
     // other candidate read every value.
-    const { store, source } = withColumns([{ name: 'Betrag', cells: ['1,234.56', '80.00'] }])
+    const { store, source } = await withColumns([{ name: 'Betrag', cells: ['1,234.56', '80.00'] }])
 
     const after = store.setColumnTyping(source.id, 0, { type: 'number' })
     const column = after.typing.columns[0]
@@ -559,8 +885,8 @@ describe('setColumnTyping', () => {
     expect(column.counts).toMatchObject({ parsed: 2, unparsed: 0 })
   })
 
-  it('returns to the proposal on type null', () => {
-    const { store, source } = withColumns([GERMAN])
+  it('returns to the proposal on type null', async () => {
+    const { store, source } = await withColumns([GERMAN])
     store.setColumnTyping(source.id, 0, { type: 'text' })
 
     const back = store.setColumnTyping(source.id, 0, { type: null })
@@ -568,8 +894,8 @@ describe('setColumnTyping', () => {
     expect(back.typing.columns[0]).toMatchObject({ type: 'number', chosen: null })
   })
 
-  it('declaring a missing token does not settle a question nobody answered', () => {
-    const { store, source } = withColumns([{ ...AMBIGUOUS, cells: [...AMBIGUOUS.cells, 'k.A.'] }])
+  it('declaring a missing token does not settle a question nobody answered', async () => {
+    const { store, source } = await withColumns([{ ...AMBIGUOUS, cells: [...AMBIGUOUS.cells, 'k.A.'] }])
 
     const after = store.setColumnTyping(source.id, 0, { missingTokens: ['k.A.'] })
     const column = after.typing.columns[0]
@@ -579,8 +905,8 @@ describe('setColumnTyping', () => {
     expect(store.confirmTyping(source.id).unresolved).toEqual(['Datum'])
   })
 
-  it('validates at the command boundary', () => {
-    const { store, source } = withColumns([GERMAN])
+  it('validates at the command boundary', async () => {
+    const { store, source } = await withColumns([GERMAN])
 
     expect(() => store.setColumnTyping(source.id, 0, { missingTokens: 'k.A.' })).toThrow(TypeError)
     expect(() => store.setColumnTyping(source.id, 9, { type: 'text' })).toThrow(RangeError)
@@ -613,8 +939,8 @@ describe('a repeated column name', () => {
     { name: 'Datum', cells: ['03.04.2025', '05.06.2025'] },
   ]
 
-  it('addresses each column separately', () => {
-    const { store, source } = withColumns(twice)
+  it('addresses each column separately', async () => {
+    const { store, source } = await withColumns(twice)
 
     const after = store.setColumnTyping(source.id, 1, { type: 'date', format: MM })
 
@@ -622,8 +948,8 @@ describe('a repeated column name', () => {
     expect(after.typing.columns[1].chosen.format.pattern).toBe('MM.dd.yyyy')
   })
 
-  it('holds the gate shut over the second one', () => {
-    const { store, source } = withColumns(twice)
+  it('holds the gate shut over the second one', async () => {
+    const { store, source } = await withColumns(twice)
 
     expect(store.confirmTyping(source.id).unresolved).toEqual(['Datum'])
 
@@ -631,12 +957,12 @@ describe('a repeated column name', () => {
     expect(store.confirmTyping(source.id).source.typing.confirmed).toBe(true)
   })
 
-  it('carries each annotation to its own column across a re-read', () => {
-    const { store, source } = withColumns(twice)
+  it('carries each annotation to its own column across a re-read', async () => {
+    const { store, source } = await withColumns(twice)
     store.annotateColumn(source.id, 0, 'Rechnungsdatum')
     store.annotateColumn(source.id, 1, 'Lieferdatum')
 
-    const after = store.overrideEncoding(source.id, 'windows-1252')
+    const after = await store.overrideEncoding(source.id, 'windows-1252')
 
     expect(after.typing.columns.map((c) => c.annotation)).toEqual([
       'Rechnungsdatum',
@@ -646,8 +972,8 @@ describe('a repeated column name', () => {
 })
 
 describe('annotateColumn (CAP-10)', () => {
-  it('is documentation, not configuration — it leaves a confirmation standing', () => {
-    const { store, source } = withColumns([GERMAN])
+  it('is documentation, not configuration — it leaves a confirmation standing', async () => {
+    const { store, source } = await withColumns([GERMAN])
     store.confirmTyping(source.id)
 
     const after = store.annotateColumn(source.id, 0, 'Netto, ohne Fracht')
@@ -658,17 +984,17 @@ describe('annotateColumn (CAP-10)', () => {
     expect(after.typing.confirmed).toBe(true)
   })
 
-  it('follows its column across a re-read — a sentence someone wrote is theirs', () => {
-    const { store, source } = withColumns([GERMAN])
+  it('follows its column across a re-read — a sentence someone wrote is theirs', async () => {
+    const { store, source } = await withColumns([GERMAN])
     store.annotateColumn(source.id, 0, 'Netto, ohne Fracht')
 
-    const after = store.overrideEncoding(source.id, 'windows-1252')
+    const after = await store.overrideEncoding(source.id, 'windows-1252')
 
     expect(after.typing.columns[0].annotation).toBe('Netto, ohne Fracht')
   })
 
-  it('is editable again, and clearable', () => {
-    const { store, source } = withColumns([GERMAN])
+  it('is editable again, and clearable', async () => {
+    const { store, source } = await withColumns([GERMAN])
     store.annotateColumn(source.id, 0, 'erste Fassung')
     store.annotateColumn(source.id, 0, 'zweite Fassung')
 
@@ -687,13 +1013,13 @@ describe('what a re-read carries across', () => {
     },
   ]
 
-  it('re-scores a chosen type against the new values', () => {
+  it('re-scores a chosen type against the new values', async () => {
     const store = createSourceStore({ csv: columnReader(shifting) })
-    const { source } = store.addSource({ bytes: utf8('x'), fileName: 'daten.csv' })
+    const { source } = await store.addSource({ bytes: utf8('x'), fileName: 'daten.csv' })
     store.setColumnTyping(source.id, 0, { type: 'date', format: DD })
     expect(store.get(source.id).typing.columns[0].counts).toMatchObject({ parsed: 2, unparsed: 0 })
 
-    const after = store.reconfigureParse(source.id, { headerRow: 2 })
+    const after = await store.reconfigureParse(source.id, { headerRow: 2 })
     const column = after.typing.columns[0]
 
     // The choice stands — the user answered a question and it has not changed —
@@ -702,47 +1028,133 @@ describe('what a re-read carries across', () => {
     expect(column.counts).toMatchObject({ parsed: 1, unparsed: 1 })
   })
 
-  it('keeps the missing tokens the user declared', () => {
+  it('keeps the missing tokens the user declared', async () => {
     // They are part of the typing, not a display setting: dropping them back to
     // the defaults would move the null share and the hit rate, silently.
-    const { store, source } = withColumns([{ name: 'Wert', cells: ['12', '7', 'entfällt'] }])
+    const { store, source } = await withColumns([{ name: 'Wert', cells: ['12', '7', 'entfällt'] }])
     store.setColumnTyping(source.id, 0, { missingTokens: ['entfällt'] })
     expect(store.get(source.id).typing.columns[0].counts).toMatchObject({ missing: 1, parsed: 2 })
 
-    const after = store.overrideEncoding(source.id, 'windows-1252')
+    const after = await store.overrideEncoding(source.id, 'windows-1252')
     const column = after.typing.columns[0]
 
     expect(column.missingTokens).toEqual(['entfällt'])
     expect(column.counts).toMatchObject({ missing: 1, parsed: 2 })
   })
 
-  it('keeps a native column native (AD-20)', () => {
-    // No reader in the tree declares a native domain yet — XLSX is story 4 —
-    // so this is the only place the branch can be held to its promise.
-    const { store, source } = withColumns([
+  it('keeps a native column native, and refuses to retype it (AD-20)', async () => {
+    const { store, source } = await withColumns([
       { name: 'Menge', domain: 'native:number', cells: ['1', '2'] },
     ])
     expect(source.typing.columns[0]).toMatchObject({ domain: 'native:number', type: 'number' })
 
-    store.setColumnTyping(source.id, 0, { type: 'text' })
-    const after = store.reconfigureParse(source.id, { headerRow: 2 })
-    expect(after.typing.columns[0].domain).toBe('native:number')
+    // Guarded by domain, not by type: `number` is a settable type, and a
+    // type-keyed guard let this through and re-inferred a column its format had
+    // already answered for.
+    expect(() => store.setColumnTyping(source.id, 0, { type: 'text' })).toThrow(TypeError)
+    expect(() => store.setColumnTyping(source.id, 0, { type: 'number', format: null })).toThrow(
+      TypeError,
+    )
 
-    // And the reset still returns it to what the format declared, rather than
-    // to whatever inference makes of it.
-    const back = store.setColumnTyping(source.id, 0, { type: null })
-    expect(back.typing.columns[0]).toMatchObject({ domain: 'native:number', type: 'number' })
+    // `type: null` is not a retype and is not refused. It withdraws a choice and
+    // hands the column back to what the reader and detection propose — which,
+    // for a native column, is the declaration it already carries. Story 3
+    // shipped "Zurück zum Vorschlag" as the fix for a closed defect; a reset
+    // that threw would be that defect again, on the columns least able to
+    // recover from it.
+    const reset = store.setColumnTyping(source.id, 0, { type: null })
+    expect(reset.typing.columns[0]).toMatchObject({
+      domain: 'native:number',
+      type: 'number',
+      chosen: null,
+    })
+
+    // What is still editable is what documents the column rather than typing it.
+    const tokens = store.setColumnTyping(source.id, 0, { missingTokens: ['1'] })
+    expect(tokens.typing.columns[0]).toMatchObject({ domain: 'native:number', type: 'number' })
+    expect(tokens.typing.columns[0].counts).toMatchObject({ missing: 1, parsed: 1 })
+
+    const after = await store.reconfigureParse(source.id, { headerRow: 2 })
+    expect(after.typing.columns[0]).toMatchObject({ domain: 'native:number', type: 'number' })
   })
 
-  it('drops what no column of that name survives to hold', () => {
+  it('lets the format win when a column becomes native under a chosen type', async () => {
+    // A sheet switch can do exactly this: the same column name, strings on one
+    // sheet and real numbers on the next. A native column is never retyped, so
+    // the older answer goes rather than overriding the declaration.
+    const perSheet = (config) =>
+      config.sheet === 'Zwei'
+        ? [{ name: 'Menge', domain: 'native:number', cells: ['1', '2'] }]
+        : [{ name: 'Menge', domain: 'text', cells: ['1.234,56', '80,00'] }]
+
+    const store = createSourceStore({ xlsx: columnReader(perSheet) })
+    const { source } = await store.addSource({ bytes: utf8('x'), fileName: 'bericht.xlsx' })
+    store.setColumnTyping(source.id, 0, { type: 'text' })
+    store.annotateColumn(source.id, 0, 'Stück, nicht Kilo')
+    expect(store.get(source.id).typing.columns[0].chosen).toMatchObject({ type: 'text' })
+
+    const after = await store.reconfigureParse(source.id, { sheet: 'Zwei' })
+    const column = after.typing.columns[0]
+
+    expect(column).toMatchObject({ domain: 'native:number', type: 'number', chosen: null })
+    // The sentence someone wrote is still theirs; the confirmation is not.
+    expect(column.annotation).toBe('Stück, nicht Kilo')
+    expect(after.typing.confirmed).toBe(false)
+  })
+
+  it('names a native type the catalogue does not admit, and keeps it out of the domain', async () => {
+    // A reader is the one producer that can name a type nothing downstream
+    // knows. Parquet has TIME, INTERVAL and DECIMAL columns; the domain is what
+    // story 14 serializes into a Recipe and story 6 converts against, so the
+    // declaration is discarded there and survives only as provenance.
+    const { store, source } = await withColumns([
+      { name: 'Preis', domain: 'native:decimal', cells: ['1.234,56', '80,00'] },
+    ])
+    const column = source.typing.columns[0]
+
+    expect(column).toMatchObject({ domain: 'text', type: 'number', refusedNativeType: 'decimal' })
+    expect(column.format.locale).toBe('de-DE') // full detection, not a declaration
+    expect(codes(source)).toContainEqual(['warning', 'typing.unknown_native_type'])
+    expect(source.diagnostics.find((d) => d.code === 'typing.unknown_native_type').values).toEqual({
+      column: 'Preis',
+      type: 'decimal',
+    })
+
+    // It is settable, because nothing about it was settled by its format …
+    const retyped = store.setColumnTyping(source.id, 0, { type: 'text' })
+    expect(retyped.typing.columns[0]).toMatchObject({ type: 'text', domain: 'text' })
+
+    // … and the refusal is still reported after an edit that recounts the
+    // column. The diagnostics are rebuilt from the records on every commit, so a
+    // word that did not survive the record would go quiet here.
+    expect(codes(retyped)).toContainEqual(['warning', 'typing.unknown_native_type'])
+    const tokens = store.setColumnTyping(source.id, 0, { missingTokens: ['80,00'] })
+    expect(tokens.typing.columns[0].refusedNativeType).toBe('decimal')
+    expect(codes(tokens)).toContainEqual(['warning', 'typing.unknown_native_type'])
+  })
+
+  it('says nothing about an unknown native type once the column is confirmed clean', async () => {
+    // The complement of the case above: an admissible declaration and a plain
+    // text column both report no refusal, so the warning cannot become noise
+    // every Source carries.
+    const { source } = await withColumns([
+      { name: 'Menge', domain: 'native:number', cells: ['1', '2'] },
+      { name: 'Kunde', cells: ['Anna', 'Bernd'] },
+    ])
+
+    expect(source.typing.columns.map((c) => c.refusedNativeType)).toEqual([null, null])
+    expect(codes(source)).not.toContainEqual(['warning', 'typing.unknown_native_type'])
+  })
+
+  it('drops what no column of that name survives to hold', async () => {
     const renaming = (config) => [
       { name: config.headerRow === 2 ? 'Summe' : 'Betrag', cells: ['1.234,56', '80,00'] },
     ]
     const store = createSourceStore({ csv: columnReader(renaming) })
-    const { source } = store.addSource({ bytes: utf8('x'), fileName: 'daten.csv' })
+    const { source } = await store.addSource({ bytes: utf8('x'), fileName: 'daten.csv' })
     store.annotateColumn(source.id, 0, 'Netto, ohne Fracht')
 
-    const after = store.reconfigureParse(source.id, { headerRow: 2 })
+    const after = await store.reconfigureParse(source.id, { headerRow: 2 })
 
     expect(after.typing.columns[0]).toMatchObject({ name: 'Summe', annotation: '' })
   })

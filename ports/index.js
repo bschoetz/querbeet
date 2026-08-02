@@ -42,8 +42,19 @@
  * (AD-3, AD-7) — decoding is never a reader's concern. A `binary` reader gets
  * the bytes themselves (XLSX, Parquet).
  *
+ * A cell is always **canonical text**, whatever the format's own types were: a
+ * number as its shortest round-trip decimal, a date as `yyyy-MM-dd`, a datetime
+ * as ISO 8601 UTC, a boolean as `true`/`false`, an absent value as `''`. The
+ * typed-ness lives in `domain`, never in the values — Step zero's sweep, the
+ * preview and the annotations are all string-based, and a `Date` object crossing
+ * here would stringify to a local-zone sentence and stay mutable inside a frozen
+ * registry entry. Converting a cell into an engine value is story 6's (AD-21,
+ * AD-22).
+ *
  * `config` is format-specific; `null` fields mean "propose", explicit values
- * are user corrections and survive re-reads. `read` returns
+ * are user corrections and survive re-reads. CSV takes `{ delimiter, headerRow }`,
+ * XLSX takes `{ headerRow, sheet }`, Parquet takes none — its schema is
+ * authoritative. `read` returns, or resolves to,
  *
  *   {
  *     table: { columns: [{ name, domain, cells }], rowCount },
@@ -52,10 +63,20 @@
  *     diagnostics: Diagnostic[],
  *   }
  *
+ * `proposal` is also what tells a caller which controls a format even has: CSV
+ * proposes a `delimiter` and a `headerRow`, XLSX a `headerRow`, the chosen
+ * `sheet` and the `sheets` available, Parquet nothing at all.
+ *
+ * **`read` may return a Promise.** The two binary readers cannot be synchronous:
+ * `read-excel-file` unzips through fflate's callback API and parses XML in
+ * interruptible chunks, and `hyparquet` reads through an async buffer. The store
+ * awaits either shape, which is why its three parsing commands — `addSource`,
+ * `overrideEncoding`, `reconfigureParse` — are async and the rest are not.
+ *
  * Damaged rows are excluded from the table but kept raw and inspectable in
  * `damage` — never padded or guessed into alignment (CAP-39, C-10).
  * @property {'text' | 'binary'} media
- * @property {(data: string | ArrayBuffer, config: object) => object} read
+ * @property {(data: string | ArrayBuffer, config: object) => object | Promise<object>} read
  */
 
 /**

@@ -55,9 +55,21 @@
 // hand-written table of locale separators is the kind of thing that is wrong
 // about a locale nobody on the team speaks.
 
-export const TEXT = 'text'
-export const NUMBER = 'number'
-export const DATE = 'date'
+import {
+  DATE,
+  DATETIME,
+  BOOLEAN,
+  NUMBER,
+  TEXT,
+  TYPES,
+  declaredNativeType,
+  isNativeType,
+} from './catalog.js'
+
+// The vocabulary is declared in catalog.js and re-exported here so a caller that
+// already has typing.js in hand does not need a second import for the three
+// words it has always used. Adding a type is one edit, in the catalogue.
+export { TEXT, NUMBER, DATE, DATETIME, BOOLEAN }
 
 /** What a column reads as missing until the user says otherwise. Export
  *  formats disagree and the choice is not inferable (FR-9), so this is a
@@ -243,6 +255,73 @@ function readsAsDate(text, { separator, order }) {
   return isRealDate(c, a, b)
 }
 
+// ------------------------------------------------------- the native sweep
+//
+// AD-20: a natively typed column skips locale inference and still passes the
+// missing-value and unparsed sweep. Until this story the sweep was vacuous —
+// `detectColumn` scored every non-missing cell of a native column as parsed —
+// and that only holds for a homogeneous column, which a real file is not.
+//
+// Two shapes break it, and both are silent corruption if the sweep stays a
+// rubber stamp. A mixed XLSX column carries strings alongside its numbers, and
+// they are neither missing nor readable. And a Parquet INT64 past 2^53 keeps its
+// exact digits in the cell — the reader is careful to write them out — but there
+// is no JS number that round-trips them, so the value cannot survive story 6's
+// conversion. Naming it as unparsed is what makes the loss visible instead of
+// silent (C-10).
+//
+// What "parses" means here is the *canonical form* the readers write, not a
+// locale reading: the typed-ness lives in the column's domain and the cells are
+// machine-shaped text (`1234.5`, `2025-08-01`, ISO 8601 UTC, `true`/`false`).
+
+/** Shortest round-trip decimal, and nothing else. `String(Number(text))` is
+ *  exactly the form the readers emit, so requiring the round trip both rejects
+ *  a stray string and catches the digits no JS number can hold. */
+function readsAsCanonicalNumber(text) {
+  if (text === '') return false
+  const n = Number(text)
+  return Number.isFinite(n) && String(n) === text
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+function readsAsCanonicalDate(text) {
+  if (!ISO_DATE.test(text)) return false
+  const [year, month, day] = text.split('-').map(Number)
+  return isRealDate(year, month, day)
+}
+
+/** ISO 8601 in UTC, as `Date.prototype.toISOString` writes it. The round trip is
+ *  the whole check: it rejects a local-zone offset, a missing `Z`, an impossible
+ *  day, and the `yyyy-MM-dd` form that belongs to a date column instead. */
+function readsAsCanonicalDateTime(text) {
+  if (text === '') return false
+  const at = Date.parse(text)
+  return Number.isFinite(at) && new Date(at).toISOString() === text
+}
+
+const readsAsCanonicalBoolean = (text) => text === 'true' || text === 'false'
+
+const CANONICAL = Object.freeze({
+  [NUMBER]: readsAsCanonicalNumber,
+  [DATE]: readsAsCanonicalDate,
+  [DATETIME]: readsAsCanonicalDateTime,
+  [BOOLEAN]: readsAsCanonicalBoolean,
+})
+
+/**
+ * Every catalogue type a reader may declare natively that has no canonical form
+ * here. Empty is the rule, and a test asserts it.
+ *
+ * Without the invariant, adding a type to the catalogue leaves `reads`
+ * undefined, the sweep throws a `TypeError`, the store catches it as a failed
+ * read, and a perfectly good file is reported to the user as unreadable. Story
+ * 4a adds six types and would land on exactly that. This is the same treatment
+ * `typeLabelGaps()` already gives the German words.
+ */
+export const canonicalTypeGaps = () =>
+  Object.freeze(TYPES.filter((type) => type.native && !CANONICAL[type.code]).map((t) => t.code))
+
 /** How a candidate names itself when a sentence has to mention it. A date
  *  pattern names its shape; a number reading names its locale, because
  *  "de-DE against en-US" is a distinction a person can act on and
@@ -289,6 +368,28 @@ function exclusive(values, a, b, reads) {
 
 
 /**
+ * What a reader's domain declaration actually buys, in three parts (AD-20).
+ *
+ * `domain` is what the column *is*, and it is the one of the three that travels:
+ * story 14 serializes it into the Recipe and story 6 reads it as the instruction
+ * for a conversion. So a declaration the catalogue does not admit — Parquet's
+ * TIME, INTERVAL, DECIMAL, INT96 — is **discarded here**, not carried. The
+ * column is `text`, exactly as if the reader had said nothing, and it is
+ * detected and settable like any other text column.
+ *
+ * What is kept is `refusedNativeType`: the bare word, as provenance rather than
+ * as a domain. It is what lets the card say *which* type was refused and on
+ * which column, and it is deliberately not spelled `native:…` so that no reader
+ * of a column record can mistake it for something to convert against.
+ */
+function readDeclaration(declared) {
+  const word = declaredNativeType(declared)
+  if (word === null) return { domain: declared ?? TEXT, nativeType: null, refusedNativeType: null }
+  if (isNativeType(word)) return { domain: declared, nativeType: word, refusedNativeType: null }
+  return { domain: TEXT, nativeType: null, refusedNativeType: word }
+}
+
+/**
  * Read a column and propose what it is.
  *
  * @param {ReadonlyArray<string>} cells every value, in order
@@ -300,7 +401,7 @@ function exclusive(values, a, b, reads) {
  *   stamp for XLSX and Parquet.
  */
 export function detectColumn(cells, options = {}) {
-  const domain = options.domain ?? TEXT
+  const { domain, nativeType, refusedNativeType } = readDeclaration(options.domain)
   const { tokens: missingTokens, values, missing } = sift(cells, options.missingTokens)
 
   const counts = (parsed) =>
@@ -314,12 +415,23 @@ export function detectColumn(cells, options = {}) {
     evidence: null,
     missingTokens,
     domain,
+    refusedNativeType,
   })
 
   // AD-20: a natively typed column arrives already decided. Inferring a locale
-  // for it would be inventing a question the format already answered.
-  if (domain.startsWith('native:')) {
-    return Object.freeze({ ...asText, type: domain.slice('native:'.length), format: null })
+  // for it would be inventing a question the format already answered — but the
+  // sweep is real: every cell is checked against the canonical form of its type,
+  // so a stray string and a digit string no JS number can hold are both counted
+  // and named rather than waved through.
+  //
+  // A declaration the catalogue does not admit never gets here: `readDeclaration`
+  // has already discarded it down to `text`, and what is left of it is the word
+  // on `refusedNativeType`, which is provenance rather than a domain.
+  if (nativeType !== null) {
+    const reads = CANONICAL[nativeType]
+    let parsed = 0
+    for (const value of values) if (reads(value)) parsed += 1
+    return Object.freeze({ ...asText, type: nativeType, format: null, counts: counts(parsed) })
   }
 
   if (values.length === 0) return asText
@@ -387,6 +499,7 @@ export function detectColumn(cells, options = {}) {
     evidence,
     missingTokens,
     domain,
+    refusedNativeType,
   })
 }
 
@@ -432,6 +545,9 @@ export function bestFormat(cells, type, missingTokens) {
  *  no longer waiting on one. */
 export function scoreColumn(cells, { type, format, missingTokens, domain }) {
   const { tokens, values, missing } = sift(cells, missingTokens)
+  // Same three parts as detection reads, from the same place: a refused
+  // declaration must not survive one route and be discarded on the other.
+  const declaration = readDeclaration(domain)
 
   let parsed = values.length
   if (type === NUMBER && format) parsed = values.filter((v) => readsAsNumber(v, format)).length
@@ -449,7 +565,8 @@ export function scoreColumn(cells, { type, format, missingTokens, domain }) {
     verdict: 'settled',
     evidence: null,
     missingTokens: tokens,
-    domain: domain ?? TEXT,
+    domain: declaration.domain,
+    refusedNativeType: declaration.refusedNativeType,
   })
 }
 

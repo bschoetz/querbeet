@@ -181,17 +181,20 @@ test('an unclosed quote is reported as that defect, with its row', async ({ page
 test('an unsupported file errors by name while the CSV beside it loads normally', async ({
   page,
 }) => {
+  // `.ods` is the unsupported case since story 4: it is a real spreadsheet
+  // format that neither reader in this tree can open, so it is refused by name
+  // rather than half-read. (`.xlsx` and `.parquet` are their own suite now.)
   await pick(page, [
     {
-      name: 'bericht.xlsx',
-      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      name: 'bericht.ods',
+      mimeType: 'application/vnd.oasis.opendocument.spreadsheet',
       buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04]),
     },
     csv('umsatz.csv', 'Kunde;Betrag\nBäcker;12,50\n'),
   ])
 
   // The error names that file (per-file isolation) …
-  await expect(page.getByText('„bericht.xlsx“ hat ein nicht unterstütztes Format')).toBeVisible()
+  await expect(page.getByText('„bericht.ods“ hat ein nicht unterstütztes Format')).toBeVisible()
 
   // … and the CSV Source beside it is loaded and usable.
   const card = cards(page)

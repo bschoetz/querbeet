@@ -100,6 +100,47 @@ if (only && only.endsWith('.html')) {
     )
   }
 
+  // ------------------------------------------------- the synchronous WASM ceiling
+  //
+  // `hyparquet-compressors` decompresses snappy through `hysnappy`, whose WASM
+  // is base64-inlined and instantiated with `atob` + `new WebAssembly.Module`.
+  // That is the reason it passes the two assertions above at all — nothing is
+  // fetched and no second file is emitted — but it brings a ceiling with it.
+  //
+  // **Chrome refuses a synchronous `new WebAssembly.Module` larger than 4,096
+  // bytes on the main thread.** hysnappy's module is 3,458 bytes, so the margin
+  // is 638. If a future version crosses it, instantiation throws — and only in
+  // a real browser, never under Node, and never in the dev server. That is
+  // precisely the class of silent build-time failure this whole script exists
+  // for, so the margin is asserted here rather than trusted.
+  //
+  // A WASM binary always starts with the four bytes `\0asm`, which is `AGFzbQ`
+  // in base64 — that is how the module is found in a quarter-megabyte of
+  // minified JavaScript without knowing the variable it was assigned to.
+  const SYNC_WASM_LIMIT = 4096
+  const wasmLiterals = [...html.matchAll(/["'`](AGFzbQ[A-Za-z0-9+/=]{16,})["'`]/g)].map((m) =>
+    Buffer.from(m[1], 'base64'),
+  )
+
+  if (wasmLiterals.length === 0) {
+    note('inlined WebAssembly modules', 'none found')
+  }
+  for (const wasm of wasmLiterals) {
+    note(
+      `inlined WebAssembly module (limit ${SYNC_WASM_LIMIT.toLocaleString('en-US')} B)`,
+      `${wasm.byteLength.toLocaleString('en-US')} B — ${(SYNC_WASM_LIMIT - wasm.byteLength).toLocaleString('en-US')} B of margin`,
+    )
+    if (wasm.byteLength >= SYNC_WASM_LIMIT) {
+      fail(
+        'every inlined WebAssembly module compiles synchronously',
+        `${wasm.byteLength} bytes is at or over Chrome's ${SYNC_WASM_LIMIT}-byte limit for a\n` +
+          '    synchronous `new WebAssembly.Module` on the main thread. It would throw in\n' +
+          '    Chromium at runtime and nowhere else — not under Node, not in the dev server.\n' +
+          '    Either move the instantiation off the main thread or take the dependency out.',
+      )
+    }
+  }
+
   // Reported, never asserted. AD-15: a dependency may construct its own worker
   // — read-excel-file spawns fflate blob-URL workers on the import path — so
   // this count constrains nothing. It is here so a change in it is visible.

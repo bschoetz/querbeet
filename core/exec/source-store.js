@@ -10,11 +10,9 @@
 // by app/ as `{ extension → SourceReader }` — this file names no adapter (AD-1).
 
 import { error, unresolved, warning } from '../diagnostics/diagnostic.js'
+import { TEXT, isSettableType, nativeTypeOf } from '../types/catalog.js'
 import { ENCODINGS, decode, decodeBytes } from '../types/encoding.js'
 import {
-  DATE,
-  NUMBER,
-  TEXT,
   bestFormat,
   candidatesFor,
   detectColumn,
@@ -22,12 +20,6 @@ import {
   scoreColumn,
   unresolvedColumns,
 } from '../types/typing.js'
-
-/** The types a command may set. A `native:<type>` column arrives already
- *  decided by its reader (AD-20) and is not something the UI retypes; a type
- *  outside this set reaching the entry would be scored as fully readable,
- *  confirmed, and then converted into nothing by story 6. */
-const SETTABLE_TYPES = new Set([TEXT, NUMBER, DATE])
 
 /**
  * The typing state as diagnostics (AD-13, CAP-34).
@@ -52,6 +44,21 @@ const typingDiagnostics = (typing) => {
         }),
       )
     }
+    // A reader is the one producer that can name a type the catalogue never
+    // heard of (AD-20). The declaration was discarded on the way in — the
+    // column's domain is plain `text` and detection ran on it — and the word
+    // survives only as provenance, which is what this reads. Deriving it from
+    // the domain instead would mean keeping `native:decimal` on the record,
+    // where story 14 would serialize it into a Recipe and story 6 would read it
+    // as an instruction for a conversion nothing implements.
+    if (column.refusedNativeType) {
+      out.push(
+        warning('typing.unknown_native_type', {
+          column: column.name,
+          type: column.refusedNativeType,
+        }),
+      )
+    }
     if (column.counts.unparsed > 0) {
       out.push(
         warning('typing.unparsed_values', {
@@ -67,6 +74,44 @@ const typingDiagnostics = (typing) => {
   }
   return out
 }
+
+/**
+ * What a failed read is called.
+ *
+ * `source.unreadable` says "damaged, password-protected, or not the format its
+ * extension claims" — three guesses, and all three are wrong for a valid Parquet
+ * written with a codec this build cannot decompress. An adapter that knows
+ * better attaches a `code` and `values` to what it throws, and that becomes the
+ * diagnostic instead. The core forwards a machine code it does not interpret;
+ * the German for it lives in `ui/` like every other code (AD-13).
+ */
+const readFailure = (failure, fileName) =>
+  typeof failure?.code === 'string' && failure.code.includes('.')
+    ? error(failure.code, { fileName, ...failure.values })
+    : error('source.unreadable', { fileName })
+
+/**
+ * The parse decisions that were actually in force, as the reader reports them.
+ *
+ * A user's explicit value is not always honoured: a header row past the end of
+ * the sheet is clamped, and a named sheet that no longer exists falls back to
+ * the first. Keeping the unhonoured value in `parseConfig` splits the truth in
+ * two — the control shows 2 while the config holds 99 — and a later re-read
+ * against a bigger sheet resurrects the 99. Adopting the effective value keeps
+ * one truth, and it is also what lets a user re-choose a sheet after a fallback:
+ * re-selecting the value a select already displays fires no change event.
+ *
+ * A field the user left to us stays `null`, except the sheet, which is adopted
+ * as soon as one has been proposed — otherwise `null` and the name of the very
+ * same sheet are two spellings of one state, and selecting the sheet already
+ * being read would count as a switch and throw away the header row with it.
+ */
+const effectiveConfig = (sent, proposal = {}) =>
+  Object.freeze({
+    delimiter: sent.delimiter === null ? null : (proposal.delimiter ?? sent.delimiter),
+    headerRow: sent.headerRow === null ? null : (proposal.headerRow ?? sent.headerRow),
+    sheet: proposal.sheet ?? sent.sheet,
+  })
 
 const slugify = (name) => {
   const slug = name
@@ -90,6 +135,15 @@ const nulDiagnostics = (text) => {
 }
 
 /**
+ * The three commands that parse — `addSource`, `overrideEncoding` and
+ * `reconfigureParse` — return a Promise; every other command is synchronous.
+ * The split is not a style choice: neither binary reader can be synchronous
+ * (fflate unzips through a callback, hyparquet reads through an async buffer),
+ * and AD-7 requires a re-read to start from the retained bytes rather than from
+ * a decoded copy held on the side. Argument validation still throws
+ * synchronously, because a bad argument is a caller's bug and not a state of the
+ * data.
+ *
  * @param {Record<string, import('../../ports/index.js').SourceReader>} readers
  */
 export function createSourceStore(readers) {
@@ -111,6 +165,36 @@ export function createSourceStore(readers) {
   const extensionOf = (fileName) => {
     const match = /\.([^.]+)$/.exec(fileName)
     return match ? match[1].toLowerCase() : null
+  }
+
+  /**
+   * One parse at a time per Source, in the order the commands were issued.
+   *
+   * A re-read reads bytes and returns seconds later; on the binary formats,
+   * seconds of ordinary clicking. Without this, two commands overlap and the
+   * one that *resolves* last wins rather than the one that was *asked* last:
+   * choose a sheet, correct the header row before the sheet lands, and the
+   * sheet switch is gone — the file is read on the wrong sheet, with a card
+   * that says otherwise. Serializing also means each command reads its starting
+   * entry after the one before it has committed, so corrections merge instead of
+   * clobbering.
+   *
+   * The chain continues through a rejection, or one failed read would wedge the
+   * Source for the rest of the session.
+   */
+  /** @type {Map<string, Promise<unknown>>} id → the tail of its parse chain */
+  const parsing = new Map()
+
+  const serialize = (id, work) => {
+    const queued = (parsing.get(id) ?? Promise.resolve()).then(work, work)
+    // The stored link never rejects, or one failed read would wedge the Source;
+    // the returned one still does, so a caller sees its own failure.
+    const settled = queued.then(
+      () => undefined,
+      () => undefined,
+    )
+    parsing.set(id, settled)
+    return queued
   }
 
   const must = (id) => {
@@ -172,16 +256,23 @@ export function createSourceStore(readers) {
           if (!old) return column
 
           const cells = table.columns[at].cells
+          const domain = table.columns[at].domain
           const missingTokens = old.missingTokens
-          const rescored = old.chosen
-            ? scoreColumn(cells, { ...old.chosen, missingTokens, domain: column.domain })
-            : detectColumn(cells, { domain: column.domain, missingTokens })
+
+          // A type the user chose does not survive a column *becoming* native.
+          // A sheet switch can do exactly that — the same column name, strings
+          // on one sheet and real numbers on the next — and a native column is
+          // never retyped (AD-20). The declaration wins over the older answer.
+          const chosen = nativeTypeOf(domain) === null ? old.chosen : null
+          const rescored = chosen
+            ? scoreColumn(cells, { ...chosen, missingTokens, domain })
+            : detectColumn(cells, { domain, missingTokens })
 
           return Object.freeze({
             ...rescored,
             name: column.name,
             annotation: old.annotation,
-            chosen: old.chosen,
+            chosen,
           })
         }),
       ),
@@ -218,9 +309,15 @@ export function createSourceStore(readers) {
    * Re-read from the retained bytes (AD-7) — never from the file. A reader
    * throw here must not escape into the UI: the previous table state is kept
    * (the bytes still are the truth) and the failure becomes a Diagnostic, the
-   * same courtesy addSource extends.
+   * same courtesy addSource extends. A rejected promise is the same failure and
+   * is caught the same way.
+   *
+   * Awaited, because the two binary readers cannot be synchronous: `read-excel-
+   * file` unzips through fflate's callback API and parses XML in interruptible
+   * chunks, and `hyparquet` reads through an async buffer. Every command that
+   * re-parses is therefore async — see the note on `createSourceStore`.
    */
-  const reRead = (entry, { encoding, parseConfig }) => {
+  const reRead = async (entry, { encoding, parseConfig }) => {
     const reader = readers[entry.extension]
     try {
       let result
@@ -228,26 +325,32 @@ export function createSourceStore(readers) {
       if (reader.media === 'text') {
         const text = decodeBytes(entry.bytes, encoding.chosen)
         extra = nulDiagnostics(text)
-        result = reader.read(text, parseConfig)
+        result = await reader.read(text, parseConfig)
       } else {
-        result = reader.read(entry.bytes, parseConfig)
+        result = await reader.read(entry.bytes, parseConfig)
       }
+      // The entry as it stands *now*, not as it stood when the read began. A
+      // read takes seconds on a binary format, and an annotation or a type the
+      // user set meanwhile lives on the current entry; committing over the
+      // captured one would throw their edit away without a word.
+      const current = sources.get(entry.id) ?? entry
       return commit({
-        ...entry,
+        ...current,
         encoding,
-        parseConfig,
+        parseConfig: effectiveConfig(parseConfig, result.proposal),
         table: result.table,
-        typing: retype(result.table, entry.typing),
+        typing: retype(result.table, current.typing),
         proposal: result.proposal,
         damage: result.damage,
         readDiagnostics: Object.freeze([...extra, ...result.diagnostics]),
       })
-    } catch {
+    } catch (failure) {
+      const current = sources.get(entry.id) ?? entry
       return commit({
-        ...entry,
+        ...current,
         encoding,
         parseConfig,
-        readDiagnostics: Object.freeze([error('source.unreadable', { fileName: entry.fileName })]),
+        readDiagnostics: Object.freeze([readFailure(failure, entry.fileName)]),
       })
     }
   }
@@ -257,21 +360,22 @@ export function createSourceStore(readers) {
    * or unsupported file never touches the Sources already loaded.
    *
    * @param {{ bytes: ArrayBuffer, fileName: string }} input
-   * @returns {{ source: object | null, diagnostics: ReadonlyArray<object> }}
+   * @returns {Promise<{ source: object | null, diagnostics: ReadonlyArray<object> }>}
    */
-  function addSource({ bytes, fileName }) {
+  async function addSource({ bytes, fileName }) {
     const extension = extensionOf(fileName)
     const reader = extension === null ? undefined : readers[extension]
     if (!reader) {
-      // JSON, XLSX, Parquet are Stories 4 and 17 — until then an unknown
-      // extension is a named error, not a half-read table.
+      // JSON and NDJSON are story 17; legacy .xls/.xlsb/.ods no reader in this
+      // tree can open at all. Until then an unknown extension is a named error,
+      // not a half-read table.
       return {
         source: null,
         diagnostics: [error('source.unsupported_format', { fileName, extension: extension ?? '' })],
       }
     }
 
-    const parseConfig = Object.freeze({ delimiter: null, headerRow: null })
+    const parseConfig = Object.freeze({ delimiter: null, headerRow: null, sheet: null })
     let encoding = Object.freeze({ chosen: null, source: null, override: null })
     let extra = []
     let result
@@ -281,12 +385,12 @@ export function createSourceStore(readers) {
         const { text, chosen, source } = decode(bytes)
         encoding = Object.freeze({ chosen, source, override: null })
         extra = nulDiagnostics(text)
-        result = reader.read(text, parseConfig)
+        result = await reader.read(text, parseConfig)
       } else {
-        result = reader.read(bytes, parseConfig)
+        result = await reader.read(bytes, parseConfig)
       }
-    } catch {
-      return { source: null, diagnostics: [error('source.unreadable', { fileName })] }
+    } catch (failure) {
+      return { source: null, diagnostics: [readFailure(failure, fileName)] }
     }
 
     const name = fileName.replace(/\.[^.]+$/, '')
@@ -297,7 +401,7 @@ export function createSourceStore(readers) {
       extension,
       bytes,
       encoding,
-      parseConfig,
+      parseConfig: effectiveConfig(parseConfig, result.proposal),
       table: result.table,
       typing: retype(result.table, null),
       proposal: result.proposal,
@@ -311,6 +415,7 @@ export function createSourceStore(readers) {
   function removeSource(id) {
     must(id)
     sources.delete(id)
+    parsing.delete(id)
   }
 
   /**
@@ -330,12 +435,20 @@ export function createSourceStore(readers) {
    * encoding and re-parses; the user's parse corrections survive.
    */
   function overrideEncoding(id, chosen) {
-    const entry = must(id)
+    must(id)
     if (!ENCODINGS.includes(chosen)) throw new TypeError(`unknown encoding: ${chosen}`)
 
-    return reRead(entry, {
-      encoding: Object.freeze({ chosen, source: 'override', override: chosen }),
-      parseConfig: entry.parseConfig,
+    // The entry is fetched inside the queue, not captured outside it: a parse
+    // ahead of this one in the chain may still change the parse config, and an
+    // encoding change must re-read under the config that is in force when it
+    // runs rather than the one that was in force when it was clicked.
+    return serialize(id, () => {
+      const entry = sources.get(id)
+      if (!entry) return null // removed while the queue was busy
+      return reRead(entry, {
+        encoding: Object.freeze({ chosen, source: 'override', override: chosen }),
+        parseConfig: entry.parseConfig,
+      })
     })
   }
 
@@ -346,7 +459,7 @@ export function createSourceStore(readers) {
    * not passed through for a reader to misread.
    */
   function reconfigureParse(id, patch) {
-    const entry = must(id)
+    must(id)
 
     if (
       patch.delimiter !== undefined &&
@@ -362,13 +475,48 @@ export function createSourceStore(readers) {
     ) {
       throw new TypeError('headerRow must be a positive integer or null')
     }
+    // A sheet is named, not numbered: a workbook's sheets can be reordered
+    // between two exports of the same report while their names hold, and the
+    // name is also what the proposal lists and what a re-read carries.
+    if (
+      patch.sheet !== undefined &&
+      patch.sheet !== null &&
+      (typeof patch.sheet !== 'string' || patch.sheet.length === 0)
+    ) {
+      throw new TypeError('sheet must be a non-empty string or null')
+    }
 
-    const parseConfig = Object.freeze({
-      delimiter: patch.delimiter !== undefined ? patch.delimiter : entry.parseConfig.delimiter,
-      headerRow: patch.headerRow !== undefined ? patch.headerRow : entry.parseConfig.headerRow,
+    // Merged inside the queue against the config the command before it left
+    // behind. Merging outside would make two overlapping corrections race, and
+    // the one that finished reading last would win rather than the one asked
+    // last — a sheet switch silently undone by a header-row correction issued
+    // while it was still reading.
+    return serialize(id, () => {
+      const entry = sources.get(id)
+      if (!entry) return null // removed while the queue was busy
+
+      const sheet = patch.sheet !== undefined ? patch.sheet : entry.parseConfig.sheet
+      // A sheet switch changes what the columns even are, so a header-row
+      // correction made against the sheet being left does not travel with it —
+      // the new sheet proposes its own, exactly as a freshly loaded one would.
+      // Both sides are the effective name by now (see `effectiveConfig`), so
+      // choosing the sheet already being read is not a switch.
+      const switched = sheet !== entry.parseConfig.sheet
+      const headerRow =
+        patch.headerRow !== undefined
+          ? patch.headerRow
+          : switched
+            ? null
+            : entry.parseConfig.headerRow
+
+      const parseConfig = Object.freeze({
+        delimiter: patch.delimiter !== undefined ? patch.delimiter : entry.parseConfig.delimiter,
+        headerRow,
+        sheet,
+      })
+
+      return reRead(entry, { encoding: entry.encoding, parseConfig })
     })
-
-    return reRead(entry, { encoding: entry.encoding, parseConfig })
   }
 
   /**
@@ -416,7 +564,32 @@ export function createSourceStore(readers) {
     if (patch.type === undefined && patch.missingTokens === undefined) {
       throw new TypeError('setColumnTyping needs a type or missingTokens')
     }
-    if (patch.type !== undefined && patch.type !== null && !SETTABLE_TYPES.has(patch.type)) {
+    // The reader's own declaration, not the column record's copy of it. The two
+    // agree everywhere except on a refused declaration, which the record no
+    // longer carries at all — and a refused column is settable, because nothing
+    // about it was settled by its format.
+    const declared = entry.table.columns[index].domain
+
+    // Guarded by domain, not by type. A `native:number` column has type
+    // `number`, which is perfectly settable — what makes it unretypeable is that
+    // its format declared it, not that detection proposed it (AD-20). The pane
+    // renders no type control for one, so reaching here is a caller's bug.
+    //
+    // `type: null` is exempt, and deliberately. It is not a retype: it withdraws
+    // a choice and hands the column back to whatever the reader and detection
+    // propose, which for a native column is the declaration it already has. Story
+    // 3 shipped "Zurück zum Vorschlag" as the fix for a closed defect — a reset
+    // that refused would be that defect again, on the columns least able to
+    // recover from it.
+    const isReset = patch.type === null && patch.format === undefined
+    if (
+      nativeTypeOf(declared) !== null &&
+      !isReset &&
+      (patch.type !== undefined || patch.format !== undefined)
+    ) {
+      throw new TypeError(`column ${index} of ${entry.id} is typed by its format and cannot be retyped`)
+    }
+    if (patch.type !== undefined && patch.type !== null && !isSettableType(patch.type)) {
       throw new TypeError(`unknown type: ${patch.type}`)
     }
     if (patch.format !== undefined && patch.type === undefined) {
@@ -447,8 +620,8 @@ export function createSourceStore(readers) {
     // stays an ambiguity. Declaring a missing token must not silently settle a
     // question the user never answered.
     const scored = chosen
-      ? scoreColumn(cells, { ...chosen, missingTokens, domain: column.domain })
-      : detectColumn(cells, { domain: column.domain, missingTokens })
+      ? scoreColumn(cells, { ...chosen, missingTokens, domain: declared })
+      : detectColumn(cells, { domain: declared, missingTokens })
 
     return commit({
       ...entry,
@@ -518,5 +691,11 @@ export function createSourceStore(readers) {
     unconfirmTyping,
     get: (id) => sources.get(id) ?? null,
     list: () => [...sources.values()],
+    /** The extensions a reader was registered for, in registration order. The
+     *  drop zone and the unsupported-format refusal both name the readable
+     *  formats to the user, and a hand-kept list in `ui/` would be a third copy
+     *  of what `app/` already decides — the same restatement `core/types/
+     *  catalog.js` was written in this story to end. */
+    formats: () => Object.freeze(Object.keys(readers)),
   }
 }

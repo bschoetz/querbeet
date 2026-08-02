@@ -10,9 +10,11 @@
 // would be the core talking to the user.
 
 import { shallowRef } from 'vue'
+import { nativeTypeOf } from '@core/types/catalog.js'
 import { ENCODINGS } from '@core/types/encoding.js'
 import { candidatesFor, unresolvedColumns } from '@core/types/typing.js'
 import RowWindow from '@ui/RowWindow.vue'
+import { settableTypeLabels, typeLabel } from '@ui/type-labels.js'
 
 const props = defineProps({ store: { type: Object, required: true } })
 
@@ -26,6 +28,25 @@ const refresh = () => {
 }
 
 const nf = (n) => n.toLocaleString('de-DE')
+
+// The formats this build can read, from the reader registry `app/` wired up —
+// never a hand-kept list. Two sentences name them to the user (the drop zone and
+// the unsupported-format refusal), and two hand-maintained copies of what `app/`
+// already decides is the restatement problem `core/types/catalog.js` was written
+// in this story to end.
+// How each format is spelled in a German sentence. Only the spelling lives
+// here — the *set* comes from the registry — so a format registered without an
+// entry reads as its uppercase extension, which is shouty but never wrong.
+const FORMAT_LABEL = { csv: 'CSV', xlsx: 'XLSX', parquet: 'Parquet', json: 'JSON' }
+
+const formatList = () => {
+  const names = props.store
+    .formats()
+    .map((extension) => FORMAT_LABEL[extension] ?? extension.toUpperCase())
+  if (names.length === 0) return 'keine Dateien'
+  if (names.length === 1) return `${names[0]}-Dateien`
+  return `${names.slice(0, -1).join('-, ')}- und ${names.at(-1)}-Dateien`
+}
 
 // German counts one of a thing differently, and the diagnostic sentences below
 // already do it — "Eine Zeile weicht ab" against "3 Zeilen weichen ab". The
@@ -82,8 +103,63 @@ const GERMAN = {
     `erkannte Zeichenkodierung hin (häufig UTF-16 ohne Byte-Reihenfolge-Markierung). ` +
     `Bitte die Kodierung prüfen und gegebenenfalls umstellen.`,
   'source.unsupported_format': (v) =>
-    `„${v.fileName}“ hat ein nicht unterstütztes Format — gelesen werden derzeit nur CSV-Dateien.`,
-  'source.unreadable': (v) => `„${v.fileName}“ konnte nicht gelesen werden.`,
+    `„${v.fileName}“ hat ein nicht unterstütztes Format — gelesen werden derzeit ${formatList()}.`,
+  'source.unreadable': (v) =>
+    `„${v.fileName}“ konnte nicht gelesen werden — die Datei ist beschädigt, ` +
+    `passwortgeschützt oder in einem anderen Format als ihre Endung angibt.`,
+  'parquet.unsupported_codec': (v) =>
+    `„${v.fileName}“ ist mit dem Verfahren ${v.codec} komprimiert, das querbeet nicht ` +
+    `entpacken kann. Die Datei ist in Ordnung — bitte sie unkomprimiert oder mit Snappy ` +
+    `erneut ausgeben lassen.`,
+  'xlsx.empty': (v) =>
+    v.sheet === ''
+      ? 'Die Arbeitsmappe enthält kein Tabellenblatt — keine Zeilen, keine Spalten.'
+      : `Das Tabellenblatt „${v.sheet}“ ist leer — keine Zeilen, keine Spalten.`,
+  'xlsx.sheet_missing': (v) =>
+    `Das Tabellenblatt „${v.sheet}“ gibt es in dieser Datei nicht mehr — gelesen wurde ` +
+    `stattdessen „${v.using}“. Bitte das gewünschte Blatt wählen.`,
+  'xlsx.mixed_types': (v) =>
+    `Spalte „${v.column}“ enthält Werte verschiedener Excel-Typen ` +
+    `(${v.kinds.map((k) => typeLabel(k)).join(', ')}) — sie wird als Text gelesen, ` +
+    `damit kein Wert stillschweigend umgedeutet wird.`,
+  'xlsx.blank_header': (v) =>
+    v.columns.length === 1
+      ? `In der Kopfzeile ist Spalte ${nf(v.columns[0])} leer — diese Spalte bleibt ohne Namen. ` +
+        `Bitte die Kopfzeile prüfen.`
+      : `In der Kopfzeile sind die Spalten ${v.columns.map(nf).join(', ')} leer — diese Spalten ` +
+        `bleiben ohne Namen. Bitte die Kopfzeile prüfen.`,
+  'xlsx.duplicate_header': (v) =>
+    `Die Kopfzeile vergibt ${v.columns.map((c) => `„${c}“`).join(', ')} mehrfach — die Spalten ` +
+    `werden getrennt gehalten, sind aber am Namen nicht zu unterscheiden.`,
+  'parquet.nested_column': (v) =>
+    `Spalte „${v.column}“ ist verschachtelt (Liste, Map oder Struktur) — sie wird als Text ` +
+    `im JSON-Format gelesen. Das Auffächern in einzelne Spalten kommt später.`,
+  'parquet.unsupported_type': (v) =>
+    `Spalte „${v.column}“ hat den Parquet-Typ ${v.type}, für den querbeet noch keine ` +
+    `Umrechnung kennt — sie wird als Text gelesen.`,
+  'parquet.unreadable_column': (v) =>
+    `Spalte „${v.column}“ hat den Parquet-Typ ${v.type}, den querbeet nicht entschlüsseln ` +
+    `kann — sie bleibt leer. Die übrigen Spalten der Datei sind vollständig gelesen.`,
+  'parquet.decimal_precision': (v) =>
+    v.values === 1
+      ? `Spalte „${v.column}“: ein Wert hat mehr Stellen, als sich hier exakt rechnen lassen. ` +
+        `Er steht unverändert in der Tabelle und zählt als nicht lesbar, damit keine falsche ` +
+        `Zahl weiterverwendet wird.`
+      : `Spalte „${v.column}“: ${nf(v.values)} Werte haben mehr Stellen, als sich hier exakt ` +
+        `rechnen lassen. Sie stehen unverändert in der Tabelle und zählen als nicht lesbar, ` +
+        `damit keine falschen Zahlen weiterverwendet werden.`,
+  'parquet.timestamp_precision': (v) =>
+    `Spalte „${v.column}“ ist in ${v.unit === 'NANOS' ? 'Nanosekunden' : 'Mikrosekunden'} ` +
+    `gespeichert; querbeet rechnet in Millisekunden. Die feineren Stellen gehen verloren.`,
+  'parquet.non_finite_number': (v) =>
+    v.values === 1
+      ? `Spalte „${v.column}“ enthält einen Wert, der keine Zahl ist (unendlich oder ` +
+        `undefiniert) — er zählt als nicht lesbar.`
+      : `Spalte „${v.column}“ enthält ${nf(v.values)} Werte, die keine Zahlen sind (unendlich ` +
+        `oder undefiniert) — sie zählen als nicht lesbar.`,
+  'typing.unknown_native_type': (v) =>
+    `Spalte „${v.column}“ wurde vom Dateiformat als „${v.type}“ angekündigt — diesen Typ ` +
+    `kennt querbeet nicht. Die Spalte wird wie Text untersucht; bitte den Vorschlag prüfen.`,
   'typing.ambiguous_locale': (v) =>
     `Spalte „${v.column}“: nichts entscheidet zwischen zwei Lesarten. Bitte unter ` +
     `„Spalten & Typen“ wählen.`,
@@ -108,7 +184,12 @@ const renderText = (d) => GERMAN[d.code]?.(d.values) ?? 'Unbekannte Meldung aus 
 // the reading, this must say so rather than name a winner, because naming a
 // winner is exactly what every comparable tool does silently.
 
-const TYPE_LABEL = { text: 'Text', number: 'Zahl', date: 'Datum' }
+// The type select offers exactly what the catalogue calls settable, in its
+// order, labelled from `ui/type-labels.js` — no list of types is restated here
+// (AD-13). `datetime` and `boolean` are deliberately absent from it: the formats
+// deliver them, no text column can be retyped into one, and a select offering a
+// type detection cannot reach would be a dead end with a German word on it.
+const SETTABLE_TYPES = settableTypeLabels()
 
 /** A date pattern in German field letters — TT.MM.JJJJ, not dd.MM.yyyy. */
 const patternLabel = (pattern) => pattern.replace(/dd/g, 'TT').replace(/yyyy/g, 'JJJJ')
@@ -131,11 +212,16 @@ const readingLabel = (column, key) =>
 
 const formatChoices = (type) => candidatesFor(type)
 
-/** A type the reader declared and this pane has no word for — `native:boolean`
- *  from an XLSX sheet, once story 4 lands. Offering it a select whose options
- *  do not contain its own value would show "Text" and retype the column on the
- *  first interaction, so such a column shows its type and no control. */
-const isSettable = (type) => Object.hasOwn(TYPE_LABEL, type)
+/**
+ * Whether this column may be retyped — guarded by its **domain**, not its type.
+ *
+ * A `native:number` column has type `number`, which is perfectly settable, and a
+ * type-keyed guard therefore handed it the full select: switching it would have
+ * asked the store for a retype the store now refuses, over a column whose format
+ * already answered the question (AD-20). What makes a column unretypeable is
+ * where its type came from. Its missing tokens and its annotation stay editable.
+ */
+const isSettable = (column) => nativeTypeOf(column.domain) === null
 
 // German counts one of a thing differently, and every count in this panel can
 // be one: a one-row Source, a single unreadable value, a single deciding value.
@@ -233,7 +319,7 @@ async function addFiles(files) {
     // remaining files must still load.
     try {
       const bytes = await file.arrayBuffer()
-      const { source, diagnostics } = props.store.addSource({ bytes, fileName: file.name })
+      const { source, diagnostics } = await props.store.addSource({ bytes, fileName: file.name })
       if (!source) {
         for (const d of diagnostics) failures.push({ ...SEVERITY[d.severity], text: renderText(d) })
       }
@@ -271,23 +357,69 @@ const remove = (id) => {
   props.store.removeSource(id)
   refresh()
 }
-const setEncoding = (id, chosen) => {
-  props.store.overrideEncoding(id, chosen)
-  refresh()
+// The three commands that re-parse are awaited: a binary reader cannot be
+// synchronous, so refreshing before the read has landed would project the
+// previous table (see the note on `createSourceStore`).
+//
+// While one is in flight the control that issued it is disabled and says so. A
+// 2.4 MB workbook takes a third of a second to parse and a slow machine much
+// longer, and a card that stays fully interactive and unchanged for that long
+// invites a second click over the first. The store serializes the commands so
+// nothing is lost either way; this is what stops the user having to find out.
+const parsing = shallowRef({})
+
+const isParsing = (id, control) => parsing.value[id] === control
+
+const reparse = async (id, control, run) => {
+  parsing.value = { ...parsing.value, [id]: control }
+  try {
+    await run()
+  } catch {
+    // A reader that fails is not this path: the store turns that into a
+    // Diagnostic on the card. A rejection here is a programming error, and
+    // letting it escape an event handler would leave an unhandled rejection —
+    // a page error in the built artefact, and a card disabled for good. It goes
+    // to the same visible, dismissible channel a failed file load uses.
+    const failed = props.store.get(id)
+    loadErrors.value = [
+      ...loadErrors.value,
+      {
+        ...SEVERITY.error,
+        text: GERMAN['source.unreadable']({ fileName: failed?.fileName ?? failed?.name ?? '' }),
+      },
+    ]
+  } finally {
+    const rest = { ...parsing.value }
+    delete rest[id]
+    parsing.value = rest
+    refresh()
+  }
 }
-const setDelimiter = (id, delimiter) => {
-  if (delimiter) props.store.reconfigureParse(id, { delimiter })
-  refresh()
-}
+
+const setEncoding = (id, chosen) =>
+  reparse(id, 'encoding', () => props.store.overrideEncoding(id, chosen))
+
+const setDelimiter = (id, delimiter) =>
+  reparse(id, 'delimiter', () =>
+    delimiter ? props.store.reconfigureParse(id, { delimiter }) : undefined,
+  )
+
 const setHeaderRow = (id, raw) => {
   const headerRow = Number(raw)
-  if (Number.isInteger(headerRow) && headerRow >= 1) {
-    props.store.reconfigureParse(id, { headerRow })
-  }
-  // Refresh in every case: on invalid input the bound value snaps the DOM
-  // back to the state the application actually holds.
-  refresh()
+  // Refresh in every case: on invalid input the bound value snaps the DOM back
+  // to the state the application actually holds.
+  return reparse(id, 'headerRow', () =>
+    Number.isInteger(headerRow) && headerRow >= 1
+      ? props.store.reconfigureParse(id, { headerRow })
+      : undefined,
+  )
 }
+
+// A sheet switch re-reads the retained bytes (AD-7). The native domains and the
+// annotations follow their columns by name; the confirmation never does, because
+// every value in the table just changed.
+const setSheet = (id, sheet) =>
+  reparse(id, 'sheet', () => (sheet ? props.store.reconfigureParse(id, { sheet }) : undefined))
 
 // The refusal is state, not a thrown error: an unanswered question is a
 // property of the data, not a caller's bug. It is held per Source so a card can
@@ -374,7 +506,9 @@ const unconfirm = (id) => {
       @dragover.prevent
       @drop.prevent="onDrop"
     >
-      <span>Dateien hierher ziehen oder per Klick auswählen — gelesen werden CSV-Dateien.</span>
+      <!-- The formats come from the reader registry, so this sentence and the
+           refusal below it can never disagree with what the build can open. -->
+      <span>Dateien hierher ziehen oder per Klick auswählen — gelesen werden {{ formatList() }}.</span>
       <input
         type="file"
         multiple
@@ -445,13 +579,26 @@ const unconfirm = (id) => {
           {{ s.fileName }} — {{ rowsLabel(s.table.rowCount) }}, {{ colsLabel(s.table.columns.length) }}
         </p>
 
-        <div class="mt-3 flex flex-wrap items-end gap-4 text-sm">
-          <label class="flex flex-col gap-1">
+        <!-- The parse controls a format actually has, and no others. Which they
+             are is read off the reader's own proposal rather than off a list of
+             formats kept here: a binary Source has no encoding to choose (a
+             workbook is a zip of UTF-8 XML and says so itself), Parquet has no
+             correctable decision at all, and a control rendered over a format
+             that cannot answer it is an invitation to break a good read. -->
+        <div
+          v-if="s.encoding.chosen || s.proposal.delimiter != null || s.proposal.headerRow != null || s.proposal.sheets?.length"
+          class="mt-3 flex flex-wrap items-end gap-4 text-sm"
+        >
+          <label
+            v-if="s.encoding.chosen"
+            class="flex flex-col gap-1"
+          >
             <span class="text-xs text-slate-500">Zeichenkodierung</span>
             <select
               :value="s.encoding.chosen"
               aria-label="Zeichenkodierung"
-              class="rounded border border-slate-200 px-2 py-1"
+              :disabled="isParsing(s.id, 'encoding')"
+              class="rounded border border-slate-200 px-2 py-1 disabled:opacity-50"
               @change="setEncoding(s.id, $event.target.value)"
             >
               <option
@@ -464,12 +611,40 @@ const unconfirm = (id) => {
             </select>
           </label>
 
-          <label class="flex flex-col gap-1">
+          <!-- A workbook with no sheet at all still reports an empty list, and
+               an option-less select is a control with nothing to choose. -->
+          <label
+            v-if="s.proposal.sheets?.length"
+            class="flex flex-col gap-1"
+          >
+            <span class="text-xs text-slate-500">Tabellenblatt</span>
+            <select
+              :value="s.proposal.sheet"
+              aria-label="Tabellenblatt"
+              :disabled="isParsing(s.id, 'sheet')"
+              class="rounded border border-slate-200 px-2 py-1 disabled:opacity-50"
+              @change="setSheet(s.id, $event.target.value)"
+            >
+              <option
+                v-for="name in s.proposal.sheets"
+                :key="name"
+                :value="name"
+              >
+                {{ name }}
+              </option>
+            </select>
+          </label>
+
+          <label
+            v-if="s.proposal.delimiter != null"
+            class="flex flex-col gap-1"
+          >
             <span class="text-xs text-slate-500">Trennzeichen</span>
             <select
               :value="hasDelimiterQuestion(s) ? '' : s.proposal.delimiter"
               aria-label="Trennzeichen"
-              class="rounded border border-slate-200 px-2 py-1"
+              :disabled="isParsing(s.id, 'delimiter')"
+              class="rounded border border-slate-200 px-2 py-1 disabled:opacity-50"
               @change="setDelimiter(s.id, $event.target.value)"
             >
               <option
@@ -495,19 +670,35 @@ const unconfirm = (id) => {
             </select>
           </label>
 
-          <label class="flex flex-col gap-1">
+          <label
+            v-if="s.proposal.headerRow != null"
+            class="flex flex-col gap-1"
+          >
             <span class="text-xs text-slate-500">Kopfzeile</span>
             <input
               type="number"
               min="1"
               :value="s.proposal.headerRow"
               aria-label="Kopfzeile"
-              class="w-20 rounded border border-slate-200 px-2 py-1"
+              :disabled="isParsing(s.id, 'headerRow')"
+              class="w-20 rounded border border-slate-200 px-2 py-1 disabled:opacity-50"
               @change="setHeaderRow(s.id, $event.target.value)"
             >
           </label>
 
-          <span class="pb-1 text-xs text-slate-400">{{ ENCODING_SOURCE[s.encoding.source] }}</span>
+          <!-- role="status" so the wait is announced rather than only shown: a
+               binary read takes long enough that a screen-reader user would
+               otherwise have no signal at all that the card is working. -->
+          <span
+            v-if="parsing[s.id]"
+            role="status"
+            data-testid="parse-pending"
+            class="pb-1 text-xs text-slate-500"
+          >Datei wird neu gelesen …</span>
+          <span
+            v-else-if="s.encoding.source"
+            class="pb-1 text-xs text-slate-400"
+          >{{ ENCODING_SOURCE[s.encoding.source] }}</span>
         </div>
 
         <ul
@@ -571,7 +762,7 @@ const unconfirm = (id) => {
                 <span class="min-w-32 font-semibold text-slate-700">{{ col.name }}</span>
 
                 <label
-                  v-if="isSettable(col.type)"
+                  v-if="isSettable(col)"
                   class="flex flex-col gap-1"
                 >
                   <span class="text-xs text-slate-500">Typ</span>
@@ -596,7 +787,7 @@ const unconfirm = (id) => {
                       Zurück zum Vorschlag
                     </option>
                     <option
-                      v-for="(label, value) in TYPE_LABEL"
+                      v-for="[value, label] in SETTABLE_TYPES"
                       :key="value"
                       :value="value"
                     >
@@ -605,17 +796,20 @@ const unconfirm = (id) => {
                   </select>
                 </label>
 
-                <!-- A type the reader declared and this pane has no word for.
-                     A select whose options lack the current value would show
-                     "Text" and retype the column on the first interaction. -->
+                <!-- A column its format already typed (AD-20). It gets no type
+                     control at all: a select whose options lack its own value
+                     would show "Text" and retype the column on the first
+                     interaction, and the store now refuses that patch anyway.
+                     The German word comes from the catalogue's label map, so a
+                     new type cannot land here as a raw English word. -->
                 <span
                   v-else
                   data-testid="typing-native"
                   class="pb-1 text-xs text-slate-500"
-                >Vom Format vorgegeben: {{ col.type }}</span>
+                >Vom Format vorgegeben: {{ typeLabel(col.type) }}</span>
 
                 <label
-                  v-if="isSettable(col.type) && formatChoices(col.type).length"
+                  v-if="isSettable(col) && formatChoices(col.type).length"
                   class="flex flex-col gap-1"
                 >
                   <span class="text-xs text-slate-500">Lesart</span>

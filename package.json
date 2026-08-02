@@ -14,7 +14,10 @@
     "verify": "npm run lint && npm test && npm run test:e2e"
   },
   "dependencies": {
+    "hyparquet": "1.27.1",
+    "hyparquet-compressors": "1.1.1",
     "papaparse": "5.5.4",
+    "read-excel-file": "9.3.5",
     "vue": "3.5.40"
   },
   "devDependencies": {
@@ -27,9 +30,11 @@
     "eslint-plugin-vue": "10.10.0",
     "globals": "17.8.0",
     "happy-dom": "20.11.1",
+    "hyparquet-writer": "0.16.3",
     "tailwindcss": "4.3.3",
     "vite": "8.2.0",
     "vite-plugin-singlefile": "2.3.3",
-    "vitest": "4.1.10"
+    "vitest": "4.1.10",
+    "write-excel-file": "4.1.1"
   }
 }

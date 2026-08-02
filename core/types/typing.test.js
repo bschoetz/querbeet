@@ -12,6 +12,7 @@ import {
   NUMBER,
   TEXT,
   bestFormat,
+  canonicalTypeGaps,
   detectColumn,
   detectTable,
   numberCandidates,
@@ -281,6 +282,152 @@ describe('a natively typed column (AD-20)', () => {
     expect(r.format).toBeNull()
     expect(r.counts.missing).toBe(1)
     expect(r.verdict).toBe('settled')
+  })
+
+  it('sweeps every cell against the canonical form of its own type', () => {
+    // Until story 4 this branch scored every non-missing cell as parsed, which
+    // only holds for a homogeneous column — and a real XLSX column is not one.
+    // The gate is not a rubber stamp for the natively typed formats.
+    //
+    // Every cell is named as readable or not, one at a time, and the aggregate
+    // is checked against the same list. A count on its own cannot tell a sweep
+    // that rejects the right two from one that rejects the wrong two.
+    const cases = [
+      { domain: 'native:number', reads: ['1234.5', '-0.25', '0', '1e+30'], rejects: [] },
+      // `' 12'` is not in either list: the shared sift trims every cell before
+      // the sweep sees it, exactly as it does for an inferred column, so padding
+      // is not a sweep concern.
+      { domain: 'native:number', reads: ['12'], rejects: ['x', '1.10', '', '0x0c'] },
+      { domain: 'native:number', reads: [], rejects: ['Infinity', 'NaN', '1,5', '007'] },
+      { domain: 'native:date', reads: ['2025-08-01', '2024-02-29'], rejects: [] },
+      {
+        domain: 'native:date',
+        reads: ['1970-01-01'],
+        rejects: ['2025-02-30', '01.08.2025', '2025-8-1', '2025-08-01T00:00:00.000Z'],
+      },
+      {
+        domain: 'native:datetime',
+        reads: ['2025-08-01T14:30:00.000Z', '1970-01-01T00:00:00.000Z'],
+        rejects: [],
+      },
+      {
+        domain: 'native:datetime',
+        reads: [],
+        rejects: ['2025-08-01T14:30:00+02:00', '2025-08-01', '2025-08-01T14:30:00Z'],
+      },
+      { domain: 'native:boolean', reads: ['true', 'false'], rejects: ['True', 'ja', '1', 'TRUE'] },
+    ]
+
+    for (const { domain, reads, rejects } of cases) {
+      // Per cell, so the verdict on each one is named rather than summed away.
+      // `''` is a missing token by default, so it is checked as an absence.
+      for (const cell of reads) {
+        expect([domain, cell, detectColumn([cell], { domain }).counts]).toEqual([
+          domain,
+          cell,
+          { total: 1, missing: 0, parsed: 1, unparsed: 0 },
+        ])
+      }
+      for (const cell of rejects) {
+        const counts = detectColumn([cell], { domain }).counts
+        const verdict = counts.missing === 1 ? 'missing' : counts.unparsed === 1 ? 'rejected' : 'read'
+        expect([domain, cell, verdict]).toEqual([domain, cell, cell === '' ? 'missing' : 'rejected'])
+      }
+
+      // …and the aggregate agrees with the per-cell verdicts.
+      const cells = [...reads, ...rejects]
+      const expectedUnparsed = rejects.filter((cell) => cell !== '').length
+      expect(detectColumn(cells, { domain }).counts).toMatchObject({
+        parsed: reads.length,
+        unparsed: expectedUnparsed,
+      })
+    }
+  })
+
+  it('has a canonical form for every type a reader may declare', () => {
+    // Without the invariant, a type added to the catalogue leaves the sweep's
+    // lookup undefined, the `TypeError` is swallowed into a failed read, and a
+    // perfectly good file is reported to the user as unreadable. Story 4a adds
+    // six types and would land on exactly that. This is what `typeLabelGaps()`
+    // already does for the German words.
+    expect(canonicalTypeGaps()).toEqual([])
+  })
+
+  it('counts the strings riding along in a mixed column, without retyping it', () => {
+    // XLSX delivers `k.A.` and a stray `x` inside a column of real numbers. The
+    // declaration stands — every typed cell agrees — and the two strings are one
+    // absence and one unreadable value, which is a different fact each.
+    const r = detectColumn(['1234.5', 'k.A.', 'x', '80'], { domain: 'native:number' })
+
+    expect(r).toMatchObject({ type: NUMBER, domain: 'native:number', verdict: 'settled' })
+    expect(r.counts).toMatchObject({ total: 4, missing: 1, parsed: 2, unparsed: 1 })
+  })
+
+  it('names an INT64 whose digits no JS number can hold (C-10)', () => {
+    // The cell keeps the exact digits — the Parquet reader is careful to write
+    // them out — but `Number` cannot round-trip them, so story 6's conversion
+    // would silently change the value. Counted as unparsed is what makes the
+    // loss visible instead of silent.
+    const r = detectColumn(['9007199254740993', '9007199254740992', '1'], {
+      domain: 'native:number',
+    })
+
+    expect(r.counts).toMatchObject({ parsed: 2, unparsed: 1 })
+    // The digits themselves are untouched — the finding is the point, not a repair.
+    expect(r.type).toBe(NUMBER)
+  })
+
+  it('discards a native declaration the catalogue does not admit, down to text', () => {
+    // Parquet has TIME, INTERVAL and DECIMAL columns. Taking the word after
+    // `native:` verbatim put one of them through a confirmed typing and into a
+    // conversion nothing implements — and the domain is the part that travels:
+    // story 14 serializes it into the Recipe and story 6 reads it as the
+    // instruction. So the declaration is dropped rather than retained, and the
+    // column is text-domained, detected and settable like any other.
+    const r = detectColumn(['1.234,56', '80,00'], { domain: 'native:decimal' })
+
+    expect(r).toMatchObject({ type: NUMBER, domain: TEXT, verdict: 'settled' })
+    expect(r.format.locale).toBe('de-DE')
+
+    // The word survives as provenance only — a bare type word, never spelled
+    // `native:…`, so no reader of a column record can convert against it.
+    expect(r.refusedNativeType).toBe('decimal')
+    expect(r.domain).not.toContain('native')
+
+    // A column whose values read as nothing is still plain text, both ways.
+    const words = detectColumn(['Anna', 'Bernd'], { domain: 'native:time' })
+    expect(words).toMatchObject({ type: TEXT, domain: TEXT, refusedNativeType: 'time' })
+
+    // …and so is one that is nothing but missing values.
+    const empty = detectColumn(['', '-'], { domain: 'native:interval' })
+    expect(empty).toMatchObject({ type: TEXT, domain: TEXT, refusedNativeType: 'interval' })
+  })
+
+  it('leaves an admissible declaration and a plain text column with no refusal to report', () => {
+    expect(detectColumn(['1'], { domain: 'native:number' }).refusedNativeType).toBeNull()
+    expect(detectColumn(['Anna']).refusedNativeType).toBeNull()
+  })
+
+  it('discards a refused declaration on the re-score path too', () => {
+    // `scoreColumn` is the other way into a column record — the one a chosen
+    // type takes. A declaration discarded on one route and kept on the other
+    // would put the unknown word back on the record on the user's next edit.
+    const scored = scoreColumn(['1.234,56'], {
+      type: NUMBER,
+      format: numberCandidates().find((c) => c.locale === 'de-DE'),
+      domain: 'native:decimal',
+    })
+
+    expect(scored.domain).toBe(TEXT)
+    expect(scored.refusedNativeType).toBe('decimal')
+  })
+
+  it('does not offer a native column a reading to choose', () => {
+    // `format` is what a locale question is asked through, and a format already
+    // answered the question. A reading here would be a second, contradictory one.
+    for (const domain of ['native:number', 'native:date', 'native:datetime', 'native:boolean']) {
+      expect(detectColumn(['x'], { domain }).format).toBeNull()
+    }
   })
 })
 

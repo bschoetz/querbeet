@@ -2,8 +2,9 @@
 title: 'Story 4 — XLSX and Parquet Sources'
 type: 'feature'
 created: '2026-08-02'
-status: 'ready-for-dev'
-review_loop_iteration: 0
+status: 'done'
+review_loop_iteration: 1
+baseline_commit: '72c19a51de907d0475eef439de2c89d1c6323015'
 context:
   - '_bmad-output/planning-artifacts/architecture/architecture-querbeet-2026-08-02/ARCHITECTURE-SPINE.md'
   - '_bmad-output/planning-artifacts/research/technical-file-formats-and-parsing-2026-08-01/research.md'
@@ -79,15 +80,15 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `package.json` — add `read-excel-file@9.3.5`, `hyparquet@1.27.1` (runtime), `write-excel-file@4.1.1`, `hyparquet-writer@0.16.3` (dev) — the Ask-First answered by this spec's approval.
-- [ ] `core/types/catalog.js` + test — one declaration per type; `typing.js`, `source-store.js` and `SourcesPane.vue` read it instead of restating it.
-- [ ] `core/types/typing.js` + `typing.test.js` — the real native sweep: canonical forms per type, BigInt round-trip, mixed-column counts, and a native type off the list falling to `text` with a warning.
-- [ ] `adapters/xlsx/xlsx-reader.js` + test — sheets, header proposal, type map, canonical cells, mixed-column rule, `xlsx.empty`.
-- [ ] `adapters/parquet/parquet-reader.js` + test — schema-driven columns, type map, nested-to-JSON rule, zero-row schema.
-- [ ] `core/exec/source-store.js` + test — native retype refusal, `sheet` through `reconfigureParse`, sheet-switch re-read semantics.
-- [ ] `ui/SourcesPane.vue` + test — per-format controls, domain-guarded type select, German native labels, sheet select.
-- [ ] `app/main.js` — wire both readers.
-- [ ] `tests/e2e/xlsx-parquet.spec.js` — generated fixtures, both engines, incl. the ≥ 512 KB worker-path file and the native re-read journey.
+- [x] `package.json` — add `read-excel-file@9.3.5`, `hyparquet@1.27.1` (runtime), `write-excel-file@4.1.1`, `hyparquet-writer@0.16.3` (dev) — the Ask-First answered by this spec's approval.
+- [x] `core/types/catalog.js` + test — one declaration per type; `typing.js`, `source-store.js` and `SourcesPane.vue` read it instead of restating it.
+- [x] `core/types/typing.js` + `typing.test.js` — the real native sweep: canonical forms per type, BigInt round-trip, mixed-column counts, and a native type off the list falling to `text` with a warning.
+- [x] `adapters/xlsx/xlsx-reader.js` + test — sheets, header proposal, type map, canonical cells, mixed-column rule, `xlsx.empty`.
+- [x] `adapters/parquet/parquet-reader.js` + test — schema-driven columns, type map, nested-to-JSON rule, zero-row schema.
+- [x] `core/exec/source-store.js` + test — native retype refusal, `sheet` through `reconfigureParse`, sheet-switch re-read semantics.
+- [x] `ui/SourcesPane.vue` + test — per-format controls, domain-guarded type select, German native labels, sheet select.
+- [x] `app/main.js` — wire both readers.
+- [x] `tests/e2e/xlsx-parquet.spec.js` — generated fixtures, both engines, incl. the ≥ 512 KB worker-path file and the native re-read journey.
 
 **Acceptance Criteria:**
 - Given the built artefact with both libraries, when `npm run build` runs, then the AD-18 gate passes: one file, zero `fetch(`, zero `import(`.
@@ -99,6 +100,56 @@ context:
 - Given `npm run verify`, then lint, both Vitest projects and Playwright (Chromium + Firefox, `file://`) pass.
 
 ## Spec Change Log
+
+### 2026-08-02 — Ask First answered by the project owner: `hyparquet-compressors` is in
+
+**The question.** The Boundaries make any runtime dependency beyond `read-excel-file` and `hyparquet` an Ask First. Bare `hyparquet` decompresses UNCOMPRESSED and SNAPPY only, so a Parquet written with GZIP, ZSTD, BROTLI or LZ4 — ordinary defaults across the Spark, pandas and DuckDB ecosystems — could not be read at all. Review round 1 made the refusal honest (`parquet.unsupported_codec` names the codec and says the file is in order); it could not make the file readable. The question was logged and put to the owner.
+
+**The answer: add it.** `hyparquet-compressors@1.1.1`, MIT, 161 KB unpacked, same author family as hyparquet. Its dependencies are `fzstd` (pure JS zstd) and `hysnappy` (WASM snappy); GZIP, Brotli and LZ4 are hand-written JavaScript inside the package. It is passed to `parquetRead` as `compressors`, and `SUPPORTED_CODECS` is derived from the map rather than restated, so a codec the package gains or loses cannot leave the guard behind.
+
+**Why the WASM is not the thing the spine rejected.** AD-17 and AD-18 sank `parquet-wasm` and DuckDB-WASM over multi-MB payloads **fetched at runtime**. This is neither: hysnappy's module is base64-inlined in the source and instantiated with `atob` plus `new WebAssembly.Module` — no `fetch`, no `import(`, no second file. No architecture decision forbids WebAssembly as such. Confirmed by building, not assumed: the gate stays green and `dist/index.html` went from 246,399 to **361,045 bytes**, still one file.
+
+**The one real risk, and where it is pinned.** Chrome refuses a synchronous `new WebAssembly.Module` larger than **4,096 bytes** on the main thread. The decoded module is **3,458 bytes** — a margin of **638**. If a future version crosses it, instantiation throws in Chromium and nowhere else: not under Node, not in the dev server, only in the shipped artefact opened by double-click. That is the exact class of silent build-time failure AD-18 exists for, so it is asserted twice. `scripts/assert-single-file.mjs` locates the inlined module by its `AGFzbQ` base64 preamble — the base64 of WASM's `\0asm` magic — reports its size and remaining margin, and **fails the build** at the ceiling. And `tests/e2e/xlsx-parquet.spec.js` loads a snappy Parquet from the built `dist/index.html` in both engines and asserts the cell values, because a Vitest case would pass under Node whatever Chrome does with it. hyparquet's `decompressPage` prefers a supplied decompressor over its own, so that test genuinely exercises the WASM rather than the pure-JS fallback.
+
+**Coverage, stated rather than implied.** Four of the six codecs are round-tripped against really-compressed bytes — SNAPPY, UNCOMPRESSED, GZIP, BROTLI — each with the codec recorded in the metadata asserted, so an identity function cannot pass for compression. ZSTD and LZ4 have no fixture: nothing in this tree can write them. Logged in `deferred-work.md` as a fixture gap rather than left to look like coverage.
+
+**`parquet.unsupported_codec` stays.** It was the wrong answer for gzip and ZSTD; it is the right answer for LZO and for whatever the format adds next. Its comment says so, so a later reader does not take it for dead code and delete it.
+
+### 2026-08-02 — review round 1: what three review layers found, and what changed because of it
+
+**Two silent wrong answers, and they are the reason this entry exists.**
+
+*A DECIMAL was corrupted on the way in.* hyparquet computes `parseDecimal(bytes) * 10 ** -scale` in floating point, so an unscaled `123456789` at scale 2 arrives as `1234567.8900000001` — and that round-trips, so the canonical sweep counted it **parsed** and a wrong amount reached the card with no warning at all. This is the C-10 class the INT64 case has a test, a warning and a matrix row for, arriving through a door nobody had checked. The reader now recovers the figure from the *declared* scale, which is arithmetic against the schema rather than a guess about a value. Where the unscaled integer is past `Number.MAX_SAFE_INTEGER` the figure is not recoverable, and the cell then carries the double's own exact expansion — everything that arrived, nothing invented — which fails the round trip, is counted unparsed, and raises `parquet.decimal_precision` besides. The old test picked three values that happen to survive the multiply, so the suite certified the corruption; the new ones use values that break.
+
+*An XLSX header cell that was not a string became a timezone-dependent column name.* `String(aDate)` yields `Fri Aug 01 2025 02:00:00 GMT+0200 (Mitteleuropäische Sommerzeit)` — the same local-zone sentence this story forbids for cell values, in the one place it had not been forbidden. A header row of dates is an ordinary monthly-report shape, and because annotations and chosen types are carried across a re-read **by name**, a name that moves with the clock quietly breaks that carry-over. Header cells now go through the same canonicalization as values.
+
+**One correctness bug all three layers found independently.** `reconfigureParse` and `overrideEncoding` captured the entry synchronously and committed after the await, so two overlapping re-reads let the one that *resolved* last win rather than the one that was *asked* last — choose a sheet, correct the header row before the sheet lands, and the sheet switch is gone with the file read on the wrong sheet. A `setColumnTyping` or `annotateColumn` issued during a parse was overwritten by the stale commit the same way. On the binary formats this story adds, a parse takes seconds, so it is reachable by ordinary clicking. Parses are now serialized per Source, each command merges against the entry the one before it left behind, and a finished read commits onto the entry as it stands rather than the snapshot it began with. The queue continues through a rejection, so one failed read cannot wedge a Source. Covered with a reader that resolves on a controllable deferred, which is the only way to hold two reads open at once — no test in this suite could represent an overlap before.
+
+**Two ways one bad column cost a whole file.** An Invalid or out-of-range `Date` made `toISOString` throw in both adapters, and `INTERVAL` and `BSON` throw inside hyparquet's own row conversion — in every case the user lost the Source over one cell or one column. Dates now canonicalize to `''` and are counted by the sweep; the two refused converted types are identified from the schema and left out of the read, with the column reported as `parquet.unreadable_column` and every other column read in full. Only `TIME_MILLIS` had been tested, which is the one unsupported type that happens not to throw.
+
+**Six things that were true and unsaid.** A codec hyparquet cannot decompress surfaced as "damaged, password-protected, or not the format its extension claims" — three diagnoses, all three wrong for a valid gzip Parquet; adapters may now attach a `code` to what they throw and the store forwards it, so the card names the codec and says the file is in order. Sub-millisecond timestamp precision, non-finite doubles, blank header cells and repeated header names each got a diagnostic. And the unhonoured parse decisions — a clamped header row, a sheet that no longer exists — are now adopted from the reader's proposal instead of lingering in `parseConfig`, which also makes the sheet fallback clearable in one action and stops re-choosing the sheet already on screen from counting as a switch.
+
+**Two invariants and one restatement.** `CANONICAL` now has the same completeness test the German labels already had, so a type added to the catalogue without a canonical form is a red test rather than a good file reported as unreadable. `type: null` on a native column is a no-op reset again rather than a throw — it withdraws a choice, it does not retype, and story 3 shipped "Zurück zum Vorschlag" as the fix for exactly that defect. And the user-visible format list is derived from the reader registry rather than hand-kept in two sentences.
+
+**Pending state.** The four parse controls disable the one that is reading and announce it through `role="status"`. A card that stays fully interactive and unchanged for seconds is the invitation to the overlap above.
+
+### 2026-08-02 — matrix audit: a refused native declaration is discarded, not retained
+
+**The conflict.** The matrix row "Native type off the list" reads `text`, and the first implementation read that as the *type* only: the column fell back to full detection but kept `domain: 'native:decimal'` on its record. The sibling row "Typed cells disagree" is asserted as `domain === 'text'`, and the acceptance criterion adds "no unknown word reaches a confirmed typing" — the domain is precisely the part that would carry it. Story 14 serializes the domain into the Recipe and story 6 reads it as the instruction for a conversion, so a retained `native:decimal` is the unknown word arriving downstream by a different door.
+
+**What changed.** `core/types/typing.js` gained `readDeclaration`, the one place a reader's domain is read. An admissible declaration passes through; a refused one is **discarded down to `text`**, and the bare word survives on the column record as `refusedNativeType` — provenance, never spelled `native:…`, so no reader of a record can convert against it. `detectColumn` and `scoreColumn` both go through it, so the two routes into a record cannot disagree. `typingDiagnostics` reads the field instead of re-deriving from the domain, which is what keeps the warning alive across a recount. `refusedNativeType()` was removed from `core/types/catalog.js` rather than left as a second way to ask a question the domain can no longer answer, and `setColumnTyping` now guards against the *reader's* domain (`entry.table.columns[i].domain`) rather than the record's copy of it, since the two differ exactly on a refused declaration — and a refused column is settable.
+
+### 2026-08-02 — decided during dev, without the owner, because neither library can be synchronous
+
+**The Ask-First this touches.** "Changing `SourceReader`'s return shape beyond the format-specific `config`/`proposal` fields already declared." The project owner was away; the decision was taken alone and is recorded here so it can be overruled cheaply.
+
+**The finding.** `SourceReader.read` was synchronous, and neither binary reader can be. `read-excel-file` 9.3.5 unzips through fflate's callback API (`unzipFromArrayBufferSync` exists in the package but calls `.then` on a plain object and is dead code) and parses each XML file through a promise-returning SAX pass; `hyparquet` reads through an async buffer. There is no entry point in either package that returns a table without a `Promise` in the chain.
+
+**What was decided.** `read` may return a result **or a Promise of one**. The store awaits either, which makes exactly the three commands that parse — `addSource`, `overrideEncoding`, `reconfigureParse` — return Promises; every other command stays synchronous, and argument validation still throws synchronously, because a bad argument is a caller's bug and not a state of the data. `ports/index.js` carries the contract, `core/exec/source-store.js` carries the reason, and `ui/SourcesPane.vue` awaits the three handlers.
+
+**What was rejected, and why.** Holding a decoded intermediate per Source — the sheet arrays out of `readXlsxFile` — would have kept the store synchronous, and it was rejected because the Boundaries say a sheet switch **re-reads the retained bytes (AD-7)**. A second copy of every Source's rows, held only to avoid an `await`, is the registry AD-7 exists to refuse.
+
+**Blast radius.** `core/exec/source-store.test.js` gained `await` at 48 call sites; nothing else in the tree called a reader. `npm run verify` is green: lint, both Vitest projects, Playwright in Chromium and Firefox from `file://`.
 
 ### 2026-08-02 — renegotiated by the project owner, before dev
 
@@ -124,3 +175,73 @@ context:
 - `npm run lint` — clean; `core/` and `adapters/` stay DOM-free.
 - `npm test` — both Vitest projects; the sweep matrix and both adapters green.
 - `npm run test:e2e` — builds `dist/`, asserts AD-18, runs both engines from `file://`.
+
+## Suggested Review Order
+
+**The type vocabulary, declared once**
+
+- Start here: one record per type, carrying who may set it and who may declare it natively.
+  [`catalog.js:39`](../../core/types/catalog.js#L39)
+
+- The one place a reader's `native:<type>` declaration is read; a refused word is discarded, not retained.
+  [`typing.js:385`](../../core/types/typing.js#L385)
+
+- The canonical form per native type — what the sweep actually checks each cell against.
+  [`typing.js:305`](../../core/types/typing.js#L305)
+
+- Completeness invariant: a native type without a canonical form is a build-visible gap, not a corrupt-file report.
+  [`typing.js:322`](../../core/types/typing.js#L322)
+
+**Numbers that must not lie**
+
+- DECIMAL recovered from the schema's declared scale; past 2^53 nothing is invented and the round trip fails.
+  [`parquet-reader.js:191`](../../adapters/parquet/parquet-reader.js#L191)
+
+- Cells canonicalized to text; an out-of-range date yields `''` rather than taking the file down.
+  [`xlsx-reader.js:58`](../../adapters/xlsx/xlsx-reader.js#L58)
+
+**A file degrades, it does not disappear**
+
+- Codec checked against what this build carries, before any page is read.
+  [`parquet-reader.js:88`](../../adapters/parquet/parquet-reader.js#L88)
+
+- INTERVAL and BSON identified from the schema and excluded from the read — one column, not the Source.
+  [`parquet-reader.js:270`](../../adapters/parquet/parquet-reader.js#L270)
+
+- Header cells go through the same canonicalization as values, so no column is named in a local timezone.
+  [`xlsx-reader.js:87`](../../adapters/xlsx/xlsx-reader.js#L87)
+
+**Async commands that cannot clobber each other**
+
+- Parses serialized per Source; the queue is why a second click cannot lose the first.
+  [`source-store.js:189`](../../core/exec/source-store.js#L189)
+
+- The entry is fetched inside the queue, never captured outside it.
+  [`source-store.js:441`](../../core/exec/source-store.js#L441)
+
+- Patches merged against the config the previous command left, not against a stale snapshot.
+  [`source-store.js:489`](../../core/exec/source-store.js#L489)
+
+- Retype refusal guarded by the reader's domain, so a refused declaration stays settable.
+  [`source-store.js:560`](../../core/exec/source-store.js#L560)
+
+**What the user sees while it happens**
+
+- One wrapper owns pending state, re-enabling and routing a failed parse to the visible error list.
+  [`SourcesPane.vue:373`](../../ui/SourcesPane.vue#L373)
+
+- The format list derived from the reader registry rather than restated in prose.
+  [`SourcesPane.vue:44`](../../ui/SourcesPane.vue#L44)
+
+**The gate**
+
+- Inlined WASM located by its `AGFzbQ` preamble and failed at Chrome's 4,096-byte sync-compile ceiling.
+  [`assert-single-file.mjs:110`](../../scripts/assert-single-file.mjs#L110)
+
+**Peripherals**
+
+- The snappy journey that proves the inlined WASM runs in the built artefact, where a Vitest case could not.
+  [`xlsx-parquet.spec.js:283`](../../tests/e2e/xlsx-parquet.spec.js#L283)
+
+- Reader registration, the one place adapters are named (AD-1).
+  [`main.js:1`](../../app/main.js#L1)

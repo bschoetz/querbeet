@@ -9,7 +9,9 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
+import { TYPES } from '@core/types/catalog.js'
 import SourcesPane from './SourcesPane.vue'
+import { settableTypeLabels, typeLabel, typeLabelGaps } from './type-labels.js'
 
 const column = (name, over = {}) => ({
   name,
@@ -22,6 +24,7 @@ const column = (name, over = {}) => ({
   evidence: null,
   missingTokens: ['', '-'],
   domain: 'text',
+  refusedNativeType: null,
   ...over,
 })
 
@@ -40,10 +43,11 @@ const source = (columns, over = {}) => ({
 })
 
 /** A store that records what it was told and answers what the test set up. */
-const stubStore = (entry, { unresolved = [] } = {}) => {
+const stubStore = (entry, { unresolved = [], formats = ['csv', 'xlsx', 'parquet'] } = {}) => {
   const calls = []
   return {
     calls,
+    formats: () => formats,
     list: () => [entry],
     get: () => entry,
     addSource: () => ({ source: entry, diagnostics: [] }),
@@ -343,6 +347,170 @@ describe('the confirmation', () => {
   })
 })
 
+describe('the parse controls a format actually has', () => {
+  // Which controls a card renders is read off the reader's own proposal, not off
+  // a list of formats kept in the pane: a control over a decision the format
+  // does not have is an invitation to break a good read.
+
+  const workbook = (over = {}) =>
+    source([column('Menge', { type: 'number', domain: 'native:number' })], {
+      fileName: 'bericht.xlsx',
+      encoding: { chosen: null, source: null, override: null },
+      parseConfig: { delimiter: null, headerRow: null, sheet: null },
+      proposal: { headerRow: 1, sheet: 'Umsatz', sheets: ['Umsatz', 'Kosten', 'Notizen'] },
+      ...over,
+    })
+
+  it('gives a workbook a sheet and a header row, and no encoding or delimiter', async () => {
+    const w = await render(stubStore(workbook()))
+
+    expect(w.find('select[aria-label="Tabellenblatt"]').exists()).toBe(true)
+    expect(w.find('input[aria-label="Kopfzeile"]').exists()).toBe(true)
+    expect(w.find('select[aria-label="Zeichenkodierung"]').exists()).toBe(false)
+    expect(w.find('select[aria-label="Trennzeichen"]').exists()).toBe(false)
+  })
+
+  it('offers every sheet in the workbook and shows the one that was read', async () => {
+    const w = await render(stubStore(workbook()))
+    const select = w.get('select[aria-label="Tabellenblatt"]')
+
+    expect(select.findAll('option').map((o) => o.text())).toEqual([
+      'Umsatz',
+      'Kosten',
+      'Notizen',
+    ])
+    expect(select.element.value).toBe('Umsatz')
+  })
+
+  it('issues the sheet switch as a parse correction', async () => {
+    const store = stubStore(workbook())
+    const w = await render(store)
+
+    await w.get('select[aria-label="Tabellenblatt"]').setValue('Kosten')
+
+    expect(store.calls).toContainEqual(['reconfigureParse', 'src:daten', { sheet: 'Kosten' }])
+  })
+
+  it('gives a Parquet Source no parse controls at all — its schema is the answer', async () => {
+    const w = await render(
+      stubStore(
+        workbook({
+          fileName: 'umsatz.parquet',
+          proposal: {},
+        }),
+      ),
+    )
+
+    expect(w.find('select[aria-label="Tabellenblatt"]').exists()).toBe(false)
+    expect(w.find('input[aria-label="Kopfzeile"]').exists()).toBe(false)
+    expect(w.find('select[aria-label="Zeichenkodierung"]').exists()).toBe(false)
+    expect(w.find('select[aria-label="Trennzeichen"]').exists()).toBe(false)
+  })
+
+  it('leaves a CSV card with all three of its own controls', async () => {
+    const w = await render(stubStore(source([column('Kunde')])))
+
+    expect(w.find('select[aria-label="Zeichenkodierung"]').exists()).toBe(true)
+    expect(w.find('select[aria-label="Trennzeichen"]').exists()).toBe(true)
+    expect(w.find('input[aria-label="Kopfzeile"]').exists()).toBe(true)
+    expect(w.find('select[aria-label="Tabellenblatt"]').exists()).toBe(false)
+  })
+
+  it('renders no sheet control for a workbook that reports no sheets', async () => {
+    // An empty list is truthy; an option-less select is a control with nothing
+    // to choose in it.
+    const w = await render(
+      stubStore(workbook({ proposal: { headerRow: null, sheet: null, sheets: [] } })),
+    )
+
+    expect(w.find('select[aria-label="Tabellenblatt"]').exists()).toBe(false)
+  })
+
+  it('disables the control that is reading, and says the card is busy', async () => {
+    // A binary read takes a third of a second on a 2.4 MB workbook and much
+    // longer on a slow machine. A card that stays fully interactive and
+    // unchanged for that long invites a second click over the first.
+    let release
+    const store = stubStore(workbook())
+    store.reconfigureParse = () => new Promise((resolve) => { release = resolve })
+    const w = await render(store)
+
+    const sheet = w.get('select[aria-label="Tabellenblatt"]')
+    await sheet.setValue('Kosten')
+    await nextTick()
+
+    expect(sheet.attributes('disabled')).toBeDefined()
+    expect(w.get('[data-testid="parse-pending"]').text()).toBe('Datei wird neu gelesen …')
+    // Announced, not only shown: a screen-reader user otherwise gets no signal
+    // that the card is working at all.
+    expect(w.get('[data-testid="parse-pending"]').attributes('role')).toBe('status')
+    // Only the control that is reading; the header row beside it stays usable.
+    expect(w.get('input[aria-label="Kopfzeile"]').attributes('disabled')).toBeUndefined()
+
+    release()
+    await nextTick()
+    await nextTick()
+
+    expect(w.get('select[aria-label="Tabellenblatt"]').attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-testid="parse-pending"]').exists()).toBe(false)
+  })
+
+  it('re-enables the control when the command rejects, and says so instead of crashing', async () => {
+    // A card left permanently disabled by one failed read is worse than the
+    // overlap the disabling exists to prevent — and a rejection escaping an
+    // event handler is an unhandled rejection, which is a page error in the
+    // built artefact that `single-file.spec.js` asserts never happens.
+    const store = stubStore(workbook())
+    store.reconfigureParse = () => Promise.reject(new Error('reader broke'))
+    const w = await render(store)
+
+    await w.get('select[aria-label="Tabellenblatt"]').setValue('Kosten')
+    await nextTick()
+    await nextTick()
+
+    expect(w.get('select[aria-label="Tabellenblatt"]').attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-testid="parse-pending"]').exists()).toBe(false)
+    expect(w.text()).toContain('konnte nicht gelesen werden')
+  })
+})
+
+describe('the formats this build can read', () => {
+  // Two sentences name them to the user. Both come from the reader registry
+  // `app/` wired up, so neither can promise a format the build cannot open —
+  // the same restatement problem `core/types/catalog.js` was written to end.
+  const withFormats = (formats) =>
+    stubStore(
+      source([column('Kunde')], {
+        diagnostics: [
+          {
+            severity: 'error',
+            code: 'source.unsupported_format',
+            values: { fileName: 'bericht.ods', extension: 'ods' },
+          },
+        ],
+      }),
+      { formats },
+    )
+
+  it('names them in the drop zone and in the refusal, from one source', async () => {
+    const w = await render(withFormats(['csv', 'xlsx', 'parquet']))
+
+    expect(w.get('[data-testid="drop-zone"]').text()).toContain(
+      'gelesen werden CSV-, XLSX- und Parquet-Dateien',
+    )
+    expect(w.text()).toContain(
+      '„bericht.ods“ hat ein nicht unterstütztes Format — gelesen werden derzeit CSV-, XLSX- und Parquet-Dateien.',
+    )
+  })
+
+  it('follows the registry rather than a sentence kept by hand', async () => {
+    const w = await render(withFormats(['csv']))
+
+    expect(w.get('[data-testid="drop-zone"]').text()).toContain('gelesen werden CSV-Dateien')
+    expect(w.text()).not.toContain('XLSX')
+  })
+})
+
 describe('the column edits', () => {
   it('sends a type change without a reading, and lets detection pick one', async () => {
     // Handing over the first candidate on the list would give an Anglo column
@@ -413,16 +581,52 @@ describe('the column edits', () => {
     expect(at).toBe(1)
   })
 
-  it('leaves a type the format already decided alone', async () => {
-    // `native:boolean` from an XLSX sheet, once story 4 lands. A select whose
-    // options lack the current value would show "Text" and retype the column on
-    // the first interaction.
+  it('leaves a type the format already decided alone, in German', async () => {
+    // `native:boolean` out of an XLSX sheet. A select whose options lack the
+    // current value would show "Text" and retype the column on the first
+    // interaction — and the store now refuses that patch outright.
     const w = await render(
       stubStore(source([column('Aktiv', { type: 'boolean', domain: 'native:boolean' })])),
     )
 
     expect(w.find('select[aria-label="Typ: Aktiv"]').exists()).toBe(false)
-    expect(w.find('[data-testid="typing-native"]').text()).toContain('boolean')
+    expect(w.find('select[aria-label="Lesart: Aktiv"]').exists()).toBe(false)
+    expect(w.find('[data-testid="typing-native"]').text()).toBe(
+      'Vom Format vorgegeben: Wahrheitswert',
+    )
+  })
+
+  it('guards the type control by domain, not by type', async () => {
+    // `native:number` has type `number`, which is perfectly settable — the old
+    // type-keyed guard handed it the full select and let a user re-infer a
+    // column its format had already answered for (AD-20).
+    const w = await render(
+      stubStore(source([column('Menge', { type: 'number', domain: 'native:number' })])),
+    )
+
+    expect(w.find('select[aria-label="Typ: Menge"]').exists()).toBe(false)
+    expect(w.find('[data-testid="typing-native"]').text()).toBe('Vom Format vorgegeben: Zahl')
+
+    // What documents the column, rather than typing it, stays editable.
+    expect(w.find('input[aria-label="Fehlende Werte: Menge"]').exists()).toBe(true)
+    expect(w.find('input[aria-label="Notiz: Menge"]').exists()).toBe(true)
+  })
+
+  it('keeps the select in step with the catalogue, and refuses a type it has no German word for', () => {
+    // The two lists this pane used to restate are one list now. A type added to
+    // the catalogue without a German word is a failing test here rather than an
+    // English word on a Source card.
+    expect(typeLabelGaps()).toEqual([])
+    expect(settableTypeLabels()).toEqual([
+      ['text', 'Text'],
+      ['number', 'Zahl'],
+      ['date', 'Datum'],
+    ])
+    // …and every type the catalogue admits natively has a word too, since a
+    // native column renders one and can never render a select.
+    for (const type of TYPES.filter((t) => t.native)) {
+      expect(typeLabel(type.code)).not.toBe(type.code)
+    }
   })
 })
 
@@ -471,5 +675,146 @@ describe('the typing diagnostics in German', () => {
     )
 
     expect(w.text()).toContain('ein Wert von 900 lässt sich')
+  })
+
+  it('renders the German for every code the two binary readers can emit', async () => {
+    // Each of these is produced by an adapter and rendered only here. Without a
+    // case per code, a missing entry in the map surfaces as the fallback
+    // sentence in front of a user rather than as a red test.
+    const w = await render(
+      stubStore(
+        source([column('Kunde')], {
+          diagnostics: [
+            { severity: 'warning', code: 'xlsx.empty', values: { sheet: 'Leer' } },
+            { severity: 'warning', code: 'xlsx.empty', values: { sheet: '' } },
+            {
+              severity: 'warning',
+              code: 'xlsx.sheet_missing',
+              values: { sheet: 'Vertrieb', using: 'Umsatz' },
+            },
+            {
+              severity: 'warning',
+              code: 'xlsx.mixed_types',
+              values: { column: 'Wert', kinds: ['date', 'number'] },
+            },
+            {
+              severity: 'warning',
+              code: 'parquet.nested_column',
+              values: { column: 'positionen' },
+            },
+            {
+              severity: 'warning',
+              code: 'parquet.unsupported_type',
+              values: { column: 'Dauer', type: 'TIME_MILLIS' },
+            },
+            { severity: 'warning', code: 'xlsx.blank_header', values: { columns: [2] } },
+            { severity: 'warning', code: 'xlsx.blank_header', values: { columns: [2, 5] } },
+            { severity: 'warning', code: 'xlsx.duplicate_header', values: { columns: ['Betrag'] } },
+            {
+              severity: 'warning',
+              code: 'parquet.unreadable_column',
+              values: { column: 'dauer', type: 'INTERVAL' },
+            },
+            {
+              severity: 'warning',
+              code: 'parquet.decimal_precision',
+              values: { column: 'preis', values: 1 },
+            },
+            {
+              severity: 'warning',
+              code: 'parquet.decimal_precision',
+              values: { column: 'preis', values: 4 },
+            },
+            {
+              severity: 'warning',
+              code: 'parquet.timestamp_precision',
+              values: { column: 'erfasst', unit: 'MICROS' },
+            },
+            {
+              severity: 'warning',
+              code: 'parquet.timestamp_precision',
+              values: { column: 'erfasst', unit: 'NANOS' },
+            },
+            {
+              severity: 'warning',
+              code: 'parquet.non_finite_number',
+              values: { column: 'quote', values: 1 },
+            },
+            {
+              severity: 'warning',
+              code: 'parquet.non_finite_number',
+              values: { column: 'quote', values: 3 },
+            },
+            {
+              severity: 'error',
+              code: 'parquet.unsupported_codec',
+              values: { fileName: 'umsatz.parquet', codec: 'GZIP' },
+            },
+          ],
+        }),
+      ),
+    )
+
+    const text = w.text()
+    expect(text).toContain('Das Tabellenblatt „Leer“ ist leer')
+    expect(text).toContain('Die Arbeitsmappe enthält kein Tabellenblatt')
+    expect(text).toContain('Das Tabellenblatt „Vertrieb“ gibt es in dieser Datei nicht mehr')
+    // The kinds come through the catalogue's German words, not as `date, number`.
+    expect(text).toContain(
+      'Spalte „Wert“ enthält Werte verschiedener Excel-Typen (Datum, Zahl) — sie wird als Text gelesen',
+    )
+    expect(text).toContain('Spalte „positionen“ ist verschachtelt (Liste, Map oder Struktur)')
+    expect(text).toContain('Spalte „Dauer“ hat den Parquet-Typ TIME_MILLIS')
+    // Both German numbers of each countable sentence — "eine Spalte" against a
+    // list, one value against several.
+    expect(text).toContain('In der Kopfzeile ist Spalte 2 leer')
+    expect(text).toContain('In der Kopfzeile sind die Spalten 2, 5 leer')
+    expect(text).toContain('Die Kopfzeile vergibt „Betrag“ mehrfach')
+    expect(text).toContain('Spalte „dauer“ hat den Parquet-Typ INTERVAL, den querbeet nicht')
+    expect(text).toContain('Spalte „preis“: ein Wert hat mehr Stellen')
+    expect(text).toContain('Spalte „preis“: 4 Werte haben mehr Stellen')
+    expect(text).toContain('Spalte „erfasst“ ist in Mikrosekunden gespeichert')
+    expect(text).toContain('Spalte „erfasst“ ist in Nanosekunden gespeichert')
+    expect(text).toContain('Spalte „quote“ enthält einen Wert, der keine Zahl ist')
+    expect(text).toContain('Spalte „quote“ enthält 3 Werte, die keine Zahlen sind')
+    // The codec message says the file is fine, because it is — the old sentence
+    // offered three diagnoses and all three were wrong.
+    expect(text).toContain('ist mit dem Verfahren GZIP komprimiert')
+    expect(text).toContain('Die Datei ist in Ordnung')
+    expect(text).not.toContain('Unbekannte Meldung aus dem Kern.')
+  })
+
+  it('names a refused native type in German, and still offers the column a type', async () => {
+    // A Parquet TIME or DECIMAL column. The declaration was discarded in
+    // core/types, so the column is text-domained and settable like any other —
+    // and the word it was refused for is on the record as provenance, which is
+    // what the sentence names.
+    const store = stubStore(
+      source([column('Preis', { type: 'number', domain: 'text', refusedNativeType: 'decimal' })], {
+        diagnostics: [
+          {
+            severity: 'warning',
+            code: 'typing.unknown_native_type',
+            values: { column: 'Preis', type: 'decimal' },
+          },
+        ],
+      }),
+    )
+    const w = await render(store)
+
+    expect(w.text()).toContain(
+      'Spalte „Preis“ wurde vom Dateiformat als „decimal“ angekündigt — diesen Typ kennt querbeet nicht',
+    )
+    expect(w.text()).not.toContain('Unbekannte Meldung aus dem Kern.')
+
+    // Settable, and no "vom Format vorgegeben" claim: nothing about this column
+    // was settled by its format.
+    expect(w.find('[data-testid="typing-native"]').exists()).toBe(false)
+    const select = w.get('select[aria-label="Typ: Preis"]')
+    expect(select.findAll('option').map((o) => o.text())).toEqual(['Text', 'Zahl', 'Datum'])
+    expect(select.element.value).toBe('number')
+
+    await select.setValue('text')
+    expect(store.calls).toContainEqual(['setColumnTyping', 'src:daten', 0, { type: 'text' }])
   })
 })
