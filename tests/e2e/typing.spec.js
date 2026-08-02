@@ -65,8 +65,29 @@ test('a German export is typed on arrival, and says what it read', async ({ page
   )
 
   // 31.12. can only be a day-month reading, so this column was decided by
-  // evidence rather than by a silent preference — and it says so.
-  await expect(card.getByTestId('typing-verdict')).toContainText('lassen sich nur als TT.MM.JJJJ')
+  // evidence rather than by a silent preference — and it says so, in the
+  // singular, because exactly one value carries the evidence.
+  await expect(card.getByTestId('typing-verdict')).toContainText(
+    '1 Wert lässt sich nur als TT.MM.JJJJ lesen, nicht als MM.TT.JJJJ — daher TT.MM.JJJJ.',
+  )
+})
+
+test('a column of plain integers is not a question', async ({ page }) => {
+  // Both number readings make `42` the same number, so there is nothing to
+  // decide. Reported as an ambiguity — which is what a literal reading of "every
+  // value parses under both readings" produces — this would hold the gate shut
+  // over the most common column type in any table.
+  await pick(page, csv('menge.csv', 'Artikel;Menge;Jahr\nSchraube;42;2019\nMutter;7;2020\n'))
+
+  const card = cards(page)
+  await expect(card.getByLabel('Typ: Menge')).toHaveValue('number')
+  await expect(card.getByTestId('typing-verdict')).toHaveCount(0)
+  await expect(card.getByTestId('typing')).toContainText('Typen noch nicht bestätigt.')
+
+  await card.getByRole('button', { name: 'Typen bestätigen: menge' }).click()
+
+  await expect(card.getByTestId('typing')).toContainText('Typen bestätigt.')
+  await expect(card.getByTestId('typing-refusal')).toHaveCount(0)
 })
 
 test('a fully ambiguous column names no winner and blocks confirmation', async ({ page }) => {
@@ -81,13 +102,24 @@ test('a fully ambiguous column names no winner and blocks confirmation', async (
   )
   await expect(card.getByTestId('typing')).toContainText('Noch offen: Termin.')
 
+  // The control beside the verdict must not name a winner either. Detection
+  // ranks dd.MM.yyyy first here, and a select showing it as the selected option
+  // could never receive it as an answer: re-selecting the displayed value fires
+  // no change event, so the user would be forced to pick the wrong reading and
+  // correct it. The delimiter select already solves this the same way.
+  await expect(card.getByLabel('Lesart: Termin')).toHaveValue('')
+
   await card.getByRole('button', { name: 'Typen bestätigen: termine' }).click()
 
   await expect(card.getByTestId('typing-refusal')).toContainText('Termin')
   await expect(card.getByTestId('typing')).not.toContainText('Typen bestätigt.')
 
-  // Answering the question is what unblocks it — and nothing else.
+  // Answering the question is what unblocks it — and the refusal goes with the
+  // answer, not with the next press of the button.
   await card.getByLabel('Lesart: Termin').selectOption('dd.MM.yyyy')
+  await expect(card.getByTestId('typing-refusal')).toHaveCount(0)
+  await expect(card.getByTestId('typing')).toContainText('Typen noch nicht bestätigt.')
+
   await card.getByRole('button', { name: 'Typen bestätigen: termine' }).click()
 
   await expect(card.getByTestId('typing')).toContainText('Typen bestätigt.')

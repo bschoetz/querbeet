@@ -11,7 +11,7 @@
 
 import { shallowRef } from 'vue'
 import { ENCODINGS } from '@core/types/encoding.js'
-import { dateCandidates, numberCandidates } from '@core/types/typing.js'
+import { candidatesFor, unresolvedColumns } from '@core/types/typing.js'
 import RowWindow from '@ui/RowWindow.vue'
 
 const props = defineProps({ store: { type: Object, required: true } })
@@ -84,6 +84,18 @@ const GERMAN = {
   'source.unsupported_format': (v) =>
     `„${v.fileName}“ hat ein nicht unterstütztes Format — gelesen werden derzeit nur CSV-Dateien.`,
   'source.unreadable': (v) => `„${v.fileName}“ konnte nicht gelesen werden.`,
+  'typing.ambiguous_locale': (v) =>
+    `Spalte „${v.column}“: nichts entscheidet zwischen zwei Lesarten. Bitte unter ` +
+    `„Spalten & Typen“ wählen.`,
+  'typing.unparsed_values': (v) =>
+    v.unparsed === 1
+      ? `Spalte „${v.column}“: ein Wert von ${nf(v.readable)} lässt sich unter der ` +
+        `gewählten Lesart nicht lesen.`
+      : `Spalte „${v.column}“: ${nf(v.unparsed)} von ${nf(v.readable)} Werten lassen sich ` +
+        `unter der gewählten Lesart nicht lesen.`,
+  'typing.unconfirmed': () =>
+    'Die Spaltentypen sind noch nicht bestätigt — ohne Bestätigung rechnet querbeet nicht ' +
+    'mit dieser Quelle.',
 }
 
 const renderText = (d) => GERMAN[d.code]?.(d.values) ?? 'Unbekannte Meldung aus dem Kern.'
@@ -117,12 +129,40 @@ const formatLabel = (format) =>
 const readingLabel = (column, key) =>
   column.type === 'date' ? patternLabel(key) : (NUMBER_LABEL[key] ?? key)
 
-const formatChoices = (type) =>
-  type === 'number' ? numberCandidates() : type === 'date' ? dateCandidates() : []
+const formatChoices = (type) => candidatesFor(type)
+
+/** A type the reader declared and this pane has no word for — `native:boolean`
+ *  from an XLSX sheet, once story 4 lands. Offering it a select whose options
+ *  do not contain its own value would show "Text" and retype the column on the
+ *  first interaction, so such a column shows its type and no control. */
+const isSettable = (type) => Object.hasOwn(TYPE_LABEL, type)
+
+// German counts one of a thing differently, and every count in this panel can
+// be one: a one-row Source, a single unreadable value, a single deciding value.
+// The verb has to follow the number, not only the noun.
+const readsOnlyAs = (n, reading) =>
+  n === 1
+    ? `1 Wert lässt sich nur als ${reading} lesen`
+    : `${nf(n)} Werte lassen sich nur als ${reading} lesen`
+
+/** How a column's controls name themselves. The name alone, unless the header
+ *  repeats it — two controls both labelled "Typ: Datum" name the same thing to
+ *  a screen reader and to any locator, while addressing different columns. The
+ *  position is added only where it is needed, so the common case reads as a
+ *  name rather than as a coordinate. */
+const columnLabel = (s, at) => {
+  const name = s.typing.columns[at].name
+  const repeated = s.typing.columns.filter((c) => c.name === name).length > 1
+  return repeated ? `${name} (Spalte ${at + 1})` : name
+}
 
 const hitRate = (c) => {
-  const readable = `${nf(c.counts.parsed)} von ${nf(c.counts.total - c.counts.missing)} Werten lesbar`
-  return c.counts.missing === 0 ? readable : `${readable}, ${nf(c.counts.missing)} leer`
+  const readable = c.counts.total - c.counts.missing
+  const rate =
+    readable === 1
+      ? `${nf(c.counts.parsed)} von 1 Wert lesbar`
+      : `${nf(c.counts.parsed)} von ${nf(readable)} Werten lesbar`
+  return c.counts.missing === 0 ? rate : `${rate}, ${nf(c.counts.missing)} leer`
 }
 
 const verdictText = (c) => {
@@ -132,16 +172,24 @@ const verdictText = (c) => {
   }
   if (c.verdict === 'decisive') {
     const [winner, other] = c.evidence.alternatives.map((k) => readingLabel(c, k))
-    return (
-      `${nf(c.evidence.decidedBy)} Werte lassen sich nur als ${winner} lesen, nicht als ` +
-      `${other} — daher ${winner}.`
-    )
+    const decided = readsOnlyAs(c.evidence.decidedBy, winner)
+    // Evidence pointing the other way is named too. A column where 47 values
+    // say dd.mm and 3 say mm.dd is still dd.mm, but a sentence that mentions
+    // only the 47 reads as unanimity, and the 3 are the ones that will come out
+    // wrong. Where the counts are equal there is no decisive reading at all and
+    // the core never reports one.
+    return c.evidence.contested > 0
+      ? `${decided}, ${nf(c.evidence.contested)} nur als ${other} — die Mehrheit ` +
+          `spricht für ${winner}.`
+      : `${decided}, nicht als ${other} — daher ${winner}.`
   }
   return ''
 }
 
-const openQuestions = (s) =>
-  s.typing.columns.filter((c) => c.verdict === 'unresolved' && c.chosen === null).map((c) => c.name)
+// The same predicate the gate uses, from the same place (AD-13): a second copy
+// here would drift the moment the rule gains a clause, and the card would then
+// promise a confirmation the store refuses.
+const openQuestions = (s) => unresolvedColumns(s.typing)
 
 const confirmState = (s) => {
   if (s.typing.confirmed) return 'Typen bestätigt.'
@@ -246,40 +294,55 @@ const setHeaderRow = (id, raw) => {
 // say what it is waiting for without the others changing.
 const refusals = shallowRef({})
 
-const setType = (id, column, type) => {
-  // A type change carries a format with it — the first reading on offer —
-  // because a "Zahl" column with no reading chosen would score against nothing.
-  const format = formatChoices(type)[0] ?? null
-  props.store.setColumnTyping(id, column.name, { type, format })
+// A refusal describes the moment it was issued. Any edit that could answer one
+// of the columns it names makes it stale, and a card that says "still open"
+// about a column its own summary calls answered is worse than no refusal.
+const clearRefusal = (id) => {
   refusals.value = { ...refusals.value, [id]: null }
+}
+
+// Columns are addressed by position, not by name: a header may repeat a name,
+// and the store refuses to guess which of them a command meant.
+const setType = (id, at, type) => {
+  // No format is passed. The user picked a type and left the reading to
+  // detection, which scores the candidates — handing over the first one would
+  // give an Anglo column the German reading and a collapsed hit rate.
+  props.store.setColumnTyping(id, at, { type })
+  clearRefusal(id)
   refresh()
 }
 
-const setFormat = (id, column, key) => {
+const setFormat = (id, column, at, key) => {
   const format = formatChoices(column.type).find((f) => (f.pattern ?? f.locale) === key)
-  if (format) props.store.setColumnTyping(id, column.name, { type: column.type, format })
+  if (!format) return // the placeholder, which is not an answer
+  props.store.setColumnTyping(id, at, { type: column.type, format })
+  clearRefusal(id)
   refresh()
 }
 
-const setMissing = (id, column, raw) => {
+const MISSING_EMPTY = '(leer)'
+
+const setMissing = (id, at, raw) => {
   // Comma-separated, trimmed, empties dropped — except that "empty cell counts
   // as missing" has to stay expressible, so a trailing comma is not an accident
-  // to clean up. It is spelled as a word instead.
+  // to clean up. It is spelled as a word instead, matched whole: a token like
+  // `x(leer)` is a token, not the sentinel. A comma cannot appear inside a
+  // token; nothing seen so far needs one.
   const tokens = String(raw)
     .split(',')
     .map((t) => t.trim())
     .filter((t) => t !== '')
-  props.store.setColumnTyping(id, column.name, {
-    missingTokens: raw.includes('(leer)') ? ['', ...tokens.filter((t) => t !== '(leer)')] : tokens,
-  })
+    .map((t) => (t.toLowerCase() === MISSING_EMPTY ? '' : t))
+  props.store.setColumnTyping(id, at, { missingTokens: [...new Set(tokens)] })
+  clearRefusal(id)
   refresh()
 }
 
 const missingText = (column) =>
-  column.missingTokens.map((t) => (t === '' ? '(leer)' : t)).join(', ')
+  column.missingTokens.map((t) => (t === '' ? MISSING_EMPTY : t)).join(', ')
 
-const annotate = (id, column, text) => {
-  props.store.annotateColumn(id, column.name, text)
+const annotate = (id, at, text) => {
+  props.store.annotateColumn(id, at, text)
   refresh()
 }
 
@@ -478,8 +541,12 @@ const unconfirm = (id) => {
             Spalten &amp; Typen — {{ confirmState(s) }}
           </summary>
 
+          <!-- role="status" so pressing a button that refuses says so out loud.
+               Without it the confirm action appears to do nothing at all to a
+               screen reader, which is the one case where it does the most. -->
           <p
             v-if="refusals[s.id]"
+            role="status"
             data-testid="typing-refusal"
             class="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900"
           >
@@ -488,22 +555,27 @@ const unconfirm = (id) => {
           </p>
 
           <ul class="mt-2 space-y-3">
+            <!-- Keyed by position: a CSV header may repeat a name, and two rows
+                 with the same key would make Vue reuse the wrong one. -->
             <li
-              v-for="col in s.typing.columns"
-              :key="col.name"
+              v-for="(col, at) in s.typing.columns"
+              :key="at"
               data-testid="typing-column"
               class="rounded border border-slate-100 p-2"
             >
               <div class="flex flex-wrap items-end gap-3">
                 <span class="min-w-32 font-semibold text-slate-700">{{ col.name }}</span>
 
-                <label class="flex flex-col gap-1">
+                <label
+                  v-if="isSettable(col.type)"
+                  class="flex flex-col gap-1"
+                >
                   <span class="text-xs text-slate-500">Typ</span>
                   <select
                     :value="col.type"
-                    :aria-label="'Typ: ' + col.name"
+                    :aria-label="'Typ: ' + columnLabel(s, at)"
                     class="rounded border border-slate-200 px-2 py-1"
-                    @change="setType(s.id, col, $event.target.value)"
+                    @change="setType(s.id, at, $event.target.value)"
                   >
                     <option
                       v-for="(label, value) in TYPE_LABEL"
@@ -515,17 +587,44 @@ const unconfirm = (id) => {
                   </select>
                 </label>
 
+                <!-- A type the reader declared and this pane has no word for.
+                     A select whose options lack the current value would show
+                     "Text" and retype the column on the first interaction. -->
+                <span
+                  v-else
+                  data-testid="typing-native"
+                  class="pb-1 text-xs text-slate-500"
+                >Vom Format vorgegeben: {{ col.type }}</span>
+
                 <label
-                  v-if="formatChoices(col.type).length"
+                  v-if="isSettable(col.type) && formatChoices(col.type).length"
                   class="flex flex-col gap-1"
                 >
                   <span class="text-xs text-slate-500">Lesart</span>
+                  <!-- While the question is open the select shows a placeholder
+                       rather than the leading candidate. Two reasons, and either
+                       alone would be enough: re-selecting the value a select
+                       already displays fires no change event, so the user could
+                       never answer with the reading detection happens to rank
+                       first; and a verdict whose whole content is "nothing names
+                       a winner" must not name one in the control beside it. -->
                   <select
-                    :value="col.format ? (col.format.pattern ?? col.format.locale) : ''"
-                    :aria-label="'Lesart: ' + col.name"
+                    :value="
+                      col.verdict === 'unresolved' && col.chosen === null
+                        ? ''
+                        : (col.format?.pattern ?? col.format?.locale ?? '')
+                    "
+                    :aria-label="'Lesart: ' + columnLabel(s, at)"
                     class="rounded border border-slate-200 px-2 py-1"
-                    @change="setFormat(s.id, col, $event.target.value)"
+                    @change="setFormat(s.id, col, at, $event.target.value)"
                   >
+                    <option
+                      v-if="col.verdict === 'unresolved' && col.chosen === null"
+                      value=""
+                      disabled
+                    >
+                      Bitte wählen
+                    </option>
                     <option
                       v-for="choice in formatChoices(col.type)"
                       :key="choice.pattern ?? choice.locale"
@@ -558,9 +657,9 @@ const unconfirm = (id) => {
                   <span class="text-xs text-slate-500">Fehlende Werte</span>
                   <input
                     :value="missingText(col)"
-                    :aria-label="'Fehlende Werte: ' + col.name"
+                    :aria-label="'Fehlende Werte: ' + columnLabel(s, at)"
                     class="rounded border border-slate-200 px-2 py-1 text-xs"
-                    @change="setMissing(s.id, col, $event.target.value)"
+                    @change="setMissing(s.id, at, $event.target.value)"
                   >
                 </label>
 
@@ -568,10 +667,10 @@ const unconfirm = (id) => {
                   <span class="text-xs text-slate-500">Notiz</span>
                   <input
                     :value="col.annotation"
-                    :aria-label="'Notiz: ' + col.name"
+                    :aria-label="'Notiz: ' + columnLabel(s, at)"
                     placeholder="Wofür steht diese Spalte?"
                     class="w-full rounded border border-slate-200 px-2 py-1 text-xs"
-                    @change="annotate(s.id, col, $event.target.value)"
+                    @change="annotate(s.id, at, $event.target.value)"
                   >
                 </label>
               </div>

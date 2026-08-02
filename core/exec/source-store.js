@@ -9,9 +9,64 @@
 // boundary does not rely on the UI staying polite. The readers arrive injected
 // by app/ as `{ extension → SourceReader }` — this file names no adapter (AD-1).
 
-import { error, unresolved } from '../diagnostics/diagnostic.js'
+import { error, unresolved, warning } from '../diagnostics/diagnostic.js'
 import { ENCODINGS, decode, decodeBytes } from '../types/encoding.js'
-import { detectColumn, detectTable, scoreColumn, unresolvedColumns } from '../types/typing.js'
+import {
+  DATE,
+  NUMBER,
+  TEXT,
+  bestFormat,
+  candidatesFor,
+  detectColumn,
+  detectTable,
+  scoreColumn,
+  unresolvedColumns,
+} from '../types/typing.js'
+
+/** The types a command may set. A `native:<type>` column arrives already
+ *  decided by its reader (AD-20) and is not something the UI retypes; a type
+ *  outside this set reaching the entry would be scored as fully readable,
+ *  confirmed, and then converted into nothing by story 6. */
+const SETTABLE_TYPES = new Set([TEXT, NUMBER, DATE])
+
+/**
+ * The typing state as diagnostics (AD-13, CAP-34).
+ *
+ * Derived on every `commit` from the typing itself, never stored: a typing
+ * command changes the entry, so the card's severity summary follows without any
+ * command having to remember to update it, and the two can never disagree.
+ *
+ * `typing.unconfirmed` carries `unresolved` rather than `info`, so a Source is
+ * not `clean` until a person has been through step zero. That is AD-29's first
+ * gate made visible instead of implicit — the state the fourth severity was
+ * introduced for is the one state the summary must not hide.
+ */
+const typingDiagnostics = (typing) => {
+  const out = []
+  for (const column of typing.columns) {
+    if (column.verdict === 'unresolved' && column.chosen === null) {
+      out.push(
+        unresolved('typing.ambiguous_locale', {
+          column: column.name,
+          alternatives: column.evidence.alternatives,
+        }),
+      )
+    }
+    if (column.counts.unparsed > 0) {
+      out.push(
+        warning('typing.unparsed_values', {
+          column: column.name,
+          unparsed: column.counts.unparsed,
+          readable: column.counts.total - column.counts.missing,
+        }),
+      )
+    }
+  }
+  if (!typing.confirmed) {
+    out.push(unresolved('typing.unconfirmed', { columns: typing.columns.length }))
+  }
+  return out
+}
 
 const slugify = (name) => {
   const slug = name
@@ -64,47 +119,69 @@ export function createSourceStore(readers) {
     return entry
   }
 
+  // `readDiagnostics` is what the read itself produced; `diagnostics` is that
+  // slice plus the typing state, recomputed here so no command can ship an
+  // entry whose summary describes the typing it replaced.
   const commit = (entry) => {
-    const frozen = Object.freeze(entry)
+    const frozen = Object.freeze({
+      ...entry,
+      diagnostics: Object.freeze([...entry.readDiagnostics, ...typingDiagnostics(entry.typing)]),
+    })
     sources.set(frozen.id, frozen)
     return frozen
   }
 
   /**
-   * Step zero, re-run against a freshly parsed table (CAP-9). Two things are
+   * Step zero, re-run against a freshly parsed table (CAP-9). Three things are
    * carried across a re-read and one is not.
    *
    * An annotation is the user's own sentence, so it follows its column by name:
    * losing what someone wrote because they corrected a delimiter would be
    * hostile. A type the user chose follows the same way — they answered a
-   * question and the question has not changed, only the values behind it, and
-   * the hit rate is re-scored so a now-wrong choice is visible rather than
-   * silent.
+   * question and the question has not changed, only the values behind it — and
+   * so do the missing tokens they declared, which are part of the typing rather
+   * than a display setting: dropping them back to the defaults would move the
+   * null share, the hit rate and later the join matching, silently. All three
+   * are re-scored against the new values, so a now-wrong choice is visible.
    *
    * The confirmation does not survive, ever. A re-read can change every value in
    * the table even when the column names are identical — a different encoding is
    * exactly that — so a confirmation carried across would be a person vouching
    * for data they never saw. That is the failure AD-29's gate exists to prevent.
+   *
+   * Carry-over is keyed by name because a name is the only thing a re-read
+   * preserves (FR-10). A header may repeat one, so each old column is claimed
+   * once and in order: the second `Datum` inherits from the second old `Datum`,
+   * not from the first.
    */
   const retype = (table, previous) => {
     const detected = detectTable(table)
     if (!previous) return detected
 
-    const before = new Map(previous.columns.map((c) => [c.name, c]))
+    const unclaimed = new Map()
+    for (const column of previous.columns) {
+      const queue = unclaimed.get(column.name)
+      if (queue) queue.push(column)
+      else unclaimed.set(column.name, [column])
+    }
+
     return Object.freeze({
       columns: Object.freeze(
-        detected.columns.map((column) => {
-          const old = before.get(column.name)
+        detected.columns.map((column, at) => {
+          const old = unclaimed.get(column.name)?.shift()
           if (!old) return column
-          const carried = { ...column, annotation: old.annotation, chosen: old.chosen }
-          if (!old.chosen) return Object.freeze(carried)
-          const cells = table.columns.find((c) => c.name === column.name).cells
+
+          const cells = table.columns[at].cells
+          const missingTokens = old.missingTokens
+          const rescored = old.chosen
+            ? scoreColumn(cells, { ...old.chosen, missingTokens, domain: column.domain })
+            : detectColumn(cells, { domain: column.domain, missingTokens })
+
           return Object.freeze({
-            ...carried,
-            ...scoreColumn(cells, { ...old.chosen, missingTokens: old.missingTokens }),
+            ...rescored,
+            name: column.name,
             annotation: old.annotation,
             chosen: old.chosen,
-            name: column.name,
           })
         }),
       ),
@@ -112,12 +189,20 @@ export function createSourceStore(readers) {
     })
   }
 
-  /** The column record a command names, with the position it sits at — both,
-   *  because a command has to rebuild the list around it. */
-  const columnAt = (entry, name) => {
-    const at = entry.typing.columns.findIndex((c) => c.name === name)
-    if (at === -1) throw new Error(`no column ${name} in source ${entry.id}`) // programming error
-    return { at, column: entry.typing.columns[at] }
+  /**
+   * The column record a command addresses.
+   *
+   * By position, not by name. A CSV header may repeat a name — the reader
+   * passes header cells through verbatim, and a trailing delimiter yields two
+   * columns called `''` — and a name-keyed command would edit the first of them
+   * every time while the second stayed permanently unreachable, including by
+   * the gate that is supposed to hold the Source shut over it.
+   */
+  const columnAt = (entry, index) => {
+    if (!Number.isInteger(index) || index < 0 || index >= entry.typing.columns.length) {
+      throw new RangeError(`no column ${index} in source ${entry.id}`) // programming error
+    }
+    return entry.typing.columns[index]
   }
 
   /** Rebuild the typing with one column replaced. `confirmed` is passed rather
@@ -155,14 +240,14 @@ export function createSourceStore(readers) {
         typing: retype(result.table, entry.typing),
         proposal: result.proposal,
         damage: result.damage,
-        diagnostics: Object.freeze([...extra, ...result.diagnostics]),
+        readDiagnostics: Object.freeze([...extra, ...result.diagnostics]),
       })
     } catch {
       return commit({
         ...entry,
         encoding,
         parseConfig,
-        diagnostics: Object.freeze([error('source.unreadable', { fileName: entry.fileName })]),
+        readDiagnostics: Object.freeze([error('source.unreadable', { fileName: entry.fileName })]),
       })
     }
   }
@@ -217,9 +302,9 @@ export function createSourceStore(readers) {
       typing: retype(result.table, null),
       proposal: result.proposal,
       damage: result.damage,
-      diagnostics: Object.freeze([...extra, ...result.diagnostics]),
+      readDiagnostics: Object.freeze([...extra, ...result.diagnostics]),
     })
-    return { source: entry, diagnostics: entry.diagnostics }
+    return { source: entry, diagnostics: entry.readDiagnostics }
   }
 
   /** AD-10 command. The id stays minted — never reused (AD-14). */
@@ -287,18 +372,56 @@ export function createSourceStore(readers) {
   }
 
   /**
+   * The reading a chosen type is scored under.
+   *
+   * An omitted format is not "no reading" — it means the user picked a type and
+   * left the reading to us, so detection scores the candidates and the best one
+   * wins. Handing over the first candidate instead would give every column
+   * switched to `number` the German reading, and an Anglo column a collapsed hit
+   * rate with nothing on screen to say the other candidate scored better.
+   *
+   * A named format is resolved against the candidate list rather than trusted:
+   * a reading no candidate offers would be scored as zero readable and then
+   * confirmed, which is worse than being refused.
+   */
+  const resolveFormat = (cells, type, format, missingTokens) => {
+    if (type === TEXT) return null
+    if (format === undefined) return bestFormat(cells, type, missingTokens)
+    if (format === null) throw new TypeError(`a ${type} column needs a reading`)
+
+    const key = format.pattern ?? format.locale
+    const found = candidatesFor(type).find((c) => (c.pattern ?? c.locale) === key)
+    if (!found) throw new TypeError(`unknown ${type} reading: ${key}`)
+    return found
+  }
+
+  /**
    * AD-10 command, CAP-9. The user answers the question detection could not,
    * or overrides an answer it gave. The hit rate is re-scored under the choice
    * immediately, because a choice whose cost is invisible is not a choice —
    * picking mm/dd on a column of German dates has to *show* what it breaks.
    *
-   * `patch` carries `{ type, format }`, `{ missingTokens }`, or both. Passing
+   * `patch` carries `{ type, format }`, `{ missingTokens }`, or both; `format`
+   * may be omitted to take the best-scoring reading for the type. Passing
    * `type: null` returns the column to what detection proposed.
+   *
+   * The arguments are checked here rather than trusted, per this file's own
+   * rule: a type outside the settable set, or a reading no candidate offers,
+   * would be stored, scored as fully readable, and confirmed.
    */
-  function setColumnTyping(id, name, patch) {
+  function setColumnTyping(id, index, patch) {
     const entry = must(id)
-    const { at, column } = columnAt(entry, name)
+    const column = columnAt(entry, index)
 
+    if (patch.type === undefined && patch.missingTokens === undefined) {
+      throw new TypeError('setColumnTyping needs a type or missingTokens')
+    }
+    if (patch.type !== undefined && patch.type !== null && !SETTABLE_TYPES.has(patch.type)) {
+      throw new TypeError(`unknown type: ${patch.type}`)
+    }
+    if (patch.format !== undefined && patch.type === undefined) {
+      throw new TypeError('a reading cannot be set without a type')
+    }
     if (patch.missingTokens !== undefined && !Array.isArray(patch.missingTokens)) {
       throw new TypeError('missingTokens must be an array of strings')
     }
@@ -307,13 +430,16 @@ export function createSourceStore(readers) {
       patch.missingTokens !== undefined
         ? Object.freeze([...patch.missingTokens].map(String))
         : column.missingTokens
-    const cells = entry.table.columns[at].cells
+    const cells = entry.table.columns[index].cells
 
     const chosen =
       patch.type === null
         ? null // back to whatever detection proposes
         : patch.type !== undefined
-          ? Object.freeze({ type: patch.type, format: patch.format ?? null })
+          ? Object.freeze({
+              type: patch.type,
+              format: resolveFormat(cells, patch.type, patch.format, missingTokens),
+            })
           : column.chosen // only the missing tokens moved
 
     // With no choice standing, the column is re-detected rather than remembered,
@@ -321,15 +447,15 @@ export function createSourceStore(readers) {
     // stays an ambiguity. Declaring a missing token must not silently settle a
     // question the user never answered.
     const scored = chosen
-      ? scoreColumn(cells, { ...chosen, missingTokens })
+      ? scoreColumn(cells, { ...chosen, missingTokens, domain: column.domain })
       : detectColumn(cells, { domain: column.domain, missingTokens })
 
     return commit({
       ...entry,
       typing: withColumn(
         entry,
-        at,
-        { ...scored, name, annotation: column.annotation, chosen, domain: column.domain },
+        index,
+        { ...scored, name: column.name, annotation: column.annotation, chosen },
         false,
       ),
     })
@@ -340,15 +466,15 @@ export function createSourceStore(readers) {
    * not configuration: it never touches a type, a hit rate or the gate, which is
    * why this is the one column edit that leaves a confirmation standing.
    */
-  function annotateColumn(id, name, text) {
+  function annotateColumn(id, index, text) {
     const entry = must(id)
-    const { at, column } = columnAt(entry, name)
+    const column = columnAt(entry, index)
 
     return commit({
       ...entry,
       typing: withColumn(
         entry,
-        at,
+        index,
         { ...column, annotation: String(text ?? '') },
         entry.typing.confirmed,
       ),

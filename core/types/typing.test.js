@@ -11,6 +11,7 @@ import {
   DEFAULT_MISSING,
   NUMBER,
   TEXT,
+  bestFormat,
   detectColumn,
   detectTable,
   numberCandidates,
@@ -148,6 +149,47 @@ describe('the state no comparable tool reports', () => {
     expect(partial.verdict).toBe('settled')
     expect(partial.counts).toMatchObject({ parsed: 90, unparsed: 1 })
   })
+
+  it('is not the same thing as two readings that mean the same number', () => {
+    // Nothing in `1`, `2`, `42` tells de-DE from en-US either — but both make
+    // it the same number, so there is no question, and asking one would hold
+    // the gate shut over every count, quantity and identifier column there is.
+    for (const cells of [
+      ['1', '2', '42'],
+      ['2019', '2020', '2021'],
+      ['-5', '12', '-7'],
+      ['7'],
+    ]) {
+      const r = detectColumn(cells)
+      expect(r).toMatchObject({ type: NUMBER, verdict: 'settled', evidence: null })
+      expect(r.counts.unparsed).toBe(0)
+    }
+
+    // One separator anywhere is enough to make the readings disagree again.
+    expect(detectColumn(['1', '2', '1.234']).verdict).toBe('unresolved')
+  })
+
+  it('reports no winner where the evidence points both ways in equal measure', () => {
+    // Five values readable only as dd.mm against five readable only as mm.dd is
+    // a column arguing with itself. Naming a winner is DuckDB's silent
+    // tie-break with a real count attached, which makes it more convincing and
+    // no more true.
+    const both = [
+      ...Array.from({ length: 100 }, () => '01.01.2025'),
+      ...Array.from({ length: 5 }, (_, i) => `25.0${i + 1}.2025`),
+      ...Array.from({ length: 5 }, (_, i) => `0${i + 1}.25.2025`),
+    ]
+    const r = detectColumn(both)
+
+    expect(r.verdict).toBe('unresolved')
+    expect(r.evidence).toEqual({ alternatives: ['dd.MM.yyyy', 'MM.dd.yyyy'] })
+
+    // One more value on one side and there is a majority — which the sentence
+    // then has to name on both sides, not only its own.
+    const tipped = detectColumn([...both, '26.07.2025'])
+    expect(tipped.verdict).toBe('decisive')
+    expect(tipped.evidence).toMatchObject({ decidedBy: 6, contested: 5 })
+  })
 })
 
 describe('missing values', () => {
@@ -227,6 +269,31 @@ describe('re-scoring under what the user chose', () => {
     })
 
     expect(chosen.counts).toMatchObject({ parsed: 1, unparsed: 1 })
+  })
+
+  it('keeps the domain the reader declared (AD-20)', () => {
+    // Losing it here is how a native column silently becomes an inferred one:
+    // the next reset would re-derive a type the format had already stated.
+    const chosen = scoreColumn(['1', '2'], { type: NUMBER, format: null, domain: 'native:number' })
+
+    expect(chosen.domain).toBe('native:number')
+  })
+})
+
+describe('the reading a chosen type is scored under', () => {
+  it('is the best-scoring candidate, not the first one on the list', () => {
+    // The user asked for a number, not for German. `bestFormat` is what keeps a
+    // type change from collapsing an Anglo column's hit rate to nothing.
+    expect(bestFormat(['1,234.56', '80.00'], NUMBER).locale).toBe('en-US')
+    expect(bestFormat(['1.234,56', '80,00'], NUMBER).locale).toBe('de-DE')
+    expect(bestFormat(['31.12.2025', '01.01.2026'], DATE).pattern).toBe('dd.MM.yyyy')
+    expect(bestFormat(['Anna', 'Bernd'], TEXT)).toBeNull()
+  })
+
+  it('is scored against the values that count, not the missing ones', () => {
+    const cells = ['1,234.56', 'k.A.', '80.00']
+
+    expect(bestFormat(cells, NUMBER, ['k.A.']).locale).toBe('en-US')
   })
 })
 

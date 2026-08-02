@@ -119,7 +119,15 @@ test('an undetectable delimiter is an explicit question — answerable with Komm
 
   const card = cards(page)
   await expect(card.getByText('Trennzeichen nicht erkennbar')).toBeVisible()
-  await expect(card.getByText('Ungeklärt', { exact: true })).toBeVisible()
+  // Scoped to its own row: since Story 3 every unconfirmed Source carries an
+  // unresolved question of its own, so a card-wide label lookup matches more
+  // than the one under test.
+  await expect(
+    card
+      .locator('li')
+      .filter({ hasText: 'Trennzeichen nicht erkennbar' })
+      .getByText('Ungeklärt', { exact: true }),
+  ).toBeVisible()
 
   // While the question is open the select shows a placeholder, not the comma
   // fallback — otherwise choosing comma re-selects the displayed value, fires
@@ -239,7 +247,7 @@ test('no raw core vocabulary reaches the screen while diagnostics are showing', 
   await expect(cards(page)).toHaveCount(3)
   await expect(page.getByText('Warnung', { exact: true })).toBeVisible()
   await expect(page.getByText('Fehler', { exact: true })).toBeVisible()
-  await expect(page.getByText('Ungeklärt', { exact: true })).toBeVisible()
+  await expect(page.getByText('Ungeklärt', { exact: true }).first()).toBeVisible()
 
   // Scanned with the preview grids hidden. Since Story 2 the body also holds
   // parsed cell values, and this scan looks for a `namespace.some_code` shape
@@ -319,7 +327,9 @@ test('BOM-less UTF-16 surfaces the NUL question and the override resolves it', a
 
   const card = cards(page)
   await expect(card.getByText('Null-Zeichen')).toBeVisible()
-  await expect(card.getByText('Ungeklärt', { exact: true })).toBeVisible()
+  await expect(
+    card.locator('li').filter({ hasText: 'Null-Zeichen' }).getByText('Ungeklärt', { exact: true }),
+  ).toBeVisible()
 
   await card.getByLabel('Zeichenkodierung').selectOption('utf-16le')
 

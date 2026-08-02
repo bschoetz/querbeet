@@ -23,6 +23,19 @@
 //      beats mm-dd silently. Here it is `unresolved`, the severity that exists
 //      for exactly this, and a column in that state cannot be confirmed.
 //
+//      Decisive means *strictly more* exclusive evidence than the runner-up.
+//      Five values that read only as dd.mm against five that read only as mm.dd
+//      is not evidence for dd.mm; it is a column arguing with itself, and the
+//      only honest report is that nothing settles it. Naming the winner there
+//      would be DuckDB's tie-break with a real count attached, which makes it
+//      more convincing and no more true.
+//
+//      And an ambiguity between readings that mean the same thing is not an
+//      ambiguity. A column of `1`, `2`, `42` parses under both number readings
+//      because neither separator appears in it — but both give the same number,
+//      so there is no question to ask. Asked anyway, it would block the gate on
+//      almost every real table, over the most common column type there is.
+//
 //   3. NOTHING HERE CONVERTS A VALUE. This module decides what a column *is*
 //      and counts what would parse. Turning cells into numbers and UTC-midnight
 //      epoch milliseconds happens on the way into a Table (AD-21, AD-22), in
@@ -173,19 +186,56 @@ const keyOf = (candidate) => candidate.pattern ?? candidate.locale
 /**
  * Score every candidate of one kind over every non-missing value.
  *
- * `only` is the count of values this candidate reads that the runner-up does
- * not — the number FR-9 wants named ("47 values have a day above 12"). It is
- * computed against the runner-up rather than against all others, because that
- * is the comparison a sentence can carry.
+ * Counts only. A set of matched row indices per candidate would be up to nine
+ * of them at the NFR-3 column size, and the only thing ever asked of them is a
+ * pair of counters over the top two — which `exclusive` walks for separately,
+ * once the sort has said which two those are.
  */
 function score(values, candidates, reads) {
   const hits = candidates.map((candidate) => {
-    const matched = []
-    for (let i = 0; i < values.length; i += 1) if (reads(values[i], candidate)) matched.push(i)
-    return { candidate, parsed: matched.length, matched: new Set(matched) }
+    let parsed = 0
+    for (let i = 0; i < values.length; i += 1) if (reads(values[i], candidate)) parsed += 1
+    return { candidate, parsed }
   })
   hits.sort((a, b) => b.parsed - a.parsed || keyOf(a.candidate).localeCompare(keyOf(b.candidate)))
   return hits
+}
+
+/**
+ * What each of two readings reads that the other cannot.
+ *
+ * `only` is the number FR-9 wants named ("47 values have a day above 12").
+ * `contested` is the same count for the runner-up, and it is why this returns a
+ * pair rather than a number: a reading is decisive only when it reads more
+ * exclusively than the other, and 5 against 5 is a column arguing with itself.
+ */
+function exclusive(values, a, b, reads) {
+  let only = 0
+  let contested = 0
+  for (const value of values) {
+    const inA = reads(value, a)
+    const inB = reads(value, b)
+    if (inA && !inB) only += 1
+    else if (inB && !inA) contested += 1
+  }
+  return { only, contested }
+}
+
+/**
+ * Are two number readings the same reading for this column?
+ *
+ * They are, exactly when no value carries a separator either of them uses: what
+ * is left is a signed digit string, and both read that as the same integer. So
+ * `1`, `2`, `42` is not a question — while `1,234` is, because the two readings
+ * make it 1.234 and 1234.
+ *
+ * The test is a scan for characters rather than a comparison of converted
+ * values, which is both exact here and the only version available: converting
+ * is story 6's (AD-21, AD-22), never this module's.
+ */
+function sameNumber(values, a, b) {
+  const marks = [a.group, a.decimal, b.group, b.decimal].filter((s) => s !== '')
+  return values.every((value) => !marks.some((mark) => value.includes(mark)))
 }
 
 /**
@@ -201,16 +251,7 @@ function score(values, candidates, reads) {
  */
 export function detectColumn(cells, options = {}) {
   const domain = options.domain ?? TEXT
-  const missingTokens = Object.freeze([...(options.missingTokens ?? DEFAULT_MISSING)])
-  const missingSet = new Set(missingTokens)
-
-  const values = []
-  let missing = 0
-  for (const cell of cells) {
-    const text = String(cell ?? '').trim()
-    if (missingSet.has(text)) missing += 1
-    else values.push(text)
-  }
+  const { tokens: missingTokens, values, missing } = sift(cells, options.missingTokens)
 
   const counts = (parsed) =>
     Object.freeze({ total: cells.length, missing, parsed, unparsed: values.length - parsed })
@@ -252,24 +293,29 @@ export function detectColumn(cells, options = {}) {
   if (!best || best.parsed / values.length < PROPOSAL_THRESHOLD) return asText
 
   const runnerUp = winner.hits[1] ?? null
-  const only = runnerUp ? [...best.matched].filter((i) => !runnerUp.matched.has(i)).length : 0
 
-  // The two ambiguity states. A runner-up that reads exactly as much as the
-  // winner, with nothing distinguishing them, is the state that has no winner —
-  // and saying so is the whole point (FR-9).
+  // The ambiguity states. A runner-up that reads nothing is no contest at all;
+  // two number readings no value can tell apart are one reading, not two; a
+  // reading that reads more exclusively than the other is decisive and the count
+  // is nameable; anything else is the state where nothing settles it, and saying
+  // so is the whole point (FR-9).
   let verdict = 'settled'
   let evidence = null
-  if (runnerUp && runnerUp.parsed === best.parsed && only === 0) {
-    verdict = 'unresolved'
-    evidence = Object.freeze({
-      alternatives: Object.freeze([keyOf(best.candidate), keyOf(runnerUp.candidate)]),
-    })
-  } else if (runnerUp && runnerUp.parsed > 0) {
-    verdict = 'decisive'
-    evidence = Object.freeze({
-      alternatives: Object.freeze([keyOf(best.candidate), keyOf(runnerUp.candidate)]),
-      decidedBy: only,
-    })
+  const equivalent =
+    winner.kind === NUMBER && runnerUp && sameNumber(values, best.candidate, runnerUp.candidate)
+
+  if (runnerUp && runnerUp.parsed > 0 && !equivalent) {
+    const reads = winner.kind === DATE ? readsAsDate : readsAsNumber
+    const { only, contested } = exclusive(values, best.candidate, runnerUp.candidate, reads)
+    const alternatives = Object.freeze([keyOf(best.candidate), keyOf(runnerUp.candidate)])
+
+    if (only > contested) {
+      verdict = 'decisive'
+      evidence = Object.freeze({ alternatives, decidedBy: only, contested })
+    } else {
+      verdict = 'unresolved'
+      evidence = Object.freeze({ alternatives })
+    }
   }
 
   return Object.freeze({
@@ -283,10 +329,10 @@ export function detectColumn(cells, options = {}) {
   })
 }
 
-/** Re-score a column under a type and format the user chose. The verdict is
- *  `settled` by construction: a person answered the question, so the column is
- *  no longer waiting on one. */
-export function scoreColumn(cells, { type, format, missingTokens }) {
+/** Split a column into the values that count and the ones the user declared
+ *  missing. Shared so a re-score and a detection never disagree about which
+ *  cells the hit rate is a share of. */
+function sift(cells, missingTokens) {
   const tokens = Object.freeze([...(missingTokens ?? DEFAULT_MISSING)])
   const missingSet = new Set(tokens)
 
@@ -297,6 +343,34 @@ export function scoreColumn(cells, { type, format, missingTokens }) {
     if (missingSet.has(text)) missing += 1
     else values.push(text)
   }
+  return { tokens, values, missing }
+}
+
+/** The candidates a type offers, in the order a caller may present them. */
+export const candidatesFor = (type) =>
+  type === NUMBER ? numberCandidates() : type === DATE ? DATE_PATTERNS : []
+
+/**
+ * The best-scoring format for a type the user just chose.
+ *
+ * Handing over the first candidate instead would give every column switched to
+ * `number` the German reading — and an Anglo column a collapsed hit rate with
+ * nothing to say the other candidate scored better. The user asked for a type,
+ * not for a reading; the reading is still ours to propose.
+ */
+export function bestFormat(cells, type, missingTokens) {
+  const candidates = candidatesFor(type)
+  if (candidates.length === 0) return null
+  const { values } = sift(cells, missingTokens)
+  const reads = type === DATE ? readsAsDate : readsAsNumber
+  return score(values, candidates, reads)[0].candidate
+}
+
+/** Re-score a column under a type and format the user chose. The verdict is
+ *  `settled` by construction: a person answered the question, so the column is
+ *  no longer waiting on one. */
+export function scoreColumn(cells, { type, format, missingTokens, domain }) {
+  const { tokens, values, missing } = sift(cells, missingTokens)
 
   let parsed = values.length
   if (type === NUMBER && format) parsed = values.filter((v) => readsAsNumber(v, format)).length
@@ -314,7 +388,7 @@ export function scoreColumn(cells, { type, format, missingTokens }) {
     verdict: 'settled',
     evidence: null,
     missingTokens: tokens,
-    domain: TEXT,
+    domain: domain ?? TEXT,
   })
 }
 

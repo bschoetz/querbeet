@@ -7,8 +7,20 @@ so a later reader can see what was decided rather than only what remains.
 ## Open
 
 - source_spec: `spec-3-typing-step-zero.md`
-  summary: Story 3 shipped without the adversarial review pass that stories 1 and 2 went through, and its `done_checkpoint` is still outstanding. **Being made good: the spec is back at `in-review` with a baseline commit, so the review can run against the real diff.**
-  evidence: Stories 1 and 2 ran the three review layers — blind hunter, edge-case hunter, verification-gap reviewer — as independent context-free subagents, and story 2's produced eight patches including two real defects nobody would have found by re-reading their own work (rows expressed in rem against a px geometry; a virtualized table announcing ~50 rows to a screen reader). Story 3 was implemented directly on request and self-reviewed by mutation instead: sampling the column, letting a tie name a winner, opening the gate, carrying a confirmation across a re-read, and dropping an annotation each fail exactly the tests that name them. That is evidence the tests bite, not evidence the design is right. `stories.yaml` also marks story 3 `spec_checkpoint: true` and `done_checkpoint: true`; the spec checkpoint was bypassed by an explicit instruction and the done checkpoint has not happened. Anyone reading the green suite should know both facts before trusting it.
+  summary: Detection walks every value on the main thread with no feedback — measured 613 ms for one 500,000-row date column, so a 100,000-row Source of 20 columns freezes the interface for roughly 2.5 seconds on load and again on every encoding or header-row re-read.
+  evidence: Reading every value is the frozen premise of the story (FR-9) and is not up for revision; the cost of doing so is. NFR-3 targets ~100,000 rows per Source and ~500,000 in total and asks for the app to be responsive there, and no verification in this story measures against that. The cheap half is already fixed — `score()` no longer allocates a row-index set per candidate, and the exclusive counts are a second pass over the top two only. What remains is a product decision with more than one answer: move detection off the main thread, show progress above a stated row count, or accept the pause and say so. Any of them wants a measurement harness this story does not have.
+
+- source_spec: `spec-3-typing-step-zero.md`
+  summary: An annotation on a column whose name does not survive a re-read is gone for good — correcting the header row back does not bring it back.
+  evidence: Carry-over is keyed by name because a name is the only thing a re-read preserves, which is what FR-10 promises and what the code does. The gap is beyond that promise: only the current typing is retained, so an annotation orphaned by a header-row correction has nowhere to wait. Holding orphaned annotations for later re-attachment means a second store of per-Source user content and a rule for when it expires — new scope, and probably the same mechanism a Recipe file will need in story 14.
+
+- source_spec: `spec-3-typing-step-zero.md`
+  summary: The Step zero panel renders every column expanded, with four controls each — a 200-column CSV puts 800 form controls in one Source card.
+  evidence: `<details open>` is deliberate: FR-9 says the proposed type, the proposed reading and the share that parses are shown per column, and a panel folded shut shows none of them. The DOM weight is the same concern that produced `RowWindow`'s ~50-row ceiling one story earlier, and the answer is likely the same shape — a window over the column list — but the column count at which it starts to matter has not been measured, and a ceiling chosen without one is a guess.
+
+- source_spec: `spec-3-typing-step-zero.md`
+  summary: `setColumnTyping`'s `type: null` reset — "back to whatever detection proposes" — is covered by a core test and reachable from no control in the product.
+  evidence: `TYPE_LABEL` offers Text, Zahl and Datum, so once a user overrides a type there is no way back to the proposal short of re-reading the Source. The command is right to exist; what is missing is one more option in the type select, and its German has to distinguish "the proposal" from a type without reading like a fourth type.
 
 - source_spec: `spec-3-typing-step-zero.md`
   summary: Unparsed values are counted per column, not listed — the panel says "842 von 900 Werten lesbar" but cannot show *which* 58 failed.
@@ -20,6 +32,11 @@ so a later reader can see what was decided rather than only what remains.
   status: open — carried into story 10's `invoke_dev_with` in `_bmad-output/specs/spec-querbeet/stories.yaml` (2026-08-02). Deliberately not solved now: a seam invented without a second consumer is guessed rather than measured.
 
 ## Closed
+
+- source_spec: `spec-3-typing-step-zero.md`
+  summary: Story 3 shipped without the adversarial review pass that stories 1 and 2 went through.
+  evidence: Stories 1 and 2 ran the three review layers — blind hunter, edge-case hunter, verification-gap reviewer — as independent context-free subagents, and story 2's produced eight patches including two real defects nobody would have found by re-reading their own work (rows expressed in rem against a px geometry; a virtualized table announcing ~50 rows to a screen reader). Story 3 was implemented directly on request and self-reviewed by mutation instead: sampling the column, letting a tie name a winner, opening the gate, carrying a confirmation across a re-read, and dropping an annotation each fail exactly the tests that name them. That is evidence the tests bite, not evidence the design is right.
+  status: closed 2026-08-02 — the round ran against the full diff from `65922fc`, all three layers as context-free subagents. It was worth running: the layers found, and this session fixed, an integer-only column being reported as irreducibly ambiguous and therefore blocking AD-29's gate on almost every real table; a symmetric 5-against-5 split still naming a winner alphabetically with a confident German sentence; three named diagnostics that were never emitted, so the card called an unconfirmable Source clean; a reading select that could not receive the answer to the question it was asking, whose e2e test passed only because Playwright forces a change event; missing tokens silently reverting on a re-read; and duplicate column names collapsing onto the first. Three of those needed a human decision and got one; the rest were patched. Spec Change Log entry: review iteration 1. `done_checkpoint` is still outstanding and is tracked in `stories.yaml`, not here.
 
 - source_spec: `spec-2-source-preview.md`
   summary: The paging controls in `ui/RowWindow.vue` — the buttons, their German labels, their disabled states — were rendered by no test in any envelope; only the page math underneath them was covered.

@@ -32,11 +32,11 @@ Nowhere, unless you send it.
 
 🚧 Early stage — the feature list above describes the goal. Planning and technical research are done and live under `_bmad-output/planning-artifacts/`; the product contract is the PRD there, and the architecture's load-bearing rules are the numbered decisions in `ARCHITECTURE-SPINE.md`.
 
-Three of twenty-three stories are built. What runs today:
+Two of twenty-three stories are done and a third is in review. What runs today:
 
 - **CSV Sources.** Load files as named, removable Sources. The encoding ladder — BOM, strict UTF-8 probe, Windows-1252 — with a visible override, delimiter and header-row detection you can correct, and structurally damaged rows reported and kept as raw text rather than guessed into alignment.
 - **Source preview.** A bounded row window over each Source's parsed table. The counts are always the Source's totals while the DOM holds about fifty rows, and past ~571,000 rows the view pages rather than scrolls, because a spacer taller than roughly 17.2 M px collapses to zero height in Firefox.
-- **Typing as Step zero.** A type and, where relevant, a number or date locale proposed per column by reading *every* value — not a sample, which is how comparable engines corrupt large files silently. Where the evidence decides, the deciding count is named; where nothing in a column settles the reading, the interface says exactly that instead of picking, and the Source cannot be confirmed until a person answers. Free-text annotations per column.
+- **Typing as Step zero.** A type and, where relevant, a number or date locale proposed per column by reading *every* value — not a sample, which is how comparable engines corrupt large files silently. Where the evidence decides, the deciding count is named — and the count pointing the other way, if there is one; where nothing in a column settles the reading, the interface says exactly that instead of picking, and the Source cannot be confirmed until a person answers. A column whose two readings would give the same number, such as one of plain integers, is not a question and is never asked as one. Free-text annotations per column.
 
 Not yet: the pipeline editor, execution, the Result view, export, Recipes, and the LLM assistance. Sources cannot yet be transformed — only loaded, inspected and typed.
 
@@ -54,10 +54,10 @@ Nothing to install, nothing to configure, and no internet connection needed – 
 npm install
 npm run dev       # Vite dev server
 npm run build     # emits dist/index.html — and fails unless it is exactly one file
-npm run verify    # lint + both Vitest projects + Playwright in both engines
+npm run verify    # lint + both Vitest projects + build + Playwright in both engines
 ```
 
-`npm run verify` is the gate to run before every commit. It takes well under a minute.
+`npm run verify` is the gate to run before every commit. It takes well under a minute. It is not three independent steps: the Playwright stage runs against `dist/index.html`, so `verify` builds the artefact on its way through and a stale `dist/` can never be what the end-to-end suite tested.
 
 **Three test envelopes, and which code runs in which is a rule rather than a habit** (AD-27):
 

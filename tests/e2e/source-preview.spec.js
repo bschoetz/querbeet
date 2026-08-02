@@ -286,12 +286,22 @@ test('a Source of one row and one column counts in the German singular', async (
   await pick(page, csv('einzel.csv', 'Ort\nBerlin\n'))
 
   // Scoped to the counts line rather than the card: the card carries other
-  // German that legitimately contains both plurals, and a card-wide assertion
-  // would be about the whole pane rather than about the sentence under test.
+  // German that legitimately contains both plurals — the Step zero panel's own
+  // heading is "Spalten & Typen" — and a card-wide assertion would be about the
+  // whole pane rather than about the sentence under test.
   const counts = cards(page).getByTestId('source-counts')
   await expect(counts).toHaveText(/1 Zeile, 1 Spalte$/)
   await expect(counts).not.toContainText('Zeilen')
   await expect(counts).not.toContainText('Spalten')
+
+  // The card-wide guard the narrowing gave up, restored as a word check rather
+  // than a scope: nothing anywhere in a one-row, one-column card may count one
+  // of a thing in the plural. Losing this is how "1 von 1 Werten lesbar" and
+  // "1 Werte lassen sich nur" shipped green in the panel below.
+  const text = await cards(page).innerText()
+  for (const plural of ['1 Zeilen', '1 Spalten', '1 Werte', '1 Werten', '1 Zeichen']) {
+    expect(text).not.toContain(plural)
+  }
 })
 
 test('the preview sits below the correction controls, not above them', async ({ page }) => {
