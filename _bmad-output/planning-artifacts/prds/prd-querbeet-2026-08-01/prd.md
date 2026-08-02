@@ -1,8 +1,8 @@
 ---
 title: querbeet
-status: draft
+status: final
 created: 2026-08-01
-updated: 2026-08-01
+updated: 2026-08-02
 ---
 
 # PRD: querbeet
@@ -11,11 +11,13 @@ updated: 2026-08-01
 
 ## 0. Document Purpose
 
-This PRD is the product-level contract for querbeet: what it does, for whom, and where its boundaries are. It is written for the project owner acting as PM, and for the downstream BMad workflows that consume it — architecture, UX, and epic breakdown. Vocabulary is anchored in the Glossary (§3); features are grouped with functional requirements nested underneath and numbered globally as FR-N so later artifacts can reference them stably. Inferences that were not confirmed carry an inline `[ASSUMPTION]` tag and are indexed in §9.
+This PRD is the product-level contract for querbeet: what it does, for whom, and where its boundaries are. It is written for the project owner acting as PM, and for the downstream BMad workflows that consume it — architecture, UX, and epic breakdown. Vocabulary is anchored in the Glossary (§3); features are grouped with functional requirements nested underneath and numbered globally as FR-N so later artifacts can reference them stably. **A number is allocated once and never reused or reassigned**, so a requirement added later sits where it belongs in the document while keeping the number it was given — document order and numeric order therefore diverge, and that is deliberate. Every FR is listed in §6.1 regardless of where it sits. Inferences that were not confirmed are indexed in §9, and those that sit inside a requirement or a journey also carry an inline `[ASSUMPTION]` tag where they are read.
 
 Technical research surrounds this document and is treated as settled input, not re-litigated here: the transformation engine, the UI framework and delivery path, file formats and parsing, performance and table rendering, type and locale detection, the graph Editor, chart rendering, and browser persistence. They live in `_bmad-output/planning-artifacts/research/`, alongside two spikes that built and measured what the reports argued. Two questions are still open at the time of writing — how the view document of FR-37 is produced, and what container FR-24's Package uses — and both are named in §8. This PRD states *capabilities*; the technology decisions and their consequences are recorded in `addendum.md` beside this file. Where a research finding is a genuine product requirement rather than an implementation detail — silent corruption of locale-formatted numbers, unfindable rows in a virtualized table, silent Cartesian products on join — it appears here as an FR.
 
 ## 1. Vision
+
+**Reports in, consolidated table out.** That sentence is the product's own scope test and it predates this document: a proposed feature that does not serve it is a proposed feature for a different product. Everything below elaborates it, and §5 is where it stops.
 
 querbeet turns a recurring data-consolidation chore into a file you can hand to someone else. It is a single HTML file that runs by double-click in a browser, with no server, no installation and no account. A user drops in a handful of report exports — CSV, JSON, Excel, Parquet — wires together a small graph of union, join, filter and column operations, and gets one consolidated table out, with charts and an export the recipient can act on.
 
@@ -170,6 +172,18 @@ The system proposes a delimiter and a header row for each CSV Source, and the us
 - Files with preamble lines before the header can be handled by setting the header row to a later line; the Preview updates to match.
 - Both settings are stored in the Recipe.
 
+#### FR-39: Detect structurally broken CSV
+
+The system detects a CSV Source whose structure is damaged and says so, rather than parsing it into a plausible table. Realizes UJ-1, UJ-2.
+
+**Consequences (testable):**
+- Rows whose field count differs from the header row are detected, counted, and reported by row number.
+- A quoted field that is never closed is detected and named as that, not reported as a generic parse failure — it is the defect most likely to swallow the remainder of a file into one cell.
+- Detection does not attempt repair, and this asymmetry with FR-5 is deliberate: a broken JSON document has a syntactically correct reading that a repairer can aim at, while a row with too many fields has no such target — any fix guesses which column the extra value belongs to, and a wrong guess is invisible in the Result.
+- The affected rows stay inspectable in their raw form, so the user can decide what happened.
+- A Source with structural damage can still be loaded and used, on the user's decision — but the damage is carried into the run status (FR-34), because a result computed over it is a result to distrust.
+- Nothing about this is silent. The failure this requirement exists to prevent is the one §4 names as characteristic: a plausible wrong number instead of an error message.
+
 #### FR-4: Detect that a JSON Source is malformed
 
 The system distinguishes a JSON file it can parse from one it cannot, before attempting anything else. Realizes UJ-1.
@@ -183,6 +197,8 @@ The system distinguishes a JSON file it can parse from one it cannot, before att
 #### FR-5: Repair a malformed JSON Source
 
 The user can have the system attempt a repair of a malformed JSON Source. Realizes UJ-1.
+
+**Why this exists,** because the handled cases look arbitrary without it: the JSON that reaches querbeet broken most often did not come from a system, it came from a language model. That is why markdown code fences and ellipsis truncation are on the list beside trailing commas — they are what an assistant's answer looks like when it is pasted straight into a file. FR-28 covers a model's answer arriving through the tool's own paste path; this covers the same answer arriving as a file the user saved.
 
 **Consequences (testable):**
 - Repair is offered as an action, not performed automatically on the user's behalf without their knowledge.
@@ -230,7 +246,8 @@ The system proposes a type and, where relevant, a number and date locale per col
 - Where two interpretations are both plausible — `1.234` is one thousand two hundred thirty-four in one locale and 1.234 in another — the system reports the ambiguity rather than picking silently, and the user resolves it. **Two outcomes are distinguished and worded differently:** either one reading carries decisive evidence and the count is shown — "47 values have a day above 12, so dd.mm" — or **nothing in the column settles it**, and the system says exactly that instead of naming a winner. The second state is the one no comparable tool has; DuckDB documents a tie-break in which dd-mm beats mm-dd silently, and Power Query inherits the operating system locale once at workbook creation.
 - A leading-zero value such as `0123` stays text unless the user says otherwise.
 - The user can change a column's type or locale; the hit rate recomputes immediately.
-- Values that do not parse under the chosen type are marked as unparsed and remain inspectable — they are never silently replaced by null.
+- Values that do not parse under the chosen type are marked as unparsed and remain inspectable in their original form — they are never silently replaced by null, and the original is retained rather than discarded once a value has been converted.
+- The user can declare which tokens count as missing in a column — `-`, `n/a`, `k.A.`, an empty cell — because export formats disagree and the choice is not inferable. It is a first-class part of the column's confirmed typing rather than a display setting: what counts as missing changes null shares in the Column Profile (FR-26), which rows form their own group (FR-18), which rows a join matches (FR-14), and what "is empty" means (FR-15).
 - Running the Pipeline is blocked until confirmation, and the confirmation is stored in the Recipe so the Consumer inherits the Author's decisions.
 
 #### FR-10: Annotate columns
@@ -242,7 +259,7 @@ The user can attach a free-text description to any column of a Source. Realizes 
 - Annotations are stored in the Recipe.
 - Annotations are included in the Column Profile shown to an LLM.
 
-**Notes:** `[NOTE FOR PM]` FR-9's confirmation gate is the single most user-visible friction in the product and the single strongest correctness guarantee. If usage shows it being clicked through blindly, the mitigation is to make unconfirmed columns visually loud in the Result, not to remove the gate.
+**Notes:** `[ASSUMPTION]` That locale ambiguity can be surfaced usefully rather than merely detected. A column of four-digit dotted values is genuinely ambiguous, and this requirement assumes a user can resolve what a parser cannot. Indexed in §9. `[NOTE FOR PM]` FR-9's confirmation gate is the single most user-visible friction in the product and the single strongest correctness guarantee. If usage shows it being clicked through blindly, the mitigation is to make unconfirmed columns visually loud in the Result, not to remove the gate.
 
 ### 4.2 Building the Pipeline
 
@@ -272,6 +289,8 @@ The user can add Steps, connect them, name them, and designate which one produce
 - Steps that do not contribute to the Result Step are visibly marked as such, so an unconnected leftover cannot be mistaken for part of the pipeline.
 - Every Step kind states how many inputs it takes: Union takes two or more, Join takes exactly two, the rest take exactly one.
 - The graph is navigable and editable by keyboard. Where a pointer gesture such as drag exists, it is an addition to a keyboard-reachable path and never the only way to perform an action.
+
+**Notes:** `[ASSUMPTION]` That exactly one Result Step is sufficient. A graph naturally admits several terminal nodes; restricting to one keeps the Dashboard, the export and the Recipe format simple, and was not requested either way. Indexed in §9.
 
 #### FR-13: Union tables with column mapping
 
@@ -303,7 +322,8 @@ The user can restrict rows by conditions on columns. Realizes UJ-1, UJ-2.
 - "Is empty" matches null, an empty string, and a value consisting only of whitespace alike; "is not empty" is its exact complement. The UI states this, since it is the one operator where a user's intuition and a database's semantics differ.
 - Multiple conditions can be combined; the combination rule (all / any) is explicit.
 - Comparison respects the column's confirmed type — a date comparison compares dates, not strings.
-- **A numeric comparison value is held in the Recipe as a number in canonical machine form** — `1000`, never `"1.000"` and never `"1000"`. Entry is locale-aware in the interface, storage is not, so a Recipe carries no locale of its own and reads the same wherever it is opened. A value that reached the Recipe as a locale-formatted string would re-import the exact defect FR-9 exists to prevent, one level further in, where no type confirmation is left to catch it.
+- **A comparison value is held in the Recipe in canonical machine form, never in a display form.** A number is a number — `1000`, never `"1.000"` and never `"1000"`. A date is an ISO 8601 string — `"2025-12-31"`, never `"31.12.2025"`. Entry is locale-aware in the interface, storage is not, so a Recipe carries no locale of its own and reads the same wherever it is opened. A value that reached the Recipe in a display form would re-import the exact defect FR-9 exists to prevent, one level further in, where no type confirmation is left to catch it.
+- **A comparison value whose type disagrees with the column's confirmed type is refused, naming the disagreement.** Comparing a date column against `1000`, or a numeric column against `"2025-12-31"`, is a mistake and not a request. The alternative — accepting it and comparing under some coercion — is how established databases produce a silently empty result set, which is indistinguishable from an honest zero rows and is the failure this product exists to make impossible.
 - The Step reports how many rows were removed.
 
 #### FR-16: Select, rename and reorder columns
@@ -332,6 +352,8 @@ The user can group rows by one or more columns and compute aggregates. Realizes 
 - Rows with null in a grouping column form their own visible group rather than disappearing.
 - The Step reports the input and output row counts.
 
+**Notes:** `[ASSUMPTION]` Aggregate is a sixth Step kind, added against both `idea.md` and the README roadmap, which place group-by after the MVP. Confirmed by the project owner in discussion: the Consumer's job cannot be expressed without grouping, and Top-N Tiles and key figures presuppose it. Indexed in §9.
+
 #### FR-19: Preview every Step
 
 Selecting a Step shows the table it produces. Realizes UJ-1, UJ-3.
@@ -339,7 +361,23 @@ Selecting a Step shows the table it produces. Realizes UJ-1, UJ-3.
 **Consequences (testable):**
 - The Preview shows the row and column count of that Step's full output.
 - Warnings raised by that Step (FR-13, FR-14, FR-15, FR-18) are visible alongside its Preview, not only at the moment of execution.
-- Changing a Step's configuration updates its Preview and the Preview of every Step downstream of it.
+- Changing a Step's configuration updates its Preview and the Preview of every Step downstream of it, subject to the execution mode in force (FR-38).
+
+#### FR-38: Execute the Pipeline
+
+The Pipeline has one owner of execution, and which of two modes is in force is always visible. Realizes UJ-1, UJ-2, UJ-4.
+
+**Consequences (testable):**
+- **Below a stated row threshold the Pipeline is live.** Every configuration change recomputes the affected Steps and everything downstream, and the Previews and the Result are always current. No action is required to see the effect of an edit.
+- **Above that threshold the Pipeline switches to explicit execution** and says so where the user is working. Edits then change the configuration without recomputing, Previews and Result are marked as belonging to the previous run, and a named action starts the new one.
+- **The mode in force is stated, not inferred.** A user must never be in doubt about whether what they are looking at reflects the Step in front of them. This is the whole reason two modes are acceptable: the cost of the second mode is one visible piece of state, and the cost of getting it wrong is a decision made on a stale table.
+- The threshold is a stated number the user can see, not a hidden heuristic, and crossing it is announced when it happens rather than discovered.
+- Recomputation is incremental in both modes: changing a Step recomputes that Step and its dependents, never the Steps above it.
+- In explicit mode, execution begins only after the Pre-flight Check has been shown (FR-22), and it reports through the run status (FR-34).
+- An execution long enough to be noticed shows progress and leaves the interface responsive, on the same terms as FR-36's exports.
+- The mode is a property of the session and the data in it, not of the Recipe. A Consumer running the same Recipe over a larger extract gets explicit mode without the Recipe saying anything about it.
+
+**Notes:** `[NOTE FOR PM]` Two modes is the answer that costs the most explanation, and it was chosen over both single-mode alternatives with that understood. Live-only is unaffordable at the upper end of NFR-3; explicit-only makes every small pipeline — which is most of them — feel like a compiler. The risk to watch is the boundary: if users report being surprised by the switch, the fix is to make the mode indicator louder, not to remove a mode.
 
 ### 4.3 Recipes and Packages
 
@@ -410,6 +448,8 @@ The current Recipe and the loaded Source data survive closing and reopening the 
 - The UI states plainly and persistently that data is stored in this browser.
 - A single, discoverable action deletes all stored data; after it, reopening the tool starts empty.
 - Deleting stored data does not require deleting the Recipe, and deleting the Recipe does not require deleting the data.
+- Storing and restoring a session at the upper end of NFR-3 shows progress and leaves the interface responsive, on the same terms as FR-36's exports. Measured at 100,000 rows the write is comfortably below the threshold where a tab visibly freezes; projected to half a million it lands on that threshold in Firefox and below it in Chromium, which is close enough that the affordance is required rather than optional.
+- Restored state is treated as possibly incomplete rather than assumed intact. Storage under `file://` cannot be made persistent in either engine — the browser may evict it under pressure — so a session that comes back partial says so and offers to start clean, instead of presenting a Result computed over data that is no longer all there.
 
 **Measured constraint — the storage is shared, not private to this file.** Research R9 confirmed
 IndexedDB works from `file://` in both engines and survives a browser restart, so this requirement
@@ -469,8 +509,8 @@ The user can paste a model's answer, and the system validates it before applying
 - A syntactically invalid answer is rejected with a message specific enough to paste back to the model.
 - A Recipe referencing a column, Source or Step that does not exist is rejected naming the failing reference, not partially applied.
 - A Recipe describing a cyclic graph is rejected naming the cycle.
-- A Recipe whose Steps do not all contribute to the Result Step is **not** rejected. It was, in an earlier wording of this requirement; the FR-28 spike showed that refusing it would make a pasted Recipe stricter than the Editor that produced it, since an author mid-build always has orphans and FR-12 marks them rather than refusing them. Orphans are marked on load, as they are anywhere else.
-- **A numeric comparison value that arrives as a string is resolved by a named rule, never by guessing.** A canonical numeric string is coerced to a number; a value carrying a grouping separator or a decimal comma is refused, naming the offending character. This is not a hypothetical: given the same documentation, four of five independent authoring runs wrote `"1000"` as a string and the fifth wrote `1000`, because nothing in the format told them which — and against a `Betrag` formatted `1.234,56` those two readings plus a locale-aware parse give three different answers. The validator is where this has to be settled, since a Recipe arrives through the clipboard and none of the mechanisms that constrain a model's output at generation time are available over that channel.
+- A Recipe whose Steps do not all contribute to the Result Step is **not** rejected. It was, in an earlier wording of this requirement; the FR-28 spike showed that refusing it would make a pasted Recipe stricter than the Editor that produced it, since an Author mid-build always has orphans and FR-12 marks them rather than refusing them. Orphans are marked on load, as they are anywhere else.
+- **A comparison value that arrives in the wrong shape is resolved by a named rule, never by guessing.** A canonical numeric string is coerced to a number; a value carrying a grouping separator or a decimal comma is refused, naming the offending character; a date in any form other than ISO 8601 is refused rather than parsed, since the model had no locale to parse it under either; and a value whose type disagrees with the target column's confirmed type is refused naming both types, on the same reasoning as FR-15. This is not a hypothetical: given the same documentation, four of five independent authoring runs wrote `"1000"` as a string and the fifth wrote `1000`, because nothing in the format told them which — and against a `Betrag` formatted `1.234,56` those two readings plus a locale-aware parse give three different answers. The validator is where this has to be settled, since a Recipe arrives through the clipboard and none of the mechanisms that constrain a model's output at generation time are available over that channel.
 - A valid Recipe loads as ordinary Steps that the user can inspect and edit before running.
 - A model's Recipe never replaces the existing Pipeline without the user seeing what changes.
 
@@ -480,6 +520,7 @@ The user can run a query authored by a model against the real data locally, and 
 
 **Consequences (testable):**
 - A Probe Query is expressed in the same Step vocabulary as a Pipeline; it introduces no second query language.
+- A Probe Query is validated on exactly the terms FR-28 applies to a Recipe, including that an unrecognised field is refused rather than ignored. A validator that accepts what it does not understand cannot tell a Probe Query from a Recipe, which is the one distinction on which the disclosure boundary rests.
 - The result is displayed to the user before any return step.
 - The user copies the result back only after seeing it.
 - A Probe Query cannot write, modify or delete anything; it reads.
@@ -496,7 +537,7 @@ The user can choose to include example values from a column in what goes to the 
 
 ### 4.5 Result, View and Dashboard
 
-**Description:** The Result is where the Consumer lands and where the Author checks their work. It offers a virtualized table with transient view filters and its own search, plus a Dashboard of tiles that lives in the Recipe. The distinction between changing the *data* and changing the *view* is deliberate and visible. Realizes UJ-1, UJ-2, UJ-4.
+**Description:** The Result is where the Consumer lands and where the Author checks their work. It offers a virtualized table with transient view filters and its own search, plus a Dashboard of Tiles that lives in the Recipe. The distinction between changing the *data* and changing the *view* is deliberate and visible. Realizes UJ-1, UJ-2, UJ-4.
 
 **Functional Requirements:**
 
@@ -541,13 +582,13 @@ The Dashboard shows whether the run that produced it was clean. Realizes UJ-2, U
 - The status names the Steps involved, so a user can act on it.
 - The status travels into the exported view document (FR-37), because the Boxchecker's copy must carry the same caveats the screen did.
 
-#### FR-35: Compose a Dashboard from tiles
+#### FR-35: Compose a Dashboard from Tiles
 
-The user can add, configure, order and size tiles over the Result. Realizes UJ-1, UJ-2.
+The user can add, configure, order and size Tiles over the Result. Realizes UJ-1, UJ-2.
 
 **Consequences (testable):**
-- Tile kinds: table, Top-N / Bottom-N, bar chart, line chart, key figure.
-- Every tile is configured through the same small form: grouping column, measured column, aggregation, row limit.
+- Tile kinds: table, Top-N/Bottom-N, bar chart, line chart, key figure.
+- Every Tile is configured through the same small form: grouping column, measured column, aggregation, row limit.
 - Tiles occupy a fixed grid; order changes through keyboard-reachable controls and size through three preset steps. There is no free positioning and no overlap.
 - The Dashboard definition is stored in the Recipe, so a Consumer sees the Author's Dashboard.
 - Starting with no Recipe opens the Editor rather than an empty Dashboard.
@@ -582,7 +623,7 @@ The user can export the Result and Dashboard as a self-contained document to han
 - The document names the Recipe that produced it, the date, and the Sources by name — enough for a Boxchecker to file it without asking anyone what it is.
 - The run status (FR-34) is reproduced in the document, so a result produced from a repaired or doubtful input says so on paper.
 
-**Notes:** `[NOTE FOR PM]` An interactive HTML export — one the recipient can filter and sort in — was considered and deliberately cut as the most expensive item in the MVP. It is the strongest candidate for the first post-MVP addition, because it collapses the Consumer's setup cost to zero.
+**Notes:** `[ASSUMPTION]` That a static document is sufficient for the decision-maker it is written for. The interactive variant was cut on cost, not because anyone judged it unnecessary. Indexed in §9. `[NOTE FOR PM]` An interactive HTML export — one the recipient can filter and sort in — was considered and deliberately cut as the most expensive item in the MVP. It is the strongest candidate for the first post-MVP addition, because it collapses the Consumer's setup cost to zero.
 
 ### 4.7 Cross-cutting Non-Functional Requirements
 
@@ -592,8 +633,9 @@ The user can export the Result and Dashboard as a self-contained document to han
 - **NFR-4 — Browsers.** **Chromium is the lead browser** — Edge 143+ and Chrome 143+ — on a project decision of 2026-08-01: every colleague has Edge installed, so a Chromium browser is universally available. Firefox 145+ remains a target but is secondary: it is *measured* during the first builds rather than assumed, and if it does not carry the JavaScript-heavy paths it is dropped rather than specially accommodated. Safari is optional. One consequence is already known and is not a reason to keep Firefox: Firefox is the stricter engine on the scroll-extent limit, collapsing an oversized spacer to zero height at roughly 614,000 rows where Chromium clamps and keeps working — so the spacer guard is built regardless of whether Firefox stays a target.
 - **NFR-5 — Form factor.** Desktop only, designed for Full HD. Mobile and tablet layouts are not supported and not attempted.
 - **NFR-6 — Language.** The interface is German. Code, comments, and project documents are English.
-- **NFR-7 — Accessibility.** No WCAG conformance level is targeted and no accessibility testing is required. Semantic markup and ARIA attributes are welcome where they are free. One rule is not optional, because it is a correctness rule rather than an accessibility one: **no interaction may exist only as a pointer gesture.** Drag-and-drop is permitted and encouraged for file input, Step arrangement and tile ordering — implemented as a gesture that computes a target and updates the underlying model, never as a library that reorders DOM nodes itself, which is the documented cause of a list fighting its own framework. Every such action also has a keyboard-reachable path.
+- **NFR-7 — Accessibility.** No WCAG conformance level is targeted and no accessibility testing is required. Semantic markup and ARIA attributes are welcome where they are free. One rule is not optional, because it is a correctness rule rather than an accessibility one: **no interaction may exist only as a pointer gesture.** Drag-and-drop is permitted and encouraged for file input, Step arrangement and Tile ordering — implemented as a gesture that computes a target and updates the underlying model, never as a library that reorders DOM nodes itself, which is the documented cause of a list fighting its own framework. Every such action also has a keyboard-reachable path.
 - **NFR-8 — Data residence.** Cell values leave the browser only through an export the user triggered, or through an LLM disclosure the user saw and confirmed before copying it. There is no other path out. **Qualified 2026-08-01 by measurement (R9):** this holds for leaving the *browser*, but not for leaving *querbeet*. Data persisted under FR-25 sits in the shared `file://` storage bucket, where any other local HTML page the user opens can read it — measured across directories in both engines. Nothing leaves the machine, and the guarantee above is unchanged; what is not guaranteed is isolation from other local pages, and the UI must not imply otherwise.
+- **NFR-9 — Nothing is typed, in the MVP.** Every transformation the product performs is assembled by choosing from what the interface offers — a Step kind, a column, an operator, an aggregation. No syntax is entered: no formula, no expression, no query, no script. This is a rule about the whole Step vocabulary and not only about computed columns (FR-17), and it carries two arguments at once. For the user it is the capability floor: the product is aimed at people who work fluently in spreadsheets and do not write SQL, and a typed syntax silently raises that floor. For the machine it is what makes FR-28 tractable — a fixed set of configured Steps is a data structure a model emits and a validator checks, while a syntax invites a model to produce something the parser has never heard of. **This is an MVP boundary and explicitly not a permanent one:** see §5, where typed queries for power users are named as a deliberate later direction rather than a rejected idea. What has to survive that addition is that the clicked path stays complete on its own — typing may become a faster road for someone who wants it, never the only road to a capability.
 
 ## 5. Non-Goals (Explicit)
 
@@ -610,7 +652,7 @@ Some of these are permanent; some are MVP boundaries. They are marked, because a
 **Deferred, not rejected:**
 
 - **The overlap with self-service BI is real, and the boundary is the operating model rather than the feature list.** querbeet aggregates, computes key figures, draws charts, arranges a dashboard and distributes recipes to departments — that is small self-service BI, and pretending otherwise would misdescribe the product. What it does not do, and is not trying to do: run on a server, connect to live sources, hold shared state, refresh on a schedule, or maintain a semantic layer that several reports draw on. It is file in, file out. A department that outgrows that has outgrown querbeet, and that is the correct outcome.
-- **No formula language, no scripting, no SQL — in the MVP.** Everything the tool does is expressible as a fixed set of configured Steps, which is what makes Recipes portable and machine-writable. A formula or expression capability is a plausible later addition; it is excluded now because it would enlarge what a language model must get right, not because expressions are wrong.
+- **No formula language, no scripting, no SQL — in the MVP.** Everything the tool does is expressible as a fixed set of configured Steps (NFR-9), which is what makes Recipes portable and machine-writable. It is excluded now because it would enlarge what a language model must get right, not because expressions are wrong. **The project owner's stated intent is to open this up later for power users** — typed SQL, queries or scripts as an additional path for people who would rather write than click. Two constraints on that addition are already known and should be designed for rather than discovered: the clicked path stays complete, so typing is never the only way to reach a capability; and anything typed still has to serialise into a Recipe that a Consumer can run and a validator can check, which is the constraint that makes this harder than adding an input field.
 - **No big data.** See NFR-3. No streaming, no chunked out-of-core processing.
 - **No roles, permissions or a Consumer-only view.** See §6.2.
 - **No accessibility conformance.** See NFR-7.
@@ -619,11 +661,11 @@ Some of these are permanent; some are MVP boundaries. They are marked, because a
 
 ### 6.1 In Scope
 
-- Loading CSV, JSON, NDJSON, XLSX and Parquet Sources with encoding, delimiter, header, JSON repair, flattening and locale-aware type handling, including the mandatory type confirmation (FR-1 – FR-10).
-- A Step graph with six Step kinds — Union, Join, Filter, Columns, Computed Column, Aggregate — with per-Step preview and per-Step warnings (FR-11 – FR-19).
+- Loading CSV, JSON, NDJSON, XLSX and Parquet Sources with encoding, delimiter, header, structural-damage detection, JSON repair, flattening and locale-aware type handling, including the mandatory type confirmation (FR-1 – FR-10, FR-39).
+- A Step graph with six Step kinds — Union, Join, Filter, Columns, Computed Column, Aggregate — with per-Step preview, per-Step warnings, and one owner of execution across a live and an explicit mode (FR-11 – FR-19, FR-38).
 - Recipes with an Input Contract and a Pre-flight Check; compressed Packages; session persistence with an easy delete (FR-20 – FR-25).
 - LLM assistance over copy-paste, including Column Profiles, Probe Queries and validated Recipe import (FR-26 – FR-30).
-- Result table with view filters, full-dataset search, run status, and a tile Dashboard (FR-31 – FR-35).
+- Result table with view filters, full-dataset search, run status, and a Tile Dashboard (FR-31 – FR-35).
 - Export as CSV, JSON, XLSX and Parquet, plus a static HTML and PDF view document (FR-36, FR-37).
 
 ### 6.2 Out of Scope for MVP
@@ -632,7 +674,7 @@ Some of these are permanent; some are MVP boundaries. They are marked, because a
 - **Interactive HTML export.** Cut deliberately as the most expensive item; see the note under FR-37.
 - **Roles, permissions, a Consumer-only view.** MVP ships one interface with a full Editor for everyone, guarded only by the deliberate-entry rule (FR-11). `[NOTE FOR PM]` This is the item most likely to be needed sooner than planned if Recipes actually reach non-technical Consumers.
 - **Formula language for computed columns.** Fixed operations only (FR-17).
-- **Free-form Dashboard layout, additional chart types, cross-tile filtering, drill-down.**
+- **Free-form Dashboard layout, additional chart types, cross-Tile filtering, drill-down.**
 - **Multiple Result Steps.** Exactly one Step is the Result. A Pipeline producing several outputs at once is a plausible extension of the graph model and is deliberately not attempted now.
 - **Reading legacy Excel formats** — `.xls`, `.xlsb`, `.ods`. Only `.xlsx` is read.
 
@@ -642,7 +684,7 @@ Some of these are permanent; some are MVP boundaries. They are marked, because a
 
 First, **only the transformation path is validated by an existing workflow.** The Author's patch-compliance report exists today in PowerQuery and its every step is known. The LLM protocol is a strong idea with no usage behind it, and the Dashboard is evidenced by one named need rather than by a practice.
 
-Second, **the graph Editor is the largest single risk and it arrived late.** It replaces a linear list, reverses an explicit non-goal in `idea.md`, and has three consequences that reach beyond the Editor itself: it enlarges the Recipe format at exactly the point where a language model must produce it correctly (FR-28); it invalidates the assumption behind the framework research, whose winning criterion was literally *a list of heterogeneous steps*; and it is the one component in the entire stack for which no technology research exists. See Open Questions 4 and 9.
+Second, **the graph Editor arrived late and carried three consequences; two of them have since been retired by measurement, and one cannot be.** It replaces a linear list and reverses an explicit non-goal in `idea.md`. The technology gap has closed: research ran, a library was chosen, and a follow-up spike built a working Editor from `file://` and measured it (Open Question 2). The framework verdict was re-examined against the graph criterion rather than the *list of heterogeneous steps* it was originally scored against, and it survived (Open Question 4). What no research retires is that **the graph enlarges the Recipe format at exactly the point where a language model must produce it correctly** (FR-28). Open Question 3 reports five independent authoring runs succeeding against that enlarged format, which is encouraging evidence and not the same thing as a settled question — the failure path it depends on has never been exercised.
 
 Third, **the natural build order is the risk order.** Reaching a working consolidation-and-export path first — a version that replaces the PowerQuery workflow end to end and nothing more — produces a tool that earns its keep on its own, and turns every later block into an addition rather than a prerequisite. The Recipe format should nonetheless be designed for machine authorship from the first commit, because retrofitting that is expensive and designing for it is nearly free.
 
@@ -660,24 +702,24 @@ Stakes are personal and internal, so these are deliberately coarse. They exist t
 - **SM-3: The monthly rerun costs nothing.** A repeat run against fresh files of the same shape takes under five minutes and requires no decisions beyond the Pre-flight Check. Validates FR-21 – FR-23, FR-25.
 - **SM-4: The LLM path shortens authoring.** At least one non-trivial Pipeline is built with substantial LLM help and is correct on inspection. Validates FR-26 – FR-30.
 
-**Counter-metrics (do not optimize)**
+**Counter-metrics (do not optimise)**
 
 - **SM-C1: Speed of first result.** Do not optimise how fast a user reaches a number. The type-confirmation gate (FR-9) and the Pre-flight Check (FR-22) deliberately cost time, and they are what separate a right number from a plausible one. Counterbalances SM-1 and SM-3.
 - **SM-C2: Breadth of Step kinds and graph expressiveness.** Do not optimise how many transformations the tool supports or how freely they can be wired. Every addition enlarges the Recipe format, the Editor surface, and what a language model must get right. Counterbalances SM-4.
 
 ## 8. Open Questions
 
-1. **How does Christian actually work today?** The entire Consumer half of the product rests on an uninterviewed user. Where do his four files come from, how often, is his primary pain processing or acquisition? *Owner: project owner. Cheapest resolution: one 20-minute conversation — but he is not reachable in the near term (2026-08-01), so this stays open by availability rather than by choice. Nothing Consumer-specific should be built before it closes; everything Author-facing can proceed.*
+1. **How does Christian actually work today?** The entire Consumer half of the product rests on an uninterviewed user. Where do his four files come from, how often, is his primary pain processing or acquisition? *Owner: project owner. Cheapest resolution: one 20-minute conversation — but he is not reachable in the near term (2026-08-01), so this stays open by availability rather than by choice.* **What this question gates, stated narrowly, because an earlier wording of it froze more than it should have.** The Recipe machinery — the Input Contract, the Pre-flight Check, column mapping, the Package — is not gated: the Author needs all of it to hand a Recipe to anyone at all, and it is exercised by UJ-4 without a second person existing. What waits on the answer is the shape of the Consumer's *first five minutes* — what the landing state says, how much of the Pre-flight Check a non-builder is asked to interpret, and whether a repair path needs to be gentler than the Editor. Those are UX decisions, and making them against an uninterviewed user is how a product gets built for nobody.
 2. ~~**What carries the graph Editor?**~~ **Closed 2026-08-01.** Research R6 ran and scored a hand-built SVG canvas above the libraries; the project decision went the other way, to **Vue Flow 1.48.2**, with the graph model kept library-free either way so the exit stays open. The follow-up spike then built the Editor and measured it: anchors drift 0 px / 0.02 px across variable-height bodies, the cycle guard refuses on the pointer path, the programmatic path and the Recipe loader, and the app's model is authoritative with Vue Flow as a view over it. `research/technical-node-graph-pipeline-editor-2026-08-01/` and `spikes/editor-vueflow-2026-08-01/`.
 3. **Does the graph survive machine authorship?** FR-28 requires a language model to emit a valid Recipe from documentation alone. A graph is materially harder to get right than a list. *Answered: yes, at the sample size stated.* The format documents in 6,734 B; a full FR-27 block for four Sources and a running Pipeline is 10,938 B; thirteen defect classes are refused by name. **Gemini and Sonnet 5, each given a block and nothing else in a session with no access to this repository, returned valid Recipes in five runs out of five, none needing a second round** — and every accepted answer is checked against named requirements, not just against loading: 33 of 33 met. **The decisive run is the one where nothing could be copied:** given four files, their bare column names and an empty Pipeline, Gemini noticed unaided that the March export spells the customer number `Kunden-Nr` where January and February spell it `KundenNr`, said so before being asked, matched `KundenNr` against `Nr` in the customer list, and built the same graph as every other run. So a foreign model does not only express a plan in this format — given a Column Profile it finds one, which is what UJ-3 actually rests on. *Caveats, all recorded: Sonnet 5 shares the vendor of the session that wrote the format, so the count is one foreign vendor plus one same-family model; and no run produced a refusal, so the paste-the-error-back loop FR-28 requires is still unexercised — **open work, with the route recorded in the spike's `findings.md` under "Outstanding: the correction loop has never run"**. The measurement there is the number of rounds to recovery, not the pass rate of the first attempt.* **One decision fell out of this and was not cosmetic:** four authors wrote `"value": "1000"` as a string for a `>` comparison and the fifth wrote `1000` as a number. Nothing in the format said which, and against a `Betrag` formatted `1.234,56` the two readings plus a locale-aware parse give three different answers. **Decided 2026-08-01 by research R5: the value is a JSON number in canonical machine form,** and the rule is now stated where it binds — FR-15 for what the Recipe holds, FR-28 for what the ingest validator accepts, coerces and refuses. The shape that produced the split turns out to be Microsoft's own reference schema for exactly this `column`/`operator`/`value` step, with `value` typed as string, number or object and no discriminator, so the five authors were guessing at an ambiguity the industry left in place. Apparatus and protocol: `spikes/recipe-llm-authorship-2026-08-01/`.
-
 4. ~~**Does the framework verdict still hold?**~~ **Closed 2026-08-01.** R6 re-examined it against the graph-editor criterion and R2's Vue 3 verdict survived; the Editor spike then built a working single-file Editor on it, so the answer is demonstrated rather than argued.
-5. **Does `read-excel-file` construct its internal worker in a way that survives `file://`?** Decides whether XLSX import works in the target deployment at all, or needs the library's dedicated worker export. *From research R3, open question 1.*
-6. **Do `write-excel-file`'s format codes render as German decimal commas in a real German Excel?** The last untested link in "opens cleanly in Excel". *From research R3. Resolution: open a generated file in a German Excel installation. **Owner: project owner, scheduled 2026-08-02.** Until it passes, FR-35's "opens cleanly in Excel" is asserted, not verified.*
-7. ~~**Research R4 is incomplete.**~~ **Closed 2026-08-01.** All four dimensions ran plus Checkpoint D2-a. Headlines: only the exports belong in a worker and the reason is the transfer; memoize per Step; there is no Editor/table contention at 30 Steps; full-dataset search needs neither a worker nor an index; and there is no shared cancellation flag from `file://`. Three findings reach outside R4 — R3's export figures understate the browser by about 10 s at half a million rows, `hyparquet-writer`'s `GZIP` codec silently writes an unreadable file, and `new Worker` is a poor hard-gate signal for built artefacts.
+5. ~~**Does `read-excel-file` construct its internal worker in a way that survives `file://`?**~~ **Closed 2026-08-01 by R4.** The question presupposed a worker that is not there: `read-excel-file` 9.3.5 hardcodes `CAN_USE_WORKER = false`, so the library never constructs one and XLSX import has no `file://` exposure on that path. The library's dedicated worker export is not needed and should not be reached for.
+6. **Do `write-excel-file`'s format codes render as German decimal commas in a real German Excel?** The last untested link in "opens cleanly in Excel". *From research R3. Resolution: open a generated file in a German Excel installation. **Owner: project owner, scheduled 2026-08-02.** Until it passes, FR-36's "opens cleanly in Excel" is asserted, not verified.*
+7. ~~**Research R4 is incomplete.**~~ **Closed 2026-08-01.** All four dimensions ran plus Checkpoint D2-a. Headlines: only the exports belong in a worker and the reason is the transfer; memoize per Step; there is no Editor/table contention at 30 Steps; full-dataset search needs neither a worker nor an index; and there is no shared cancellation flag from `file://`. Three findings reach outside R4 — R3's export figures understate the browser by about 10 s at half a million rows, `hyparquet-writer`'s `GZIP` codec silently writes an unreadable file, and `new Worker` is a poor hard-gate signal for built artifacts.
 8. **What is the Package container format, and does compressing 500k rows in the browser stay responsive?** FR-24 requires compression; the mechanism and its cost are unexamined.
 9. ~~**`idea.md` and `README.md` contradict this PRD.**~~ **Closed 2026-08-01.** Both were brought in line. The audit found more than this question named: `README.md` also stated that libraries are loaded via CDN, which a `file://` page cannot do at all, and `idea.md` carried the same assumption plus a superseded tech stack (AlaSQL, SheetJS), the linear step list, and four open decisions that research has since answered. The data-residence claim is now stated with its R9 qualification — nothing leaves the machine, but `file://` storage is a shared bucket — in both documents. `idea.md` keeps its identity as the original handover outline and says so; where it and this PRD differ, this PRD governs.
 10. **Does the Author need a way to test a Recipe against someone else's file shape without their data?** Implied by the handoff but never discussed.
+11. **How is the view document of FR-37 actually produced?** The requirement asks a `file://` page with no network access for a self-contained HTML document and a paginated PDF, and no research covers either. The sharp sub-question is whether PDF is generated by a library or handed to the browser's own print-to-PDF behind a print stylesheet — the second costs almost nothing and gets correct typography and pagination for free, but cannot be triggered as a download and depends on the user's print dialog. A library instead has to answer for its size, for embedding a font that can render umlauts inside an already-inlined single file, and for paginating a table across pages. The HTML half is the same inlining problem as the application one level down, with one addition FR-37 creates by being static: R4's virtualization does not apply, so a large Result either goes in whole or goes in truncated with the omission stated. *Owner: project owner. This is the last MVP capability with no research behind it; research R8 is written and unrun.*
 
 ## 9. Assumptions Index
 
