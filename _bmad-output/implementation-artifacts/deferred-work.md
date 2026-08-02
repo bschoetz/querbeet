@@ -6,6 +6,10 @@ so a later reader can see what was decided rather than only what remains.
 
 ## Open
 
+- source_spec: `spec-3-typing-step-zero.md`
+  summary: Unparsed values are counted per column, not listed — the panel says "842 von 900 Werten lesbar" but cannot show *which* 58 failed.
+  evidence: The matrix row reads "the 58 are listed as unparsed, original text kept". The originals are kept and visible — the preview grid renders the raw table untouched — and the count is exact, so nothing is lost or silently replaced. What is missing is the shortcut from the count to those rows. Listing them means marking cells in the preview under a confirmed type, which is boxed cells (AD-22) and therefore story 6's conversion; doing it here would mean a second scan whose result story 6 immediately replaces.
+
 - source_spec: `spec-2-source-preview.md`
   summary: `ui/RowWindow.vue` is billed as reusable by story 10 unchanged, but carries the Source story's vocabulary and a fixed height — `preview*` test ids, the default label `Tabellenvorschau`, and a hardcoded `VIEWPORT_ROWS = 10` with no height prop.
   evidence: Story 10's Result table wants a pane-filling grid; adopting the component at any taller height breaks the invariant that the container must stay under `WINDOW_SIZE` rows. The shared `preview` test id would also make the existing page-scoped `getByTestId('preview')` assertions match the Result table once both render.

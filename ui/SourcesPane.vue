@@ -11,6 +11,7 @@
 
 import { shallowRef } from 'vue'
 import { ENCODINGS } from '@core/types/encoding.js'
+import { dateCandidates, numberCandidates } from '@core/types/typing.js'
 import RowWindow from '@ui/RowWindow.vue'
 
 const props = defineProps({ store: { type: Object, required: true } })
@@ -86,6 +87,70 @@ const GERMAN = {
 }
 
 const renderText = (d) => GERMAN[d.code]?.(d.values) ?? 'Unbekannte Meldung aus dem Kern.'
+
+// ---------------------------------------------------------------- Step zero
+//
+// CAP-9's panel. The core decided what a column is and counted what parses; the
+// German for all of it lives here and only here (AD-13). The one sentence worth
+// getting right is the second ambiguity state: when nothing in a column settles
+// the reading, this must say so rather than name a winner, because naming a
+// winner is exactly what every comparable tool does silently.
+
+const TYPE_LABEL = { text: 'Text', number: 'Zahl', date: 'Datum' }
+
+/** A date pattern in German field letters — TT.MM.JJJJ, not dd.MM.yyyy. */
+const patternLabel = (pattern) => pattern.replace(/dd/g, 'TT').replace(/yyyy/g, 'JJJJ')
+
+const NUMBER_LABEL = {
+  'de-DE': 'Deutsch (1.234,56)',
+  'en-US': 'Englisch (1,234.56)',
+}
+
+const formatLabel = (format) =>
+  format == null
+    ? ''
+    : format.pattern
+      ? patternLabel(format.pattern)
+      : (NUMBER_LABEL[format.locale] ?? format.locale)
+
+/** What a reading is called when a sentence has to mention it. */
+const readingLabel = (column, key) =>
+  column.type === 'date' ? patternLabel(key) : (NUMBER_LABEL[key] ?? key)
+
+const formatChoices = (type) =>
+  type === 'number' ? numberCandidates() : type === 'date' ? dateCandidates() : []
+
+const hitRate = (c) => {
+  const readable = `${nf(c.counts.parsed)} von ${nf(c.counts.total - c.counts.missing)} Werten lesbar`
+  return c.counts.missing === 0 ? readable : `${readable}, ${nf(c.counts.missing)} leer`
+}
+
+const verdictText = (c) => {
+  if (c.verdict === 'unresolved') {
+    const [a, b] = c.evidence.alternatives.map((k) => readingLabel(c, k))
+    return `Nichts in dieser Spalte entscheidet zwischen ${a} und ${b} — bitte wählen.`
+  }
+  if (c.verdict === 'decisive') {
+    const [winner, other] = c.evidence.alternatives.map((k) => readingLabel(c, k))
+    return (
+      `${nf(c.evidence.decidedBy)} Werte lassen sich nur als ${winner} lesen, nicht als ` +
+      `${other} — daher ${winner}.`
+    )
+  }
+  return ''
+}
+
+const openQuestions = (s) =>
+  s.typing.columns.filter((c) => c.verdict === 'unresolved' && c.chosen === null).map((c) => c.name)
+
+const confirmState = (s) => {
+  if (s.typing.confirmed) return 'Typen bestätigt.'
+  const open = openQuestions(s)
+  if (open.length === 0) return 'Typen noch nicht bestätigt.'
+  return open.length === 1
+    ? `Noch offen: ${open[0]}.`
+    : `Noch offen: ${open.slice(0, -1).join(', ')} und ${open.at(-1)}.`
+}
 
 // Every severity gets a German label and its own colour: CAP-34 requires a
 // glance-level distinction, and an enum rendered raw is the core talking to
@@ -175,6 +240,59 @@ const setHeaderRow = (id, raw) => {
   // back to the state the application actually holds.
   refresh()
 }
+
+// The refusal is state, not a thrown error: an unanswered question is a
+// property of the data, not a caller's bug. It is held per Source so a card can
+// say what it is waiting for without the others changing.
+const refusals = shallowRef({})
+
+const setType = (id, column, type) => {
+  // A type change carries a format with it — the first reading on offer —
+  // because a "Zahl" column with no reading chosen would score against nothing.
+  const format = formatChoices(type)[0] ?? null
+  props.store.setColumnTyping(id, column.name, { type, format })
+  refusals.value = { ...refusals.value, [id]: null }
+  refresh()
+}
+
+const setFormat = (id, column, key) => {
+  const format = formatChoices(column.type).find((f) => (f.pattern ?? f.locale) === key)
+  if (format) props.store.setColumnTyping(id, column.name, { type: column.type, format })
+  refresh()
+}
+
+const setMissing = (id, column, raw) => {
+  // Comma-separated, trimmed, empties dropped — except that "empty cell counts
+  // as missing" has to stay expressible, so a trailing comma is not an accident
+  // to clean up. It is spelled as a word instead.
+  const tokens = String(raw)
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t !== '')
+  props.store.setColumnTyping(id, column.name, {
+    missingTokens: raw.includes('(leer)') ? ['', ...tokens.filter((t) => t !== '(leer)')] : tokens,
+  })
+  refresh()
+}
+
+const missingText = (column) =>
+  column.missingTokens.map((t) => (t === '' ? '(leer)' : t)).join(', ')
+
+const annotate = (id, column, text) => {
+  props.store.annotateColumn(id, column.name, text)
+  refresh()
+}
+
+const confirm = (id) => {
+  const { unresolved: open } = props.store.confirmTyping(id)
+  refusals.value = { ...refusals.value, [id]: open.length > 0 ? open : null }
+  refresh()
+}
+
+const unconfirm = (id) => {
+  props.store.unconfirmTyping(id)
+  refresh()
+}
 </script>
 
 <template>
@@ -253,7 +371,10 @@ const setHeaderRow = (id, raw) => {
 
         <!-- The counts are the Source's totals, never the preview window's:
              the grid further down holds ~50 rows whatever this says (AD-24). -->
-        <p class="mt-2 text-sm text-slate-500">
+        <p
+          data-testid="source-counts"
+          class="mt-2 text-sm text-slate-500"
+        >
           {{ s.fileName }} — {{ rowsLabel(s.table.rowCount) }}, {{ colsLabel(s.table.columns.length) }}
         </p>
 
@@ -340,6 +461,144 @@ const setHeaderRow = (id, raw) => {
             <span>{{ renderText(d) }}</span>
           </li>
         </ul>
+
+        <!-- Step zero (CAP-9). Open by default: FR-9 says the proposed type,
+             the proposed locale and the share that parses are shown per
+             column, and a panel folded shut shows none of them. It sits above
+             the preview because it is a question addressed to the reader,
+             and below the parse controls because a header row correction
+             changes what the columns even are. -->
+        <details
+          v-if="s.typing.columns.length"
+          open
+          data-testid="typing"
+          class="mt-3 rounded border border-slate-200 p-3 text-sm"
+        >
+          <summary class="cursor-pointer text-slate-600">
+            Spalten &amp; Typen — {{ confirmState(s) }}
+          </summary>
+
+          <p
+            v-if="refusals[s.id]"
+            data-testid="typing-refusal"
+            class="mt-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900"
+          >
+            Nicht bestätigt — diese Spalten sind noch offen:
+            {{ refusals[s.id].join(', ') }}.
+          </p>
+
+          <ul class="mt-2 space-y-3">
+            <li
+              v-for="col in s.typing.columns"
+              :key="col.name"
+              data-testid="typing-column"
+              class="rounded border border-slate-100 p-2"
+            >
+              <div class="flex flex-wrap items-end gap-3">
+                <span class="min-w-32 font-semibold text-slate-700">{{ col.name }}</span>
+
+                <label class="flex flex-col gap-1">
+                  <span class="text-xs text-slate-500">Typ</span>
+                  <select
+                    :value="col.type"
+                    :aria-label="'Typ: ' + col.name"
+                    class="rounded border border-slate-200 px-2 py-1"
+                    @change="setType(s.id, col, $event.target.value)"
+                  >
+                    <option
+                      v-for="(label, value) in TYPE_LABEL"
+                      :key="value"
+                      :value="value"
+                    >
+                      {{ label }}
+                    </option>
+                  </select>
+                </label>
+
+                <label
+                  v-if="formatChoices(col.type).length"
+                  class="flex flex-col gap-1"
+                >
+                  <span class="text-xs text-slate-500">Lesart</span>
+                  <select
+                    :value="col.format ? (col.format.pattern ?? col.format.locale) : ''"
+                    :aria-label="'Lesart: ' + col.name"
+                    class="rounded border border-slate-200 px-2 py-1"
+                    @change="setFormat(s.id, col, $event.target.value)"
+                  >
+                    <option
+                      v-for="choice in formatChoices(col.type)"
+                      :key="choice.pattern ?? choice.locale"
+                      :value="choice.pattern ?? choice.locale"
+                    >
+                      {{ formatLabel(choice) }}
+                    </option>
+                  </select>
+                </label>
+
+                <span
+                  data-testid="typing-hitrate"
+                  class="pb-1 text-xs text-slate-500"
+                >{{ hitRate(col) }}</span>
+              </div>
+
+              <!-- A verdict with no evidence behind it has nothing to say, and
+                   an empty amber line would read as a warning about nothing. -->
+              <p
+                v-if="col.verdict !== 'settled' && col.evidence"
+                data-testid="typing-verdict"
+                class="mt-2 text-xs"
+                :class="col.verdict === 'unresolved' ? 'text-amber-700' : 'text-slate-500'"
+              >
+                {{ verdictText(col) }}
+              </p>
+
+              <div class="mt-2 flex flex-wrap gap-3">
+                <label class="flex flex-1 flex-col gap-1">
+                  <span class="text-xs text-slate-500">Fehlende Werte</span>
+                  <input
+                    :value="missingText(col)"
+                    :aria-label="'Fehlende Werte: ' + col.name"
+                    class="rounded border border-slate-200 px-2 py-1 text-xs"
+                    @change="setMissing(s.id, col, $event.target.value)"
+                  >
+                </label>
+
+                <label class="flex flex-2 flex-col gap-1">
+                  <span class="text-xs text-slate-500">Notiz</span>
+                  <input
+                    :value="col.annotation"
+                    :aria-label="'Notiz: ' + col.name"
+                    placeholder="Wofür steht diese Spalte?"
+                    class="w-full rounded border border-slate-200 px-2 py-1 text-xs"
+                    @change="annotate(s.id, col, $event.target.value)"
+                  >
+                </label>
+              </div>
+            </li>
+          </ul>
+
+          <div class="mt-3">
+            <button
+              v-if="!s.typing.confirmed"
+              type="button"
+              :aria-label="'Typen bestätigen: ' + s.name"
+              class="rounded border border-slate-300 px-2 py-1 text-sm text-slate-700 hover:bg-slate-50"
+              @click="confirm(s.id)"
+            >
+              Typen bestätigen
+            </button>
+            <button
+              v-else
+              type="button"
+              :aria-label="'Bestätigung aufheben: ' + s.name"
+              class="rounded border border-slate-300 px-2 py-1 text-sm text-slate-600 hover:bg-slate-50"
+              @click="unconfirm(s.id)"
+            >
+              Bestätigung aufheben
+            </button>
+          </div>
+        </details>
 
         <!-- The preview sits below the correction controls, not above them.
              Everything that explains or corrects the read comes first — the

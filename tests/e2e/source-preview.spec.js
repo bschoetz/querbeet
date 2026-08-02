@@ -285,10 +285,13 @@ test('a Source of one row and one column counts in the German singular', async (
   // this pane already decline correctly; the counts line did not.
   await pick(page, csv('einzel.csv', 'Ort\nBerlin\n'))
 
-  const card = cards(page)
-  await expect(card.getByText('1 Zeile, 1 Spalte')).toBeVisible()
-  await expect(card.getByText('Zeilen')).toHaveCount(0)
-  await expect(card.getByText('Spalten')).toHaveCount(0)
+  // Scoped to the counts line rather than the card: the card carries other
+  // German that legitimately contains both plurals, and a card-wide assertion
+  // would be about the whole pane rather than about the sentence under test.
+  const counts = cards(page).getByTestId('source-counts')
+  await expect(counts).toHaveText(/1 Zeile, 1 Spalte$/)
+  await expect(counts).not.toContainText('Zeilen')
+  await expect(counts).not.toContainText('Spalten')
 })
 
 test('the preview sits below the correction controls, not above them', async ({ page }) => {

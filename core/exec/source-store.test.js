@@ -321,3 +321,196 @@ describe('reconfigureParse', () => {
     expect(back.parseConfig).toEqual({ delimiter: null, headerRow: null })
   })
 })
+
+// ---------------------------------------------------------------- Step zero
+
+/** A reader that returns whatever columns the test asked for. Typing is about
+ *  the shape of a column, not about any format, so the fixtures are columns. */
+const columnReader = (columns) => ({
+  media: 'text',
+  read: () => ({
+    table: {
+      columns: columns.map((c) => ({ domain: 'text', ...c })),
+      rowCount: columns[0]?.cells.length ?? 0,
+    },
+    proposal: { delimiter: ',', headerRow: 1 },
+    damage: { mismatches: [], unclosedQuoteRow: null },
+    diagnostics: [],
+  }),
+})
+
+const withColumns = (columns) => {
+  const store = createSourceStore({ csv: columnReader(columns) })
+  const { source } = store.addSource({ bytes: utf8('x'), fileName: 'daten.csv' })
+  return { store, source }
+}
+
+const AMBIGUOUS = { name: 'Datum', cells: ['03.04.2025', '05.06.2025'] }
+const GERMAN = { name: 'Betrag', cells: ['1.234,56', '80,00'] }
+
+describe('typing arrives with the Source', () => {
+  it('proposes a type per column and starts unconfirmed', () => {
+    const { source } = withColumns([GERMAN, { name: 'Kunde', cells: ['Anna', 'Bernd'] }])
+
+    expect(source.typing.confirmed).toBe(false)
+    expect(source.typing.columns.map((c) => [c.name, c.type])).toEqual([
+      ['Betrag', 'number'],
+      ['Kunde', 'text'],
+    ])
+    expect(Object.isFrozen(source.typing)).toBe(true)
+  })
+})
+
+describe('confirmTyping — the first of AD-29 three gates', () => {
+  it('refuses while a column is undecided, and names it', () => {
+    const { store, source } = withColumns([GERMAN, AMBIGUOUS])
+
+    const refused = store.confirmTyping(source.id)
+
+    expect(refused.unresolved).toEqual(['Datum'])
+    expect(refused.source.typing.confirmed).toBe(false)
+    expect(store.get(source.id).typing.confirmed).toBe(false)
+  })
+
+  it('lets the Source through once the user has answered', () => {
+    const { store, source } = withColumns([GERMAN, AMBIGUOUS])
+    store.setColumnTyping(source.id, 'Datum', {
+      type: 'date',
+      format: { pattern: 'dd.MM.yyyy', separator: '.', order: 'dmy' },
+    })
+
+    const confirmed = store.confirmTyping(source.id)
+
+    expect(confirmed.unresolved).toEqual([])
+    expect(confirmed.source.typing.confirmed).toBe(true)
+  })
+
+  it('reopens on request — the gate stops a run, it does not trap a user', () => {
+    const { store, source } = withColumns([GERMAN])
+    store.confirmTyping(source.id)
+
+    expect(store.unconfirmTyping(source.id).typing.confirmed).toBe(false)
+  })
+})
+
+describe('what a confirmation survives', () => {
+  it('survives a rename — the name is display state, the mapping is not', () => {
+    const { store, source } = withColumns([GERMAN])
+    store.confirmTyping(source.id)
+
+    expect(store.renameSource(source.id, 'Umsatz August').typing.confirmed).toBe(true)
+  })
+
+  it('does not survive a re-read, even one that leaves the columns identical', () => {
+    // A different encoding changes every value in the table while the column
+    // names stay put. A confirmation carried across would be a person vouching
+    // for data they never saw.
+    const { store, source } = withColumns([GERMAN])
+    store.confirmTyping(source.id)
+
+    expect(store.overrideEncoding(source.id, 'windows-1252').typing.confirmed).toBe(false)
+
+    store.confirmTyping(source.id)
+    expect(store.reconfigureParse(source.id, { headerRow: 2 }).typing.confirmed).toBe(false)
+  })
+
+  it('does not survive a change to the mapping it stood for', () => {
+    const { store, source } = withColumns([GERMAN])
+    store.confirmTyping(source.id)
+
+    const after = store.setColumnTyping(source.id, 'Betrag', { type: 'text', format: null })
+    expect(after.typing.confirmed).toBe(false)
+  })
+})
+
+describe('setColumnTyping', () => {
+  it('re-scores under the choice, so a wrong one shows what it costs', () => {
+    const { store, source } = withColumns([{ name: 'Datum', cells: ['31.12.2025', '01.01.2026'] }])
+
+    const after = store.setColumnTyping(source.id, 'Datum', {
+      type: 'date',
+      format: { pattern: 'MM.dd.yyyy', separator: '.', order: 'mdy' },
+    })
+    const column = after.typing.columns[0]
+
+    expect(column.counts).toMatchObject({ parsed: 1, unparsed: 1 })
+    expect(column.chosen.format.pattern).toBe('MM.dd.yyyy')
+  })
+
+  it('returns to the proposal on type null', () => {
+    const { store, source } = withColumns([GERMAN])
+    store.setColumnTyping(source.id, 'Betrag', { type: 'text', format: null })
+
+    const back = store.setColumnTyping(source.id, 'Betrag', { type: null })
+
+    expect(back.typing.columns[0]).toMatchObject({ type: 'number', chosen: null })
+  })
+
+  it('declaring a missing token does not settle a question nobody answered', () => {
+    const { store, source } = withColumns([{ ...AMBIGUOUS, cells: [...AMBIGUOUS.cells, 'k.A.'] }])
+
+    const after = store.setColumnTyping(source.id, 'Datum', { missingTokens: ['k.A.'] })
+    const column = after.typing.columns[0]
+
+    expect(column.counts).toMatchObject({ missing: 1, parsed: 2 })
+    expect(column.verdict).toBe('unresolved')
+    expect(store.confirmTyping(source.id).unresolved).toEqual(['Datum'])
+  })
+
+  it('validates at the command boundary', () => {
+    const { store, source } = withColumns([GERMAN])
+
+    expect(() => store.setColumnTyping(source.id, 'Betrag', { missingTokens: 'k.A.' })).toThrow(
+      TypeError,
+    )
+    expect(() => store.setColumnTyping(source.id, 'Gibtsnicht', { type: 'text' })).toThrow()
+  })
+})
+
+describe('annotateColumn (CAP-10)', () => {
+  it('is documentation, not configuration — it leaves a confirmation standing', () => {
+    const { store, source } = withColumns([GERMAN])
+    store.confirmTyping(source.id)
+
+    const after = store.annotateColumn(source.id, 'Betrag', 'Netto, ohne Fracht')
+    const column = after.typing.columns[0]
+
+    expect(column.annotation).toBe('Netto, ohne Fracht')
+    expect(column.type).toBe('number')
+    expect(after.typing.confirmed).toBe(true)
+  })
+
+  it('follows its column across a re-read — a sentence someone wrote is theirs', () => {
+    const { store, source } = withColumns([GERMAN])
+    store.annotateColumn(source.id, 'Betrag', 'Netto, ohne Fracht')
+
+    const after = store.overrideEncoding(source.id, 'windows-1252')
+
+    expect(after.typing.columns[0].annotation).toBe('Netto, ohne Fracht')
+  })
+
+  it('is editable again, and clearable', () => {
+    const { store, source } = withColumns([GERMAN])
+    store.annotateColumn(source.id, 'Betrag', 'erste Fassung')
+    store.annotateColumn(source.id, 'Betrag', 'zweite Fassung')
+
+    expect(store.get(source.id).typing.columns[0].annotation).toBe('zweite Fassung')
+    expect(store.annotateColumn(source.id, 'Betrag', '').typing.columns[0].annotation).toBe('')
+  })
+})
+
+describe('a chosen type across a re-read', () => {
+  it('follows the column and is re-scored against the new values', () => {
+    const { store, source } = withColumns([{ name: 'Datum', cells: ['03.04.2025'] }])
+    store.setColumnTyping(source.id, 'Datum', {
+      type: 'date',
+      format: { pattern: 'dd.MM.yyyy', separator: '.', order: 'dmy' },
+    })
+
+    const after = store.reconfigureParse(source.id, { headerRow: 1 })
+    const column = after.typing.columns[0]
+
+    expect(column.chosen.format.pattern).toBe('dd.MM.yyyy')
+    expect(column.counts.parsed).toBe(1)
+  })
+})

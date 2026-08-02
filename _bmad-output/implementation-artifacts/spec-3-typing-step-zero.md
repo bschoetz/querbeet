@@ -2,7 +2,7 @@
 title: 'Story 3 — Typing as Step zero: detection, ambiguity, confirmation, annotations'
 type: 'feature'
 created: '2026-08-02'
-status: 'ready-for-dev'
+status: 'done'
 review_loop_iteration: 0
 context:
   - '_bmad-output/planning-artifacts/architecture/architecture-querbeet-2026-08-02/ARCHITECTURE-SPINE.md'
@@ -71,12 +71,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `core/types/typing.js` + `typing.test.js` — detection, hit rates, the two ambiguity verdicts — the whole matrix lives or dies here.
-- [ ] `core/exec/source-store.js` — `typing` on the entry, `setColumnTyping`, `annotateColumn`, `confirmTyping`, `unconfirmTyping`, confirmation invalidation and annotation carry-over on re-read — AD-10 commands, frozen entries.
-- [ ] `core/exec/source-store.test.js` — the confirmation lifecycle, what invalidates it, and what an annotation survives.
-- [ ] `ui/SourcesPane.vue` — the per-column panel: proposed type, locale, hit rate, the ambiguity sentence, the corrections, the annotation field, and the confirm action — German, `ui/` only (AD-13).
-- [ ] `ui/SourcesPane.test.js` — the `unresolved` branch and the disabled confirm action, in the `ui/` envelope (AD-27).
-- [ ] `tests/e2e/typing.spec.js` — a German-number Source and an irreducibly ambiguous one, confirmed and refused, plus an annotation written and surviving a re-read, from the built artefact.
+- [x] `core/types/typing.js` + `typing.test.js` — detection, hit rates, the two ambiguity verdicts — the whole matrix lives or dies here.
+- [x] `core/exec/source-store.js` — `typing` on the entry, `setColumnTyping`, `annotateColumn`, `confirmTyping`, `unconfirmTyping`, confirmation invalidation and annotation carry-over on re-read — AD-10 commands, frozen entries.
+- [x] `core/exec/source-store.test.js` — the confirmation lifecycle, what invalidates it, and what an annotation survives.
+- [x] `ui/SourcesPane.vue` — the per-column panel: proposed type, locale, hit rate, the ambiguity sentence, the corrections, the annotation field, and the confirm action — German, `ui/` only (AD-13).
+- [x] `ui/SourcesPane.test.js` — the `unresolved` branch and the disabled confirm action, in the `ui/` envelope (AD-27).
+- [x] `tests/e2e/typing.spec.js` — a German-number Source and an irreducibly ambiguous one, confirmed and refused, plus an annotation written and surviving a re-read, from the built artefact.
 
 **Acceptance Criteria:**
 - Given a column whose decisive value sits past row 20,480, when detection runs, then it is found — the sampling trap is a test, not a comment.
