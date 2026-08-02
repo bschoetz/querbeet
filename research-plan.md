@@ -1167,6 +1167,59 @@ portable file, from a `file://` page?
 
 ---
 
+## R10 – A component-test envelope for `ui/`
+
+**Status:** [ ] open — added 2026-08-02 after Story 2
+
+**Why it arose.** Story 2 built `ui/RowWindow.vue`, and its paging branch — the AD-24 guard that
+makes a table past the spacer clamp page instead of silently rendering nothing — is executed by no
+test in either envelope. The geometry underneath it is unit-tested in `core/view/row-window.js`, and
+the story's review moved the page composition there specifically so a deleted offset would fail
+something. What remains uncovered is template wiring: the `v-if` that reveals the controls, the two
+buttons, their disabled states and the German label. Paging engages only above `PAGE_ROWS` (571,428
+rows at 28 px), so the e2e fixture that would reach it is roughly half a gigabyte of CSV — the run
+would be measuring the generator. This is a structural gap, not one story's oversight: it recurs for
+every component whose interesting states are unreachable through the built artefact.
+
+**Question:** Should querbeet add a third test envelope for Vue components, and if so, which one?
+
+**What AD-27 says today** — two envelopes, and this research would extend it:
+- `core/`, `ports/`, `adapters/` under Vitest with `environment: 'node'`. The node environment is an
+  assertion, not a convenience: a core test needing a DOM means AD-1/AD-2 were broken upstream.
+- The built artefact under Playwright from a `file://` URL, both engines.
+
+**Candidates to compare:**
+- `@vue/test-utils` + `jsdom` or `happy-dom` as a second Vitest project.
+- Vitest browser mode (real engine, no DOM emulation) — note it drives a served page, which is a
+  different envelope from this project's `file://` artefact.
+- Playwright component testing.
+- No third envelope: instead a discipline that pushes every interesting state into `core/` as pure
+  data, leaving templates thin enough that e2e coverage suffices. This is what Story 2's review did
+  by hand, and it is a real answer rather than a null option.
+
+**Decision criteria:**
+- **Does it hold the line AD-27 draws?** A DOM available to `core/**` tests would erase the wall
+  that keeps the core framework-free. Whatever is adopted must be scoped to `ui/**` only.
+- Cost against the five-year toolchain horizon this project accepted in R2: every added dev
+  dependency is one more thing that must still install and run in 2031.
+- Whether it can drive a component's props directly — that is the whole point, since the untestable
+  states are reachable from a prop and not from the UI.
+- Fidelity: jsdom does not do layout, and this component's correctness is partly geometric
+  (`getBoundingClientRect`, `scrollTop`, `clientHeight`). A DOM emulator may not be able to assert
+  what actually matters here, which would make browser mode the only real candidate.
+- What it does to `npm run verify`'s wall-clock, which is the gate a developer runs before every
+  commit.
+
+**Inputs already settled — do not re-research these:**
+- The build and run shape: one HTML file, opened from `file://`, nothing fetched at runtime (R2, R3).
+  Any envelope that serves over HTTP tests a different artefact than the one that ships.
+- Datasets are frozen and held in `shallowRef` (R2, AD-6). A test envelope that deep-watches or
+  proxies a table reintroduces the 437–479 MB cost R2 measured.
+- Fixed-height row windowing with a ~50-row window and a mandatory spacer cap is decided (R4/D1,
+  AD-24). This research is about *testing* that mechanism, not revisiting it.
+
+---
+
 ## Suggested order
 
 1. ~~**R1 + R2 together** – they define the architecture.~~ Both done (2026-08-01):
@@ -1212,6 +1265,12 @@ portable file, from a `file://` page?
    produced correct pagination and selectable German axis labels, and should be tried before any PDF
    library is researched.
 8. **R9's remainder** – package container and storage cost.
+9. **R10 – a component-test envelope for `ui/`.** Added 2026-08-02, during implementation rather
+   than before it, which is why it sits last. Not blocking: implementation continues without it, and
+   Story 2 showed the interim discipline — push the interesting states down into `core/` as pure
+   data so the templates stay thin enough for e2e. Worth answering before Story 10 adopts
+   `ui/RowWindow.vue` as its second consumer, since that is when an untested branch starts costing
+   twice.
 
 **Outside this numbering, because it is a spike rather than research: the FR-28 Recipe-authorship
 spike.** ~~Unblocked since 2026-08-01.~~ **Done 2026-08-01**
