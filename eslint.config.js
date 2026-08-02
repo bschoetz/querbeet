@@ -74,6 +74,13 @@ export default [
     languageOptions: { globals: globals.node },
   },
 
+  // Substituted by vite.config.js `define` at compile time, so it is a real
+  // global to the linter and a string literal to the artefact (AD-12).
+  {
+    files: ['app/**/*.js'],
+    languageOptions: { globals: { __BUILD_VERSION__: 'readonly' } },
+  },
+
   // ------------------------------------------------------------------ core/
   {
     files: ['core/**/*.js'],

@@ -122,6 +122,22 @@ test.describe('the artefact opens from file://', () => {
 
     await expect(page.getByText('4.200 Zeilen')).toBeVisible()
   })
+
+  test('names the source it was built from, so a Consumer can read it back', async ({ page }) => {
+    await page.goto(ARTIFACT_URL)
+
+    // AD-12: the Author is handed this string by someone running the file and has
+    // to be able to check out what they ran. So it is asserted as a shape, not as
+    // a value — a hardcoded constant, a missing commit, or a `define` that silently
+    // stopped substituting all fail here, and none of them fail anywhere else.
+    const build = await page.getByTestId('build-version').innerText()
+
+    expect(
+      build,
+      'expected "<version> (<commit>[+], yyyy-MM-dd HH:mm)" — the commit is what makes it ' +
+        'answerable; a build with no git says "no commit" rather than inventing a hash',
+    ).toMatch(/^Build \d+\.\d+\.\d+ \((?:[0-9a-f]{7,}\+?|no commit), \d{4}-\d{2}-\d{2} \d{2}:\d{2}\)$/)
+  })
 })
 
 test.describe('nothing is fetched at runtime', () => {

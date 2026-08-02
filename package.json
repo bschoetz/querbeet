@@ -1,6 +1,6 @@
 {
   "name": "querbeet",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "Reports in, consolidated table out. One HTML file, opened by double-click.",

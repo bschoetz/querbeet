@@ -25,7 +25,8 @@ const props = defineProps({
       querbeet
     </h1>
     <p class="mt-1 text-sm text-slate-500">
-      Berichte rein, konsolidierte Tabelle raus. — Build {{ props.buildVersion }}
+      Berichte rein, konsolidierte Tabelle raus. —
+      <span data-testid="build-version">Build {{ props.buildVersion }}</span>
     </p>
 
     <SourcesPane
