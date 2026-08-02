@@ -65,6 +65,33 @@ test.describe('the artefact opens from file://', () => {
     await expect(page.getByText('nichts in der Spalte entscheidet die Lesart')).toBeVisible()
   })
 
+  test('shows no raw core vocabulary — the interface is German, not just its sentences', async ({
+    page,
+  }) => {
+    await page.goto(ARTIFACT_URL)
+    const shown = (await page.locator('body').innerText()).toLowerCase()
+
+    // The first build of this scaffold rendered the severity enum straight to the
+    // screen as WARNING and UNRESOLVED. The sentences were German and the label
+    // was not, which is still core/ talking to the user (AD-13, C-6). Severities
+    // are the enum that leaked; diagnostic codes are the other machine vocabulary
+    // that must never surface, and `?? d.code` in ui/ is a live fallback path to
+    // exactly that.
+    // Word boundaries, not substrings: "Informationen" is a perfectly good German
+    // word that contains "info", and a test that forbids it would be deleted the
+    // first time it cried wolf.
+    for (const enumValue of ['info', 'warning', 'error', 'unresolved']) {
+      expect(shown, `severity "${enumValue}" reached the screen untranslated`).not.toMatch(
+        new RegExp(`\\b${enumValue}\\b`),
+      )
+    }
+
+    // A diagnostic code is dotted and snake_cased, which no German sentence is.
+    expect(shown, 'a diagnostic code reached the screen instead of a sentence').not.toMatch(
+      /\b[a-z]+\.[a-z]+_[a-z_]+\b/,
+    )
+  })
+
   test('formats numbers in German conventions', async ({ page }) => {
     await page.goto(ARTIFACT_URL)
 

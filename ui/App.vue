@@ -28,9 +28,25 @@ const GERMAN = {
     `Spalte „${v.column}“: nichts in der Spalte entscheidet die Lesart.`,
 }
 
+// The severity is core vocabulary too, and it leaked onto the screen in English
+// in the first build of this scaffold. C-6 is not "the sentences are German" —
+// it is that the interface is German, and an enum rendered raw is still the core
+// talking to the user. Every value of the type gets a label and a colour here.
+//
+// The colours are not decoration either: CAP-34 requires a run with warnings to
+// be distinguishable at a glance from a clean one, so `error` must not share a
+// colour with `unresolved`. A ternary cannot express four states, which is how
+// the first version got that wrong.
+const SEVERITY = {
+  info: { label: 'Hinweis', tone: 'text-slate-500' },
+  warning: { label: 'Warnung', tone: 'text-amber-600' },
+  error: { label: 'Fehler', tone: 'text-red-600' },
+  unresolved: { label: 'Ungeklärt', tone: 'text-violet-600' },
+}
+
 const lines = computed(() =>
   status.diagnostics.map((d) => ({
-    severity: d.severity,
+    ...SEVERITY[d.severity],
     text: GERMAN[d.code]?.(d.values) ?? d.code,
   })),
 )
@@ -62,10 +78,10 @@ const lines = computed(() =>
           class="flex max-w-2xl gap-3 rounded border border-slate-200 p-3 text-sm"
         >
           <span
-            class="shrink-0 font-mono text-xs uppercase"
-            :class="line.severity === 'warning' ? 'text-amber-600' : 'text-violet-600'"
+            class="w-24 shrink-0 font-semibold"
+            :class="line.tone"
           >
-            {{ line.severity }}
+            {{ line.label }}
           </span>
           <span>{{ line.text }}</span>
         </li>
