@@ -1,0 +1,29 @@
+/* Tailwind v4, split import with preflight deliberately omitted.
+ *
+ * The omission is one deleted line, and that reversibility is what made Tailwind
+ * safe to pick next to a component library that ships its own stylesheet: a reset
+ * that rewrites every element's defaults would fight it. Cost scales with querbeet
+ * rather than with the package — `tailwindcss/utilities.css` as published is 21
+ * bytes, every utility being generated from this app's own markup. */
+
+@layer theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* Base rules querbeet sets for itself, in place of preflight. Desktop only,
+ * designed for Full HD (C-5). Interface German (C-6). */
+@layer base {
+  html {
+    font-family:
+      system-ui,
+      -apple-system,
+      'Segoe UI',
+      sans-serif;
+  }
+
+  body {
+    margin: 0;
+    min-width: 1024px;
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "querbeet",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Reports in, consolidated table out. One HTML file, opened by double-click.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && node scripts/assert-single-file.mjs",
+    "assert": "node scripts/assert-single-file.mjs",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "vue": "3.5.40"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@tailwindcss/vite": "4.3.3",
+    "@vitejs/plugin-vue": "6.0.8",
+    "eslint": "10.8.0",
+    "eslint-plugin-vue": "10.10.0",
+    "globals": "17.8.0",
+    "tailwindcss": "4.3.3",
+    "vite": "8.2.0",
+    "vite-plugin-singlefile": "2.3.3",
+    "vitest": "4.1.10"
+  }
+}
