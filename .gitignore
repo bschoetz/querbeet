@@ -10,3 +10,6 @@ dist/
 test-results/
 playwright-report/
 blob-report/
+
+# LibreOffice/Excel lock files left behind while a probe workbook is open
+.~lock.*#
