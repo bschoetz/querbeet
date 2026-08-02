@@ -86,7 +86,7 @@ A spike built the Editor and opened it from `file://`.
 
 ## Excel format codes are locale-neutral, and the German-looking one is the trap
 
-Measured 2026-08-02 against the pinned `write-excel-file` 4.1.1, output inspected in `xl/styles.xml` and rendered through LibreOffice under `LC_ALL=de_DE.UTF-8`. Apparatus: `planning-artifacts/spikes/xlsx-german-format-2026-08-02/`.
+Measured 2026-08-02 against the pinned `write-excel-file` 4.1.1: output inspected in `xl/styles.xml`, rendered through LibreOffice under `LC_ALL=de_DE.UTF-8`, and **confirmed in a real German Microsoft Excel by the project owner** — which is what moves CAP-36's "opens cleanly in Excel" from asserted to verified. Apparatus and the probe workbook: `planning-artifacts/spikes/xlsx-german-format-2026-08-02/`.
 
 xlsx stores a format code **locale-neutrally** — `.` is the decimal separator and `,` the thousands separator *inside the code* — and the reading application renders it per the user's locale. So:
 

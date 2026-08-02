@@ -61,18 +61,20 @@ LibreOffice, converted under `LC_ALL=de_DE.UTF-8`. Every case renders as the des
 
 ## Verdict
 
-**The design question is settled. The product claim is not yet fully verified.**
+**Closed 2026-08-02.** The project owner opened `german-format-probe.xlsx` in a real German Excel and confirmed it renders correctly. That was the one part of this question no automation here could answer, and it is now answered — CAP-36's "opens cleanly in Excel" moves from asserted to verified.
 
-Settled, and this is the part that changes what gets built:
+The evidence grade is worth stating: the confirmation is the owner's visual check against a sheet built to make the answer obvious, not an itemized per-row report. The sheet's design is what makes that sufficient — every row states what it tests and what the correct rendering is, side by side, with the deliberate failure case (N2) among them.
+
+What this settles, and it is the part that changes what gets built:
 
 - **Write locale-neutral format codes. Never write a German-looking one.** `#,##0.00` for numbers, `dd.mm.yyyy` for dates. `#.##0,00` is the trap and it is the code a German-speaking developer will reach for.
 - **The `[$-407]` locale prefix is unnecessary** and buys nothing here. It also *pins* the rendering to German rather than following the reader's locale, which is the wrong behaviour for a file the recipient may open anywhere — leave it off.
 - Date codes are case-insensitive; the lowercase form is conventional.
 - Cell types are real, so the format codes have something to format.
 
-Still open, and it is now a one-open-one-look check rather than an investigation: **does Microsoft Excel agree with LibreOffice?** LibreOffice implements the same specification and is strong evidence, but it is a different product, and the two most plausible places to diverge are the escaped currency literal (`\ "€"`, N7) and the locale prefix (N3, D3) — neither of which querbeet needs to use. The rows querbeet's adapter will actually depend on are N1, N5, N6, D1, T1 and T2, and all six are the plainest cases in the sheet.
+Microsoft Excel and LibreOffice agree. The two products implement the same specification and the two places they could plausibly have diverged — the escaped currency literal (`\ "€"`, N7) and the locale prefix (N3, D3) — are both things querbeet has now decided not to use anyway. The rows the adapter actually depends on are N1, N5, N6, D1, T1 and T2, the plainest cases in the sheet.
 
-**To close it:** open `german-format-probe.xlsx` in a German Excel and read the last two columns against each other. N2 must look wrong; everything else must match.
+**Keep this workbook.** When the `TableWriter` adapter is built, it is the fixture: regenerate it from the adapter's own code path rather than from `run-spike.mjs`, and the same one-look check confirms the adapter did not quietly change dialect.
 
 ## Two API findings for the `TableWriter` adapter
 
