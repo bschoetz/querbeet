@@ -181,6 +181,55 @@ describe('the question that is about a type rather than a reading', () => {
     expect([id, at, patch]).toEqual(['src:daten', 0, { type: 'duration' }])
   })
 
+  it('asks the date-or-text question the same way, with the same control', async () => {
+    // A column of `01.02.03` is a date and equally a version number. Same
+    // machinery, different pair of types — which is the test that the wording and
+    // the placeholder key off the evidence rather than off `time`/`duration`.
+    const store = stubStore(
+      source([
+        column('Version', {
+          type: 'date',
+          format: { pattern: 'dd.MM.yy' },
+          verdict: 'unresolved',
+          evidence: { over: 'kind', alternatives: ['date', 'text'] },
+        }),
+      ]),
+    )
+    const w = await render(store)
+
+    expect(w.find('[data-testid="typing-verdict"]').text()).toBe(
+      'Nichts in dieser Spalte entscheidet zwischen Datum und Text — bitte den Typ wählen.',
+    )
+    expect(w.get('select[aria-label="Typ: Version"]').element.value).toBe('')
+
+    await w.get('select[aria-label="Typ: Version"]').setValue('text')
+    expect(store.calls.find((c) => c[0] === 'setColumnTyping')[3]).toEqual({ type: 'text' })
+  })
+
+  it('offers no reading select while the type question is open, even where one exists', async () => {
+    // A date-or-text column still carries `type: 'date'` and a `dd.MM.yy`
+    // reading, so the Lesart select rendered beside the type placeholder — two
+    // prompts, and answering *that* one sent `{type:'date', format}`, settling
+    // the column and opening the gate. `over: 'kind'` exists so the card cannot
+    // point at a control that fails to answer the question; one that answers it
+    // wrongly is worse.
+    const undecidedDate = column('Version', {
+      type: 'date',
+      format: { pattern: 'dd.MM.yy' },
+      verdict: 'unresolved',
+      evidence: { over: 'kind', alternatives: ['date', 'text'] },
+    })
+    const w = await render(stubStore(source([undecidedDate])))
+
+    expect(w.find('select[aria-label="Lesart: Version"]').exists()).toBe(false)
+
+    // It comes back the moment the type question is answered.
+    const answered = await render(
+      stubStore(source([{ ...undecidedDate, chosen: { type: 'date', format: { pattern: 'dd.MM.yy' } } }])),
+    )
+    expect(answered.find('select[aria-label="Lesart: Version"]').exists()).toBe(true)
+  })
+
   it('offers no reading select at all, because there is no reading to choose', async () => {
     const w = await render(stubStore(source([undecidedKind()])))
 
@@ -812,7 +861,65 @@ describe('the typing diagnostics in German', () => {
     expect(text).toContain('Spalte „Beginn“: nichts entscheidet zwischen Dauer und Uhrzeit')
     expect(text).toContain('Bitte unter „Spalten & Typen“ den Typ wählen.')
     expect(text).toContain('Spalte „Wert“ enthält Werte mit verschiedenen Einheiten (€ und $)')
+    // …and it may not claim the column is read as text: the finding survives
+    // whatever kind wins, and eighteen German dates beside those two amounts
+    // are still a date column. What is always true is why no number is proposed.
+    expect(text).toContain('deshalb schlägt querbeet für diese Spalte keinen Zahlentyp vor')
+    expect(text).not.toContain('sie wird als Text gelesen')
     expect(text).not.toContain('Unbekannte Meldung aus dem Kern.')
+  })
+
+  it('names the type rather than a reading control the column may not have', async () => {
+    // "unter der gewählten Lesart" was true while every type that could carry an
+    // unreadable value had a reading to choose. `time` and `duration` have none,
+    // so on those columns the sentence sent the user looking for a control that
+    // is not rendered. The whole clause is pinned, not only its prefix — the old
+    // wording could be restored with the suite green.
+    const w = await render(
+      stubStore(
+        source([column('Beginn', { type: 'duration', format: null })], {
+          diagnostics: [
+            {
+              severity: 'warning',
+              code: 'typing.unparsed_values',
+              values: { column: 'Beginn', unparsed: 3, readable: 900 },
+            },
+          ],
+        }),
+      ),
+    )
+
+    expect(w.text()).toContain(
+      'Spalte „Beginn“: 3 von 900 Werten lassen sich unter dem gewählten Typ nicht lesen.',
+    )
+    expect(w.text()).not.toContain('Lesart')
+  })
+
+  it('says where the sub-millisecond digits are lost, and it is not in querbeet', async () => {
+    // querbeet holds nanoseconds (AD-21), so the loss is the reader's: the
+    // Parquet library hands over a `Date`. The old clause "querbeet rechnet in
+    // Millisekunden" is now false and would send someone looking in the wrong
+    // place — and only the unchanged prefix of this sentence was asserted, so it
+    // could be restored with everything green.
+    const w = await render(
+      stubStore(
+        source([column('Kunde')], {
+          diagnostics: [
+            {
+              severity: 'warning',
+              code: 'parquet.timestamp_precision',
+              values: { column: 'Zeitpunkt', unit: 'NANOS' },
+            },
+          ],
+        }),
+      ),
+    )
+
+    expect(w.text()).toContain(
+      'Spalte „Zeitpunkt“ ist in Nanosekunden gespeichert und wird beim Einlesen auf ' +
+        'Millisekunden gerundet.',
+    )
+    expect(w.text()).not.toContain('querbeet rechnet in Millisekunden')
   })
 
   it('counts a single unreadable value as one', async () => {

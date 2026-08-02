@@ -20,8 +20,22 @@
 //      candidates, and most of those candidates cannot match a single value in
 //      a given column. One pass collects the separators the column contains and
 //      the rest score only against what could win. No count and no verdict
-//      changes; measured at the NFR-3 shape of 100,000 rows by 20 columns, it
-//      is 991 ms rather than 1,499 ms.
+//      changes, only how long they take.
+//
+//      THIS IS NOT FAST, AND THE NUMBER HERE IS THE HONEST ONE. Story 4a's five
+//      kinds cost roughly 1.9× the two that came before: measured at the NFR-3
+//      shape of 100,000 rows by 20 columns, **2.08 s before this story and
+//      3.96 s after**. The absolute figures are hardware; the regression is not,
+//      and it reproduces independently. Three causes, all structural: the
+//      boolean pairs are scored on every column in the table, `affixScan` adds
+//      passes wherever an affix character occurs, and `marksPresent`'s early
+//      break is now effectively unreachable because `MARKS` grew from **four
+//      marks to eight** — `. / - ,` plus `: % € $` — and an ordinary column
+//      contains four or five of them, so a loop that used to stop early now
+//      walks to the end. It is deliberately **not** optimised here: the project
+//      owner decided on 2026-08-02 that a committed measurement harness comes
+//      before any optimisation of detection, and the open ledger entries carry
+//      the candidate routes and the reason none may be chosen by feel.
 //
 //   2. THERE ARE TWO KINDS OF AMBIGUITY AND THEY ARE NOT THE SAME SENTENCE.
 //      Either one reading carries decisive evidence and the count is nameable —
@@ -132,15 +146,29 @@ const TIME_SEPARATOR = ':'
 /**
  * The datetime shapes, a closed list this story.
  *
+ * A candidate is a **date part and what separates it from the clock**, and
+ * nothing else. Everything optional is optional on every one of them: seconds, a
+ * fractional second of 1–9 digits written with `.` or `,`, a zone offset, and a
+ * one- or two-digit hour. That is not generosity, it is the finding of review
+ * round 1 — the previous cut allowed a fraction on the ISO candidate alone, so
+ * `2026-02-13 15:57:35.461` (SQL Server, .NET) and `2026-02-13
+ * 15:57:35.461+02:00` (Postgres `timestamptz`) were text while their `T`-spelled
+ * twins were datetimes, and `31.12.2025 9:05` was text while `9:05` standing
+ * alone read perfectly well as a time. A clock does not change its rules because
+ * a date is in front of it, so there is exactly one clock reader below and both
+ * kinds go through it.
+ *
  * The `MM/dd` mirror is deliberately absent — a candidate enters with a real
- * Source that needs it, the same rule `NUMBER_LOCALES` already follows. The ISO
- * candidate is named for the standard rather than spelled as a pattern because
- * it is not one shape: seconds are optional, a fraction of 1–9 digits is
- * optional, and `Z`, `±HH:mm` and `±HHmm` are all accepted. Writing it as
- * `yyyy-MM-dd'T'HH:mm:ss` would put a lie in front of the user.
+ * Source that needs it, the same rule `NUMBER_LOCALES` already follows.
+ *
+ * The ISO candidate is named for the standard rather than spelled as a pattern,
+ * because it is not one shape, and **a candidate named `ISO 8601` has to accept
+ * ISO 8601**: lowercase `t` and `z`, a comma decimal, and a two-digit offset are
+ * all in the standard. Naming a strict subset after it puts the same lie in the
+ * reading select that spelling it `yyyy-MM-dd'T'HH:mm:ss` would.
  */
 const DATETIME_PATTERNS = Object.freeze([
-  { pattern: 'ISO 8601', iso: true },
+  { pattern: 'ISO 8601', date: { separator: '-', order: 'ymd' }, iso: true },
   { pattern: 'yyyy-MM-dd HH:mm', date: { separator: '-', order: 'ymd' } },
   { pattern: 'dd.MM.yyyy HH:mm', date: { separator: '.', order: 'dmy' } },
   { pattern: 'dd.MM.yy HH:mm', date: { separator: '.', order: 'dmy', shortYear: true } },
@@ -162,9 +190,13 @@ const BOOLEAN_PAIRS = Object.freeze([
   { pattern: '1/0', truthy: '1', falsy: '0', words: false },
 ])
 
-/** The longest token any pair carries. A cheap gate in front of the lowercasing,
- *  which is otherwise an allocation per value on every column in the table. */
-const BOOLEAN_TOKEN_MAX = 6
+/** The longest token any pair carries — derived, like `MARKS`, so a fifth pair
+ *  cannot leave it behind. It is a cheap gate in front of the lowercasing, which
+ *  is otherwise an allocation per value on every column in the table; hand-set,
+ *  it would silently stop matching the day someone added a longer word. */
+const BOOLEAN_TOKEN_MAX = Math.max(
+  ...BOOLEAN_PAIRS.flatMap((pair) => [pair.truthy.length, pair.falsy.length]),
+)
 
 /**
  * `time` and `duration` are one kind with two candidates, not two kinds.
@@ -286,26 +318,6 @@ const DIGITS = /^\d+$/
  * story 6 converts through this same function precisely so the peeling and the
  * carrying cannot come apart.
  */
-function peelSign(text) {
-  let body = text
-  let negative = false
-  let marks = 0
-
-  if (body.length >= 2 && body.startsWith('(') && body.endsWith(')')) {
-    body = body.slice(1, -1)
-    negative = true
-    marks += 1
-  }
-  if (body.endsWith('-')) {
-    body = body.slice(0, -1)
-    negative = true
-    marks += 1
-  }
-  if (marks > 1) return null
-  if (marks === 1 && (body.startsWith('+') || body.startsWith('-'))) return null
-  return { body, negative }
-}
-
 /** Peel one affix off either end, with or without one space between it and the
  *  digits. At most one, and exactly one space — `12  %` keeps the second space
  *  in the body and does not read as a number, which is what a stray double
@@ -325,27 +337,89 @@ function peelAffix(text) {
 }
 
 /**
- * The one number reading rule: sign outside, affix inside, digits at the centre.
+ * Peel the wrappers off a value — the sign and the unit — from the outside in.
+ *
+ * **The sign is counted and carried, never merely removed.** Three spellings say
+ * negative and each is one *sign mark*: `(1.234,56)`, `1.234,56-`, and an
+ * ordinary leading `-`. A value carrying two of them — `(1.234,56-)`,
+ * `(-1.234,56)` — is not a doubly-negated number, it is not a number at all.
+ * This is the one wrong-number defect the story can produce, so the peeling and
+ * the carrying happen in one place and neither can be done without the other.
+ *
+ * **The order the two nest in is not fixed, because exporters do not fix it.**
+ * `-$1,234.56` is Excel's own default rendering of a negative dollar amount and
+ * `-1.234,56 €` is its German twin; `(€1.234,56)` and `€ (1.234,56)` are both in
+ * the wild. A fixed sign-outside-affix reading made half of those text while the
+ * other half read — the flagship "amount out of any ERP export" failing on one
+ * of its two spellings. So this loops from both ends until nothing more peels,
+ * which makes the composition order-independent by construction rather than by
+ * enumerating the nestings someone thought of.
+ *
+ * It terminates: every branch either shortens the body or claims the one affix,
+ * and the affix can be claimed once.
+ */
+function peelWrappers(text) {
+  let body = text
+  let affix = null
+  let negative = false
+  let marks = 0
+
+  for (;;) {
+    if (body.length >= 2 && body.startsWith('(') && body.endsWith(')')) {
+      body = body.slice(1, -1)
+      negative = true
+      marks += 1
+      continue
+    }
+    if (body.length >= 2 && body.endsWith('-')) {
+      body = body.slice(0, -1)
+      negative = true
+      marks += 1
+      continue
+    }
+    if (body.startsWith('-') || body.startsWith('+')) {
+      negative = negative || body.startsWith('-')
+      body = body.slice(1)
+      marks += 1
+      continue
+    }
+    if (affix === null) {
+      const peeled = peelAffix(body)
+      if (peeled.affix !== null) {
+        affix = peeled.affix
+        body = peeled.body
+        continue
+      }
+    }
+    break
+  }
+
+  return marks > 1 ? null : { body, affix, negative }
+}
+
+/**
+ * The one number reading rule: the wrappers outside, the digits at the centre.
  *
  * Returns the integer digits with the grouping removed — which is what the
- * overflow guard compares, digit by digit — or `null` where the value is not a
- * number under this reading. Grouping, if present, must be consistent:
- * `1.23.456` is not a German number, and accepting it would let a malformed
- * column look fully readable.
+ * overflow guard compares, digit by digit — **and whether the value is
+ * negative**, or `null` where the value is not a number under this reading.
+ * Grouping, if present, must be consistent: `1.23.456` is not a German number,
+ * and accepting it would let a malformed column look fully readable.
  *
  * `affix` is the affix the *column* carries, and every parsed value must carry
  * it: a bare number in a percent column counts unparsed rather than quietly
  * joining a column of percentages.
+ *
+ * **Exported for story 6**, which converts a confirmed column into a Table and
+ * must read every value exactly as detection counted it. A second parser there
+ * would be a second opinion about what `(1.234,56)` means, and the first thing
+ * it would get wrong is the sign.
  */
-function numberParts(text, { group, decimal }, affix = null) {
-  const signed = peelSign(text)
-  if (signed === null) return null
+export function numberParts(text, { group, decimal }, affix = null) {
+  const peeled = peelWrappers(text)
+  if (peeled === null || peeled.affix !== affix) return null
 
-  const carried = peelAffix(signed.body)
-  if (carried.affix !== affix) return null
-
-  let body = carried.body
-  if (body.startsWith('+') || body.startsWith('-')) body = body.slice(1)
+  const body = peeled.body
   if (body === '') return null
 
   let integer = body
@@ -364,9 +438,9 @@ function numberParts(text, { group, decimal }, affix = null) {
     if (parts.length < 2) return null
     if (!DIGITS.test(parts[0]) || parts[0].length === 0 || parts[0].length > 3) return null
     if (!parts.slice(1).every((p) => p.length === 3 && DIGITS.test(p))) return null
-    return { digits: parts.join(''), negative: signed.negative }
+    return { digits: parts.join(''), negative: peeled.negative }
   }
-  return DIGITS.test(integer) ? { digits: integer, negative: signed.negative } : null
+  return DIGITS.test(integer) ? { digits: integer, negative: peeled.negative } : null
 }
 
 /** Does `text` read as a number under these separators and this affix? */
@@ -399,10 +473,8 @@ function exceedsSafeInteger(digits) {
  *  text unless the user says otherwise. Read through the sign and the affix, so
  *  `(0123)` and `0123 €` are the same finding as a bare `0123`. */
 function hasLeadingZero(text) {
-  const signed = peelSign(text)
-  let body = signed === null ? text : peelAffix(signed.body).body
-  if (body.startsWith('+') || body.startsWith('-')) body = body.slice(1)
-  return /^0\d/.test(body)
+  const peeled = peelWrappers(text)
+  return /^0\d/.test(peeled === null ? text : peeled.body)
 }
 
 const DAYS_IN_MONTH = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
@@ -446,56 +518,62 @@ function readsAsDate(text, { separator, order, shortYear = false }) {
 // live here: that `duration` is a type a user can choose at all, and that a
 // fractional second is read rather than rounded away.
 
-/** Seconds optional, fraction 1–9 digits and only alongside seconds, offset
- *  `Z` / `±HH:mm` / `±HHmm`. Nine digits is the representation's own resolution
- *  (AD-21), not an arbitrary cap: every digit that matches here survives into a
- *  Table, and a tenth is not readable rather than quietly dropped. */
-const ISO_DATETIME =
-  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|[+-]\d{2}:?\d{2})?$/
-
-/**
- * `HH:mm(:ss(.fffffffff))` with a two-digit hour — the shape that rides behind a
- * date.
- *
- * The fraction is here and not only on the ISO candidate, which is the whole
- * point of the amendment: `2026-02-13 15:57:35.4616727` is what SQL Server
- * `datetime2(7)` and .NET write into a CSV, and before this a space instead of a
- * `T` was the difference between a typed column and text — on the exact shape
- * this story exists to stop being text.
- */
-const DATETIME_CLOCK = /^(\d{2}):([0-5]\d)(?::([0-5]\d)(?:\.(\d{1,9}))?)?$/
-
-/** `HH:mm(:ss)`, hours 00–23 in one or two digits. */
+/** `HH:mm(:ss)`, hours 00–23 in one or two digits, minutes and seconds two
+ *  digits at most 59. This is the `time` type, standing alone. */
 const CLOCK_TIME = /^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/
 
 /** The same shape with the hours unbounded — every time is a duration, which is
  *  exactly why the two need a question rather than a preference. */
 const CLOCK_DURATION = /^(\d+):([0-5]\d)(?::([0-5]\d))?$/
 
-function readsAsIsoDateTime(text) {
-  const m = ISO_DATETIME.exec(text)
-  if (m === null) return false
+/**
+ * The clock that rides behind a date: `CLOCK_TIME` plus the two things only a
+ * timestamp carries — a fractional second of 1–9 digits alongside seconds,
+ * spelled with `.` **or** `,` because ISO 8601 allows both, and a zone offset of
+ * `Z`, `z`, `±HH`, `±HHmm` or `±HH:mm`.
+ *
+ * The hour is `\d{1,2}` here for exactly the reason it is `\d{1,2}` there.
+ * `31.12.2025 9:05` is an ordinary German export, and it read as text while
+ * `9:05` standing alone read as a time — an hour that is two-digit behind a date
+ * and one-or-two in front of nothing is two clocks wearing one name. Everything
+ * this reader adds is additive, so the promise "the clock behind a date reads
+ * what the clock reads alone" is structural rather than remembered.
+ *
+ * Nine fractional digits is the representation's own resolution (AD-21, epoch
+ * nanoseconds), not an arbitrary cap: every digit that matches here survives
+ * into a Table, and a tenth is counted unreadable rather than quietly dropped —
+ * which is the C-10 rule applied to the other end of a number.
+ */
+const DATETIME_CLOCK =
+  /^(\d{1,2}):([0-5]\d)(?::([0-5]\d)(?:[.,](\d{1,9}))?)?(Z|z|[+-]\d{2}(?::?\d{2})?)?$/
 
-  const [, year, month, day, hours, minutes, seconds, , offset] = m
-  if (!isRealDate(Number(year), Number(month), Number(day))) return false
-  if (Number(hours) > 23 || Number(minutes) > 59) return false
-  if (seconds !== undefined && Number(seconds) > 59) return false
-  if (offset !== undefined && offset !== 'Z') {
-    const digits = offset.slice(1).replace(':', '')
-    if (Number(digits.slice(0, 2)) > 23 || Number(digits.slice(2)) > 59) return false
-  }
-  return true
+/**
+ * Does `text` read as a clock? `offsets` is what separates the two callers: the
+ * standalone `time` type takes the bare shape, a datetime's clock takes the
+ * fraction and the zone as well.
+ */
+function readsAsClockTime(text, offsets) {
+  const m = (offsets ? DATETIME_CLOCK : CLOCK_TIME).exec(text)
+  if (m === null || Number(m[1]) > 23) return false
+  if (!offsets) return true
+
+  const offset = m[5]
+  if (offset === undefined || offset === 'Z' || offset === 'z') return true
+  const digits = offset.slice(1).replace(':', '')
+  return Number(digits.slice(0, 2)) <= 23 && (digits.length === 2 || Number(digits.slice(2)) <= 59)
 }
+
+/** Where the date stops and the clock starts. ISO 8601 separates them with `T`
+ *  and permits the lowercase form; every other candidate uses a space. */
+const clockStart = (text, candidate) => (candidate.iso ? text.search(/[Tt]/) : text.indexOf(' '))
 
 function readsAsDateTime(text, candidate) {
-  if (candidate.iso) return readsAsIsoDateTime(text)
-
-  const at = text.indexOf(' ')
+  const at = clockStart(text, candidate)
   if (at === -1) return false
-  return readsAsDate(text.slice(0, at), candidate.date) && DATETIME_CLOCK.test(text.slice(at + 1))
+  return readsAsDate(text.slice(0, at), candidate.date) && readsAsClockTime(text.slice(at + 1), true)
 }
 
-const readsAsTime = (text) => CLOCK_TIME.test(text) && Number(text.slice(0, text.indexOf(':'))) <= 23
+const readsAsTime = (text) => readsAsClockTime(text, false)
 
 const readsAsDuration = (text) => CLOCK_DURATION.test(text)
 
@@ -817,6 +895,24 @@ export function detectColumn(cells, options = {}) {
   const type = overKind ? best.candidate.type : winner.type
   const runnerUp = winner.hits[1] ?? null
 
+  // Three two-digit parts settle nothing. A `dd.MM.yy` column is asked about
+  // rather than proposed unless something in it decides — story 3's second
+  // ambiguity state, on the case it was built for, with the alternatives being
+  // *types* because the choice on offer is `Datum` or `Text`.
+  if (type === DATE && best.candidate.shortYear) {
+    const settled = shortYearVerdict(values, best.candidate)
+    if (settled === TEXT) return record({ mixedAffixes })
+    if (settled === 'unresolved') {
+      return record({
+        type: DATE,
+        format: best.candidate,
+        counts: counts(best.parsed),
+        verdict: 'unresolved',
+        evidence: Object.freeze({ over: 'kind', alternatives: Object.freeze([DATE, TEXT]) }),
+      })
+    }
+  }
+
   // The ambiguity states. A runner-up that reads nothing is no contest at all;
   // a reading that reads more exclusively than the other is decisive and the
   // count is nameable; anything else is the state where nothing settles it, and
@@ -855,8 +951,60 @@ export function detectColumn(cells, options = {}) {
     verdict,
     evidence,
     affix: type === NUMBER ? affix : null,
+    // Carried whatever kind won. Eighteen German dates beside `12 €` and `12 $`
+    // propose `date`, and the two amounts would otherwise survive only as an
+    // anonymous unparsed count — the two-units fact is still true, still the
+    // user's to act on, and losing it because a *different* kind cleared the
+    // threshold is the finding going quiet exactly where it is least expected.
+    // What the sentence in `ui/` may no longer claim is that the column is read
+    // as text, because sometimes it is not.
     mixedAffixes,
   })
+}
+
+/** Three parts of exactly two digits — the shape a version number, a chapter
+ *  number and a `dd.MM.yy` date all share, and the reason none of them can be
+ *  told from the others by looking at one value. */
+function isTwoDigitTriple(value, separator) {
+  const parts = value.split(separator)
+  return parts.length === 3 && parts.every((part) => part.length === 2 && DIGITS.test(part))
+}
+
+/**
+ * What a `dd.MM.yy` column has settled about itself: `TEXT`, `'unresolved'`, or
+ * `null` for "nothing special, carry on".
+ *
+ * `01.02.03` is a date under `dd.MM.yy` and it is equally a version number, a
+ * chapter number or a part number — and before this story such a column read as
+ * `text`, so a *settled* date is a worse answer than the one it already had.
+ * Two kinds of value settle it, and they are story 3's exclusive evidence in
+ * both directions:
+ *
+ *   - a triple that **cannot** be a date under the pattern — `01.13.03`, where
+ *     13 is no month — reads only as a version, and settles the column as text;
+ *   - a triple whose **day is past twelve** — `31.12.25`, where 31 is no
+ *     month — cannot be a triple of month-sized components, and settles it as
+ *     a date. This is why the shape the owner actually asked for is unaffected.
+ *
+ * With neither, nothing in the column decides and the person does. Only values
+ * of the triple shape are asked: a column carrying `demnächst` beside twenty
+ * dates is still twenty dates and one unparsed value, exactly as story 3 counts
+ * it — the version hypothesis needs version-shaped values to stand on.
+ */
+function shortYearVerdict(values, candidate) {
+  const { separator } = candidate
+  let decidesText = false
+  let decidesDate = false
+
+  for (const value of values) {
+    if (!isTwoDigitTriple(value, separator)) continue
+    if (!readsAsDate(value, candidate)) decidesText = true
+    else if (Number(value.split(separator)[0]) > 12) decidesDate = true
+  }
+
+  if (decidesText) return TEXT
+  if (decidesDate) return null
+  return 'unresolved'
 }
 
 /** Split a column into the values that count and the ones the user declared
@@ -959,10 +1107,10 @@ export function scoreColumn(cells, { type, format, missingTokens, domain }) {
   // German to English digits would take the percent sign off it — under en-US
   // not one of those values parses, so the chosen reading alone would report
   // that the column carries no unit at all.
-  const { affix, used } =
+  const { affix } =
     type === NUMBER && format
       ? affixScan(values, numberCandidates(), marksPresent(values))
-      : { affix: null, used: EMPTY }
+      : { affix: null }
 
   const reads = readerFor(type, affix)
   // A type with candidates and no chosen reading has nothing to score against,
@@ -987,7 +1135,14 @@ export function scoreColumn(cells, { type, format, missingTokens, domain }) {
     domain: declaration.domain,
     refusedNativeType: declaration.refusedNativeType,
     affix,
-    mixedAffixes: used.length > 1 ? Object.freeze([...used]) : null,
+    // Never here. A mixed-affix column is a *proposal* of `text` with a reason
+    // attached, and the reason's own sentence says the column is read as text.
+    // Carried through a re-score it outlived its condition: the user overrides
+    // to `number`, the card shows `Zahl` and `Einheit: €`, and the warning
+    // underneath still claimed text while the `$` values went unparsed with no
+    // sentence of their own. A choice made is a question closed — what the
+    // choice costs is the unparsed count, which is reported either way.
+    mixedAffixes: null,
   })
 }
 

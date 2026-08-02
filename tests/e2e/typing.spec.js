@@ -272,6 +272,66 @@ test('a duration column settles itself, and a mixed unit refuses to be a number'
   await expect(card.getByLabel('Lesart: Dauer')).toHaveCount(0)
 })
 
+test('the timestamps a real database writes are typed, not text', async ({ page }) => {
+  // Every one of these read as `text` at some point during this story, each for
+  // its own reason, and each is what a named producer actually writes.
+  await pick(
+    page,
+    csv(
+      'protokoll.csv',
+      'SqlServer;Postgres;Deutsch;Iso\n' +
+        '2026-02-13 15:57:35.4616727;2026-02-13 15:57:35.461+02:00;31.12.2025 9:05;2025-12-31t14:30:00z\n' +
+        '2026-02-14 08:01:02.1000000;2026-02-14 08:01:02.100+02:00;01.03.2026 8:00;2025-01-01T00:00:00,461+02\n',
+    ),
+  )
+
+  const card = cards(page)
+  for (const name of ['SqlServer', 'Postgres', 'Deutsch', 'Iso']) {
+    await expect(card.getByLabel(`Typ: ${name}`)).toHaveValue('datetime')
+    await expect(columnRow(page, name).getByTestId('typing-hitrate')).toHaveText(
+      '2 von 2 Werten lesbar',
+    )
+  }
+
+  await expect(card.getByLabel('Lesart: Iso')).toHaveValue('ISO 8601')
+  await expect(card.getByLabel('Lesart: Deutsch')).toHaveValue('dd.MM.yyyy HH:mm')
+
+  await card.getByRole('button', { name: 'Typen bestätigen: protokoll' }).click()
+  await expect(card.getByTestId('typing')).toContainText('Typen bestätigt.')
+})
+
+test('a column of version numbers is asked about, not silently dated', async ({ page }) => {
+  // The regression review round 1 found. `01.02.03` is a date under `dd.MM.yy`
+  // and equally a version number — and before this story such a column read as
+  // text, so a settled date is a worse answer than the one it already had.
+  await pick(page, csv('kapitel.csv', 'Version;Datum\n01.02.03;31.12.25\n04.05.06;01.03.26\n'))
+
+  const card = cards(page)
+
+  await expect(columnRow(page, 'Version').getByTestId('typing-verdict')).toContainText(
+    'zwischen Datum und Text — bitte den Typ wählen',
+  )
+  await expect(card.getByLabel('Typ: Version')).toHaveValue('')
+  await expect(card.getByTestId('typing')).toContainText('Noch offen: Version.')
+
+  // The neighbour is the shape the two-digit year was asked for, and `31` is no
+  // month — so that column decides for itself and raises no question at all.
+  await expect(card.getByLabel('Typ: Datum')).toHaveValue('date')
+  await expect(card.getByLabel('Lesart: Datum')).toHaveValue('dd.MM.yy')
+
+  await card.getByRole('button', { name: 'Typen bestätigen: kapitel' }).click()
+  await expect(card.getByTestId('typing-refusal')).toContainText('Version')
+
+  // Text is the answer those columns used to get for free, and it is one click.
+  await card.getByLabel('Typ: Version').selectOption('text')
+  await expect(columnRow(page, 'Version').getByTestId('typing-hitrate')).toHaveText(
+    '2 von 2 Werten lesbar',
+  )
+
+  await card.getByRole('button', { name: 'Typen bestätigen: kapitel' }).click()
+  await expect(card.getByTestId('typing')).toContainText('Typen bestätigt.')
+})
+
 test('an annotation is the user’s own text, and it survives a re-read', async ({ page }) => {
   await pick(page, csv('umsatz.csv', 'Kunde;Betrag\nAnna;1.234,56\n'))
 

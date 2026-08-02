@@ -10,7 +10,7 @@
 // by app/ as `{ extension → SourceReader }` — this file names no adapter (AD-1).
 
 import { error, unresolved, warning } from '../diagnostics/diagnostic.js'
-import { TEXT, isSettableType, nativeTypeOf } from '../types/catalog.js'
+import { isSettableType, nativeTypeOf } from '../types/catalog.js'
 import { ENCODINGS, decode, decodeBytes } from '../types/encoding.js'
 import {
   bestFormat,
@@ -32,8 +32,13 @@ import {
  * not `clean` until a person has been through step zero. That is AD-29's first
  * gate made visible instead of implicit — the state the fourth severity was
  * introduced for is the one state the summary must not hide.
+ *
+ * Exported because it is a pure projection of a typing and the one thing that
+ * has to hold for a typing this file did not build: story 14 restores one from a
+ * Recipe, and what a restored record may be missing is exactly what a test needs
+ * to be able to hand it directly.
  */
-const typingDiagnostics = (typing) => {
+export const typingDiagnostics = (typing) => {
   const out = []
   for (const column of typing.columns) {
     if (column.verdict === 'unresolved' && column.chosen === null) {
@@ -43,17 +48,28 @@ const typingDiagnostics = (typing) => {
       // reading select. Overloading one code would make the card point at the
       // wrong control, so the alternatives (`[time, duration]`, type codes
       // rather than readings) travel under their own name.
+      //
+      // Read through `?.`, not because detection can produce an unresolved
+      // column without evidence — it cannot — but because this file is not the
+      // only producer of a typing. Story 14 restores one from a Recipe, and a
+      // hand-edited or older file carrying `verdict: 'unresolved'` with no
+      // evidence would take the whole read down here, over a field that is only
+      // ever used to pick between two sentences. An unresolved column with
+      // nothing to say still names itself, so the gate's reason is never silent.
+      const evidence = column.evidence ?? null
       out.push(
         unresolved(
-          column.evidence.over === 'kind' ? 'typing.ambiguous_kind' : 'typing.ambiguous_locale',
-          { column: column.name, alternatives: column.evidence.alternatives },
+          evidence?.over === 'kind' ? 'typing.ambiguous_kind' : 'typing.ambiguous_locale',
+          { column: column.name, alternatives: evidence?.alternatives ?? Object.freeze([]) },
         ),
       )
     }
     // Two units in one column is not a number column: `12 €` and `12 $` cannot
-    // be summed, and a proposal of `number` would invite exactly that sum. The
-    // column is text and both affixes are named, because "this column mixes
-    // units" is only actionable if the user learns which two.
+    // be summed, and a proposal of `number` would invite exactly that sum. Both
+    // affixes are named, because "this column mixes units" is only actionable if
+    // the user learns which two — and it is reported whatever kind the column
+    // ended up as, since eighteen German dates beside those two amounts are
+    // still a date column with two amounts nobody can add up in it.
     if (column.mixedAffixes) {
       out.push(
         warning('typing.mixed_affixes', {
@@ -551,13 +567,23 @@ export function createSourceStore(readers) {
    * confirmed, which is worse than being refused.
    */
   const resolveFormat = (cells, type, format, missingTokens) => {
-    if (type === TEXT) return null
-    // `time` and `duration` offer no reading at all: the choice between them is
-    // the type, and it has already been made by the time this runs. A column
-    // with no candidates has no reading to demand and none to refuse.
-    const candidates = candidatesFor(type)
-    if (candidates.length === 0) return null
     if (format === undefined) return bestFormat(cells, type, missingTokens)
+
+    // `text`, `time` and `duration` offer no reading at all — for `text` because
+    // it reads everything, for the other two because the choice between them is
+    // the type and it has already been made by the time this runs. `null` is
+    // therefore their one legitimate reading: it is what `bestFormat` hands back
+    // and what a stored choice round-trips as. Anything else is still refused,
+    // exactly as it is for every other type. There is deliberately no early
+    // return for `text` either — one for `time`/`duration` let
+    // `{ pattern: 'nonsense' }` through while the same nonsense on a `datetime`
+    // threw, and a reading no candidate offers would be stored, scored as zero
+    // readable, and then confirmed.
+    const candidates = candidatesFor(type)
+    if (candidates.length === 0) {
+      if (format === null) return null
+      throw new TypeError(`a ${type} column has no readings, and got: ${format.pattern ?? format.locale}`)
+    }
     if (format === null) throw new TypeError(`a ${type} column needs a reading`)
 
     const key = format.pattern ?? format.locale

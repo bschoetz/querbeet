@@ -21,6 +21,7 @@ import {
   detectColumn,
   detectTable,
   expandTwoDigitYear,
+  numberParts,
   numberCandidates,
   scorableTypeGaps,
   scoreColumn,
@@ -479,6 +480,18 @@ describe('piece 1 — the overflow guard', () => {
     expect(detectColumn(mostly).type).toBe(TEXT)
   })
 
+  it('strips the grouping before it counts, so an ordinary amount never trips it', () => {
+    // The direction that must NOT trip, which is the half a guard is usually
+    // missing. `1.234.567.890.123` is thirteen digits and far inside the safe
+    // range; counting the separators as digits would make it sixteen characters
+    // and drop every grouped million-scale German amount to `text`.
+    const r = detectColumn(['1.234.567.890.123', '2.000.000.000.000'])
+
+    expect(r).toMatchObject({ type: NUMBER, verdict: 'settled' })
+    expect(r.counts.unparsed).toBe(0)
+    expect(detectColumn(['$1,234,567,890,123.00', '$2,000,000,000,000.00']).type).toBe(NUMBER)
+  })
+
   it('is not fooled by leading zeros inside the digits', () => {
     // `0009007199254740993` has nineteen characters and sixteen significant
     // digits. It is also a leading-zero column, so it is text twice over — the
@@ -511,6 +524,8 @@ describe('piece 2 — datetime, and the two-digit year', () => {
       '2025-12-31T12:60:00Z',
       '2025-12-31T12:00:60Z',
       '2025-12-31T12:00:00+25:00',
+      '2025-12-31T12:00:00+02:99', // an offset minute is bounded too, not only the hour
+      '2025-12-31T12:00:00+0299',
       '2025-12-31T12:00:00.1234567890Z',
       '2025-12-31 T12:00',
     ]) {
@@ -575,6 +590,86 @@ describe('piece 2 — datetime, and the two-digit year', () => {
     expect(detectColumn(['2026-02-13 15:57.461', '2026-02-14 08:01.100']).type).toBe(TEXT)
   })
 
+  it('carries a zone offset on every shape, in every spelling the standard allows', () => {
+    // `2026-02-13 15:57:35.461+02:00` is what Postgres writes for a
+    // `timestamptz`. Before review round 1 the offset lived on the ISO candidate
+    // alone, so the space-separated twin of a shape that read perfectly well was
+    // text — the story's own premise failing one field further right.
+    const cases = [
+      [['2026-02-13 15:57:35.461+02:00', '2026-02-14 08:01:02.100+02:00'], 'yyyy-MM-dd HH:mm'],
+      [['31.12.2025 14:30:00+02:00', '01.01.2026 08:00:00-05:00'], 'dd.MM.yyyy HH:mm'],
+      [['2025-12-31T14:30:00+0200', '2025-01-01T08:00:00-0500'], 'ISO 8601'],
+      [['2025-12-31T14:30:00+02', '2025-01-01T08:00:00-05'], 'ISO 8601'],
+      [['2025-12-31T14:30Z', '2025-01-01T08:00Z'], 'ISO 8601'],
+    ]
+
+    for (const [cells, pattern] of cases) {
+      const r = detectColumn(cells)
+      expect([cells[0], r.type, r.format.pattern, r.counts.unparsed]).toEqual([
+        cells[0],
+        DATETIME,
+        pattern,
+        0,
+      ])
+    }
+  })
+
+  it('takes a one-digit hour behind a date, because it takes one standing alone', () => {
+    // `31.12.2025 9:05` is an ordinary German export, and it read as text while
+    // `9:05` on its own read as a time. An hour that is two-digit behind a date
+    // and one-or-two in front of nothing is two clocks wearing one name.
+    const r = detectColumn(['31.12.2025 9:05', '01.03.2026 8:00:30'])
+
+    expect(r).toMatchObject({ type: DATETIME, verdict: 'settled' })
+    expect(r.counts.unparsed).toBe(0)
+    expect(detectColumn(['2025-12-31T9:05Z', '2025-01-01T8:00Z']).type).toBe(DATETIME)
+  })
+
+  it('accepts the ISO 8601 a standard-named candidate has to accept', () => {
+    // Lowercase `t` and `z`, and a comma decimal, are all in the standard.
+    // Naming a strict subset after it puts the same lie in the reading select
+    // that spelling the candidate as a pattern would.
+    for (const cells of [
+      ['2025-12-31t14:30:00z', '2025-01-01t00:00:00z'],
+      ['2025-12-31T14:30:00,461Z', '2025-01-01T00:00:00,1Z'],
+      ['2025-12-31t14:30:00,461+02:00', '2025-01-01t00:00:00,1+02:00'],
+    ]) {
+      const r = detectColumn(cells)
+      expect([cells[0], r.type, r.format.pattern]).toEqual([cells[0], DATETIME, 'ISO 8601'])
+    }
+  })
+
+  it('is never narrower behind a date than standing alone, and wider by exactly two things', () => {
+    // The invariant, in both directions — the previous version of this case
+    // pinned only the direction in which it held, which is coverage-shaped and
+    // false. The Boundaries say "never narrower", and deliberately *wider*: a
+    // fraction and a zone belong to a datetime and not to a bare `HH:mm(:ss)`.
+    const nine = Array.from({ length: 9 }, (_, i) => `2025-12-0${i + 1} 08:15`)
+    const behindADate = (clock) =>
+      detectColumn([...nine, `2025-12-31 ${clock}`]).counts.unparsed === 0
+    const standingAlone = (clock) =>
+      scoreColumn([clock], { type: TIME, format: null }).counts.unparsed === 0
+
+    // Never narrower: everything the bare clock reads is read behind a date too,
+    // and everything it refuses is refused there.
+    for (const clock of ['08:15', '8:15', '23:59', '00:00', '08:15:30', '9:05:00']) {
+      expect([clock, standingAlone(clock), behindADate(clock)]).toEqual([clock, true, true])
+    }
+    for (const clock of ['12:60', '24:00', '1:5', '08:15:60', '8', '25:00']) {
+      expect([clock, standingAlone(clock), behindADate(clock)]).toEqual([clock, false, false])
+    }
+
+    // Wider by exactly two things, and no more. A fraction and a zone read
+    // behind a date and are text standing alone; a tenth fractional digit and an
+    // impossible offset are refused in both places.
+    for (const clock of ['08:15:30.123', '08:15:30,123456789', '08:15Z', '08:15:30+02:00']) {
+      expect([clock, standingAlone(clock), behindADate(clock)]).toEqual([clock, false, true])
+    }
+    for (const clock of ['08:15:30.1234567890', '08:15:30+02:99']) {
+      expect([clock, standingAlone(clock), behindADate(clock)]).toEqual([clock, false, false])
+    }
+  })
+
   it('offers no MM/dd datetime mirror, and says so on purpose', () => {
     // A candidate enters with a real Source that needs it — the rule
     // `NUMBER_LOCALES` already follows. Nothing seen so far carries an American
@@ -596,6 +691,67 @@ describe('piece 2 — datetime, and the two-digit year', () => {
     expect(r.verdict).toBe('settled')
     // Strict widths still: the two patterns cannot blur into each other.
     expect(detectColumn(['31.12.25', '31.12.2025']).type).toBe(TEXT)
+  })
+
+  it('asks about a column of three two-digit parts instead of calling it a date', () => {
+    // The regression review round 1 found. `01.02.03` is a date under
+    // `dd.MM.yy` and it is equally a version number, a chapter number or a part
+    // number — and before this story that column read as `text`. A *settled*
+    // date is a worse answer than the one it already had, so the column is asked
+    // about: story 3's second ambiguity state, with the alternatives being types
+    // because the choice on offer is `Datum` or `Text`.
+    const r = detectColumn(['01.02.03', '04.05.06', '07.08.09'])
+
+    expect(r.type).toBe(DATE)
+    expect(r.verdict).toBe('unresolved')
+    expect(r.evidence).toEqual({ over: 'kind', alternatives: [DATE, TEXT] })
+    expect(r.counts.parsed).toBe(3)
+
+    // …and the gate is what it is for: the column is named as standing in the
+    // way of a confirmation, exactly as for the locale case.
+    const table = { columns: [column('Version', ['01.02.03', '04.05.06'])], rowCount: 2 }
+    expect(unresolvedColumns(detectTable(table))).toEqual(['Version'])
+  })
+
+  it('is settled by a day past twelve, which is the shape the owner asked for', () => {
+    // `31` is no month, so `31.12.25` cannot be a triple of month-sized
+    // components and the column decides for itself. The two-digit year the story
+    // was written for is untouched by the rule that guards version numbers.
+    const r = detectColumn(['31.12.25', '01.03.26'])
+
+    expect(r).toMatchObject({ type: DATE, verdict: 'settled', evidence: null })
+    expect(r.format.pattern).toBe('dd.MM.yy')
+  })
+
+  it('is settled the other way by a triple that cannot be a date', () => {
+    // 13 is no month, so `01.13.03` reads only as a version — exclusive evidence
+    // pointing at text, the mirror of the day past twelve. The column is text
+    // and confirmable, rather than a date with a question mark on it.
+    expect(detectColumn(['01.02.03', '01.13.03', '04.05.06'])).toMatchObject({
+      type: TEXT,
+      verdict: 'settled',
+    })
+    expect(detectColumn([...Array.from({ length: 20 }, () => '01.02.03'), '99.99.99']).type).toBe(
+      TEXT,
+    )
+  })
+
+  it('only asks where there are version-shaped values to ask about', () => {
+    // A column carrying `demnächst` beside twenty dates is twenty dates and one
+    // unparsed value, exactly as story 3 counts it. The version hypothesis needs
+    // version-shaped values to stand on, so an ordinary unreadable value must not
+    // drag a settled column into a question.
+    const dates = Array.from({ length: 20 }, (_, i) => `${13 + (i % 15)}.02.25`)
+    const r = detectColumn([...dates, 'demnächst'])
+
+    expect(r).toMatchObject({ type: DATE, verdict: 'settled' })
+    expect(r.counts).toMatchObject({ parsed: 20, unparsed: 1 })
+
+    // …and a four-digit year is never in scope: a four-digit part is a year and
+    // nothing else, so no version reading competes with it.
+    expect(detectColumn(['01.02.2003', '04.05.2006', '07.08.2009']).evidence).toEqual({
+      alternatives: ['dd.MM.yyyy', 'MM.dd.yyyy'],
+    })
   })
 
   it('pivots the century at Excel’s fixed boundary, never at a sliding one', () => {
@@ -766,6 +922,32 @@ describe('pieces 5 and 6 — affixed numbers and accounting signs', () => {
     expect(r.mixedAffixes).toEqual(['€', '$'])
   })
 
+  it('refuses it even where the dominant unit would clear the threshold on its own', () => {
+    // The case that makes the rule a rule rather than a coincidence. Nine `12 €`
+    // against one `12 $` is 0.9 under the euro reading, so without the
+    // disqualification the column would be proposed as a number carrying euros
+    // with one anonymous unparsed value — and the dollar amount would be summed
+    // into a euro total by whoever confirmed it.
+    const r = detectColumn([...Array.from({ length: 9 }, () => '12 €'), '12 $'])
+
+    expect(r.type).toBe(TEXT)
+    expect(r.mixedAffixes).toEqual(['€', '$'])
+    expect(r.affix).toBeNull()
+  })
+
+  it('keeps the two-units finding whatever kind ends up winning', () => {
+    // Eighteen German dates beside `12 €` and `12 $` propose `date`. The two
+    // amounts would otherwise survive only as an anonymous unparsed count, and
+    // the finding would go quiet exactly where it is least expected — because a
+    // *different* kind cleared the threshold.
+    const dates = Array.from({ length: 18 }, (_, i) => `${13 + (i % 15)}.02.2025`)
+    const r = detectColumn([...dates, '12 €', '12 $'])
+
+    expect(r.type).toBe(DATE)
+    expect(r.mixedAffixes).toEqual(['€', '$'])
+    expect(r.counts).toMatchObject({ parsed: 18, unparsed: 2 })
+  })
+
   it('does not read an affix out of prose', () => {
     // The finding is "two units are in use", not "two symbols occur". A text
     // column mentioning both reads as a number under neither, so neither is used.
@@ -790,6 +972,51 @@ describe('pieces 5 and 6 — affixed numbers and accounting signs', () => {
     expect(detectColumn(['($1,234.56)', '$80.00']).affix).toBe('$')
   })
 
+  it('carries the sign it peels, in every spelling that says negative', () => {
+    // The story's own named worst case: "stripping parentheses without carrying
+    // the sign flips the value". Detection never notices — it counts what reads
+    // — so nothing but this asserts the field story 6 converts with. Three
+    // spellings say negative and the ordinary leading minus is one of them; it
+    // was the one being dropped, under a comment promising it was not.
+    const de = numberCandidates().find((c) => c.locale === 'de-DE')
+
+    expect(numberParts('-1.234,56', de)).toEqual({ digits: '1234', negative: true })
+    expect(numberParts('(1.234,56)', de)).toEqual({ digits: '1234', negative: true })
+    expect(numberParts('1.234,56-', de)).toEqual({ digits: '1234', negative: true })
+    expect(numberParts('1.234,56', de)).toEqual({ digits: '1234', negative: false })
+    expect(numberParts('+1.234,56', de)).toEqual({ digits: '1234', negative: false })
+
+    // …and the sign rides through an affix, which is where a second parser in
+    // story 6 would first get it wrong.
+    expect(numberParts('-1.234,56 €', de, '€')).toEqual({ digits: '1234', negative: true })
+  })
+
+  it('composes the sign and the unit in either order', () => {
+    // `-$1,234.56` is Excel's own default rendering of a negative dollar amount
+    // and `-1.234,56 €` is its German twin. A fixed sign-outside-affix reading
+    // made the prefix form text while the suffix form read — the flagship
+    // "amount out of any ERP export" failing on one of its two spellings.
+    const en = numberCandidates().find((c) => c.locale === 'en-US')
+    const de = numberCandidates().find((c) => c.locale === 'de-DE')
+
+    for (const [value, candidate, affix] of [
+      ['-$1,234.56', en, '$'],
+      ['$-1,234.56', en, '$'],
+      ['(€1.234,56)', de, '€'],
+      ['€ (1.234,56)', de, '€'],
+      ['(1.234,56 €)', de, '€'],
+      ['1.234,56 €-', de, '€'],
+    ]) {
+      expect([value, numberParts(value, candidate, affix)]).toEqual([
+        value,
+        { digits: '1234', negative: true },
+      ])
+    }
+
+    // A whole column of the shape that used to fail, end to end.
+    expect(detectColumn(['-$1,234.56', '$80.00'])).toMatchObject({ type: NUMBER, affix: '$' })
+  })
+
   it('reads two sign marks as no number at all', () => {
     // `(1.234,56-)` is negated twice, or it is a typo. Either way it is not a
     // figure this product will silently pick a sign for.
@@ -797,6 +1024,9 @@ describe('pieces 5 and 6 — affixed numbers and accounting signs', () => {
 
     expect(r.counts).toMatchObject({ parsed: 20, unparsed: 1 })
     expect(detectColumn(['(-1.234,56)', '(-80,00)']).type).toBe(TEXT)
+    // A leading minus is a sign mark like the other two, so it cannot be
+    // combined with either — which is the rule the carried sign made real.
+    expect(detectColumn(['-1.234,56-', '-80,00-']).type).toBe(TEXT)
   })
 
   it('still sees a leading zero through a sign and an affix', () => {
@@ -920,6 +1150,23 @@ describe('the reading a chosen type is scored under', () => {
     expect(bestFormat(['1.234,56', '80,00'], NUMBER).locale).toBe('de-DE')
     expect(bestFormat(['31.12.2025', '01.01.2026'], DATE).pattern).toBe('dd.MM.yyyy')
     expect(bestFormat(['Anna', 'Bernd'], TEXT)).toBeNull()
+  })
+
+  it('reads the column’s unit before it ranks the readings', () => {
+    // Scored affix-blind, not one value of `$1,234.56` parses under either
+    // reading, the tie falls to the first candidate, and a user retyping the
+    // column to `Zahl` is told 0 of 2 are readable — a wrong reading with a
+    // confident hit rate under it, which is worse than no proposal at all.
+    expect(bestFormat(['$1,234.56', '$80.00'], NUMBER).locale).toBe('en-US')
+    expect(bestFormat(['1.234,56 €', '80,00 €'], NUMBER).locale).toBe('de-DE')
+
+    // …and the count that follows from it is the one the card shows.
+    expect(
+      scoreColumn(['$1,234.56', '$80.00'], {
+        type: NUMBER,
+        format: bestFormat(['$1,234.56', '$80.00'], NUMBER),
+      }).counts,
+    ).toMatchObject({ parsed: 2, unparsed: 0 })
   })
 
   it('is scored against the values that count, not the missing ones', () => {

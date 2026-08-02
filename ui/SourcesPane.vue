@@ -176,16 +176,24 @@ const GERMAN = {
   'typing.ambiguous_kind': (v) =>
     `Spalte „${v.column}“: nichts entscheidet zwischen ${v.alternatives.map(typeLabel).join(' und ')}. ` +
     `Bitte unter „Spalten & Typen“ den Typ wählen.`,
+  // The sentence may not say "wird als Text gelesen": the finding survives
+  // whatever kind wins, and eighteen German dates beside `12 €` and `12 $` are
+  // still a date column. What is always true is why no number type is proposed.
   'typing.mixed_affixes': (v) =>
-    `Spalte „${v.column}“ enthält Werte mit verschiedenen Einheiten (${v.affixes.join(' und ')}) — ` +
-    `sie wird als Text gelesen, damit nicht versehentlich Beträge verschiedener Einheiten ` +
-    `zusammengerechnet werden.`,
+    `Spalte „${v.column}“ enthält Werte mit verschiedenen Einheiten ` +
+    `(${v.affixes.join(' und ')}). Solche Werte lassen sich nicht zusammenrechnen, deshalb ` +
+    `schlägt querbeet für diese Spalte keinen Zahlentyp vor. Bitte prüfen.`,
+  // "unter der gewählten Lesart" was true while every type that could carry an
+  // unreadable value had a reading to choose. `time` and `duration` have none —
+  // the question they raise is answered in the Typ select — so on those columns
+  // the sentence sent the user looking for a control that is not rendered. The
+  // type is what every column has, and naming it is true for all of them.
   'typing.unparsed_values': (v) =>
     v.unparsed === 1
-      ? `Spalte „${v.column}“: ein Wert von ${nf(v.readable)} lässt sich unter der ` +
-        `gewählten Lesart nicht lesen.`
+      ? `Spalte „${v.column}“: ein Wert von ${nf(v.readable)} lässt sich unter dem ` +
+        `gewählten Typ nicht lesen.`
       : `Spalte „${v.column}“: ${nf(v.unparsed)} von ${nf(v.readable)} Werten lassen sich ` +
-        `unter der gewählten Lesart nicht lesen.`,
+        `unter dem gewählten Typ nicht lesen.`,
   'typing.unconfirmed': () =>
     'Die Spaltentypen sind noch nicht bestätigt — ohne Bestätigung rechnet querbeet nicht ' +
     'mit dieser Quelle.',
@@ -865,8 +873,16 @@ const unconfirm = (id) => {
                   class="pb-1 text-xs text-slate-500"
                 >Vom Format vorgegeben: {{ typeLabel(col.type) }}</span>
 
+                <!-- No reading select while the open question is which *type*
+                     this column is. A date-or-text column still carries
+                     `type: 'date'` and a `dd.MM.yy` reading, so this rendered
+                     beside the type placeholder — two prompts, and answering
+                     this one settled the column as `date` and opened the gate.
+                     `over: 'kind'` exists so the card cannot point at a control
+                     that fails to answer the question; a control that answers it
+                     *wrongly* is worse. It returns the moment a type is chosen. -->
                 <label
-                  v-if="isSettable(col) && formatChoices(col.type).length"
+                  v-if="isSettable(col) && !typeUndecided(col) && formatChoices(col.type).length"
                   class="flex flex-col gap-1"
                 >
                   <span class="text-xs text-slate-500">Lesart</span>

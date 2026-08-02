@@ -146,7 +146,9 @@ test('a stray string in a native number column is counted, not waved through', a
   await expect(columnRow(page, 'Menge').getByTestId('typing-hitrate')).toHaveText(
     '2 von 3 Werten lesbar, 1 leer',
   )
-  await expect(card).toContainText('Spalte „Menge“: ein Wert von 3 lässt sich unter der')
+  await expect(card).toContainText(
+    'Spalte „Menge“: ein Wert von 3 lässt sich unter dem gewählten Typ nicht lesen.',
+  )
 })
 
 test('a sheet switch re-reads the file: the domain and the note survive, the confirmation does not', async ({
@@ -225,7 +227,9 @@ test('a Parquet file arrives typed by its schema, with nothing to correct', asyn
   await expect(columnRow(page, 'Auftrag').getByTestId('typing-hitrate')).toHaveText(
     '1 von 2 Werten lesbar, 1 leer',
   )
-  await expect(card).toContainText('Spalte „Auftrag“: ein Wert von 2 lässt sich unter der')
+  await expect(card).toContainText(
+    'Spalte „Auftrag“: ein Wert von 2 lässt sich unter dem gewählten Typ nicht lesen.',
+  )
 })
 
 test('a Parquet type querbeet cannot convert is named, and read as text', async ({ page }) => {

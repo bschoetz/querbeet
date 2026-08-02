@@ -102,6 +102,52 @@
     with reasons: a space as grouping separator (waits on a real Source),
     month names, exponential notation, ISO weeks and quarters, and integer as
     a type distinct from number.
+- id: "4b"
+  title: Month names in dates, German and English
+  description: >-
+    CAP-9 remainder: a date written with a month name is read rather than left
+    as text. The Source that opened the gate is a Microsoft 365 security export
+    carrying "2. Aug. 2026" and "31. Juli 2026"; English is in scope from the
+    start because the same portals ship both.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Story 4a cut month names with the reason typing.js already states — a
+    calendar per language, and no Source seen so far carried one. The Source
+    now exists, which is the exact rule NUMBER_LOCALES follows, so this is the
+    gate opening rather than a rule being broken. Four things are measured and
+    should not be rediscovered. (1) The format is not an oddity:
+    Intl.DateTimeFormat('de-DE', {day:'numeric', month:'short', year:'numeric'})
+    reproduces both owner values byte for byte, so it is the browser's own
+    German short date. (2) It is also not a mixture — CLDR abbreviates only the
+    long month names, so Jan. Feb. Apr. Aug. Sept. Okt. Nov. Dez. carry a point
+    and Maerz Mai Juni Juli stand in full without one. Sept. has four letters,
+    so a three-letter rule is wrong. (3) The month table must be derived from
+    Intl in the FORMAT context, via formatToParts of a whole date, not from
+    {month:'short'} alone — standalone yields Aug and Jul, in a date the same
+    option yields Aug. and Juli, and a table built the easy way misses exactly
+    the owner's values. That derivation is the same discipline numberCandidates
+    already applies through Intl.NumberFormat, and it is what keeps a
+    hand-written list from being wrong about a language nobody on the team
+    speaks. (4) Adding English costs a second vocabulary and a second ordering
+    but NO new ambiguity, which is the point worth checking before designing
+    for one: de writes "2. Aug. 2026", en-US "Aug 2, 2026", en-GB "2 Aug 2026",
+    and the month name's position identifies the shape inside every single
+    value — no value parses under two orderings and yields two different dates.
+    Where the two languages spell a month the same (April, August, September,
+    November in full), they also mean the same month, so it is the case
+    typing.js already refuses to ask about: an ambiguity between readings that
+    mean the same thing is not an ambiguity. That argues for ONE candidate over
+    the union of both vocabularies and all three orderings rather than a
+    reading select nobody can answer — check it rather than assume it. Two
+    things to settle in the spec: whether a browser's ICU version can shift a
+    spelling (Sept. against Sep.) and therefore whether a set of accepted
+    spellings per month beats one exact string, since an engine update must not
+    turn a typed column back into text — AD-27 makes that a two-engine
+    measurement, not a reading; and English ordinal suffixes (Aug 2nd, 2026),
+    which Intl never emits but exporters do. Story 4a's width strictness does
+    not bind here and the spec should say so: it exists so two NUMERIC patterns
+    cannot agree on the values that distinguish them, and a month name has no
+    competing pattern, so a one- or two-digit day is safe.
 - id: "5"
   title: Step graph model and Editor
   description: >-
@@ -259,6 +305,23 @@
     entry, the orphan has somewhere to wait and a rule for when it expires.
     Deciding that here is fitting it to a store that exists; deciding it in
     story 3 would have been inventing a second one.
+    Four things story 4a added must round-trip, and an older Recipe will lack
+    every one of them, so the loader needs a stated answer per field rather
+    than a default that looks harmless. A column record now carries `affix`
+    (the `%`, `€` or `$` a number column rides on — story 13 writes it back on
+    export, so losing it changes exported values) and `mixedAffixes` (the
+    two-units finding; a proposal-time fact, absent once a user has chosen a
+    type, so a missing key and an empty list are not the same state). A
+    verdict's `evidence` now carries `over: 'kind'` where the alternatives are
+    type codes rather than readings — `[time, duration]` or `[date, text]` —
+    and `core/exec/source-store.js` reads it through `?.` precisely because a
+    restored typing may not have it; without it a restored ambiguity points the
+    card at the wrong control. And AD-21's temporal columns are epoch
+    nanoseconds held as `BigInt`, which JSON cannot express at all: the
+    encoding is this story's to fix, and `JSON.stringify` throws on a `BigInt`
+    rather than rounding it, so the failure is loud but only if a test reaches
+    it. `core/exec/source-store.js` exports `typingDiagnostics` so a typing
+    this store did not build can be projected and checked directly.
 - id: "15"
   title: Input Contract, Pre-flight Check and column mapping
   description: >-

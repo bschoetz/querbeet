@@ -6,7 +6,7 @@
 // by tests/e2e/csv-sources.spec.js.
 
 import { describe, expect, it } from 'vitest'
-import { createSourceStore } from './source-store.js'
+import { createSourceStore, typingDiagnostics } from './source-store.js'
 
 const utf8 = (s) => new TextEncoder().encode(s)
 
@@ -832,6 +832,123 @@ describe('the questions story 4a added, as diagnostics and as a gate', () => {
     // …and it survives a re-read, where the whole record is rebuilt.
     const reread = await store.overrideEncoding(source.id, 'windows-1252')
     expect(reread.typing.columns[0].affix).toBe('%')
+  })
+
+  it('asks about a column of version numbers, and names it as blocking the gate', async () => {
+    const { store, source } = await withColumns([
+      { name: 'Version', cells: ['01.02.03', '04.05.06', '07.08.09'] },
+    ])
+
+    expect(codes(source)).toEqual([
+      ['unresolved', 'typing.ambiguous_kind'],
+      ['unresolved', 'typing.unconfirmed'],
+    ])
+    expect(source.diagnostics[0].values).toEqual({
+      column: 'Version',
+      alternatives: ['date', 'text'],
+    })
+    expect(store.confirmTyping(source.id).unresolved).toEqual(['Version'])
+
+    // Answering it with `Text` — the answer those columns used to get for free —
+    // opens the gate and leaves every value readable.
+    const answered = store.setColumnTyping(source.id, 0, { type: 'text' })
+    expect(answered.typing.columns[0].counts).toMatchObject({ parsed: 3, unparsed: 0 })
+    expect(store.confirmTyping(source.id).source.typing.confirmed).toBe(true)
+  })
+
+  it('drops the mixed-affix warning once the user has chosen a type', async () => {
+    // The warning is a reason a column is *not* a number, and its German
+    // sentence says the column is read as text. Carried through a re-score it
+    // outlived its condition: the card showed `Zahl` and `Einheit: €` with a
+    // warning underneath still claiming text, while the `$` values went unparsed
+    // with no sentence of their own. A choice made is a question closed — what
+    // the choice costs is the unparsed count, which is reported either way.
+    const { store, source } = await withColumns([
+      { name: 'Wert', cells: ['12 €', '12 $', '7 €'] },
+    ])
+    expect(codes(source)).toContainEqual(['warning', 'typing.mixed_affixes'])
+
+    const chosen = store.setColumnTyping(source.id, 0, { type: 'number' })
+
+    expect(chosen.typing.columns[0]).toMatchObject({
+      type: 'number',
+      affix: '€',
+      mixedAffixes: null,
+      counts: { parsed: 2, unparsed: 1 },
+    })
+    expect(codes(chosen)).toEqual([
+      ['warning', 'typing.unparsed_values'],
+      ['unresolved', 'typing.unconfirmed'],
+    ])
+
+    // …and handing the column back to detection brings the finding back, because
+    // the finding was never the user's, it was the column's.
+    const reset = store.setColumnTyping(source.id, 0, { type: null })
+    expect(codes(reset)).toContainEqual(['warning', 'typing.mixed_affixes'])
+  })
+
+  it('reports two units even when a different kind wins the column', async () => {
+    // Eighteen German dates beside `12 €` and `12 $` propose `date`. The two
+    // amounts would otherwise survive only as an anonymous unparsed count, and
+    // the finding would go quiet exactly where it is least expected — because a
+    // *different* kind cleared the threshold.
+    const dates = Array.from({ length: 18 }, (_, i) => `${13 + (i % 15)}.02.2025`)
+    const { source } = await withColumns([{ name: 'Wert', cells: [...dates, '12 €', '12 $'] }])
+
+    expect(source.typing.columns[0]).toMatchObject({ type: 'date', mixedAffixes: ['€', '$'] })
+    expect(codes(source)).toEqual([
+      ['warning', 'typing.mixed_affixes'],
+      ['warning', 'typing.unparsed_values'],
+      ['unresolved', 'typing.unconfirmed'],
+    ])
+  })
+
+  it('refuses a nonsense reading on a type that has no readings', async () => {
+    // `resolveFormat` returned early for `time` and `duration`, so a reading no
+    // candidate offers was silently accepted on those two while the same
+    // nonsense on a `datetime` threw. A reading nothing offers would be scored
+    // as zero readable and then confirmed, which is worse than being refused.
+    const { store, source } = await withColumns([{ name: 'Beginn', cells: ['08:15', '17:20'] }])
+
+    expect(() =>
+      store.setColumnTyping(source.id, 0, { type: 'time', format: { pattern: 'nonsense' } }),
+    ).toThrow(TypeError)
+
+    // …and `text`, which had the same early return and therefore the same hole.
+    expect(() =>
+      store.setColumnTyping(source.id, 0, { type: 'text', format: { pattern: 'nonsense' } }),
+    ).toThrow(TypeError)
+    expect(store.setColumnTyping(source.id, 0, { type: 'text' }).typing.columns[0]).toMatchObject({
+      type: 'text',
+      format: null,
+    })
+
+    // `null` stays the one legitimate reading for them: it is what `bestFormat`
+    // hands back and what a stored choice round-trips as.
+    expect(
+      store.setColumnTyping(source.id, 0, { type: 'duration', format: null }).typing.columns[0],
+    ).toMatchObject({ type: 'duration', format: null, counts: { unparsed: 0 } })
+  })
+
+  it('survives an unresolved column that carries no evidence', async () => {
+    // Detection cannot produce one, but this file is not the only producer of a
+    // typing: story 14 restores one from a Recipe, and a hand-edited or older
+    // file would reach `evidence.over` on a null. A crash there takes the whole
+    // read down over a field used only to pick between two sentences.
+    const { store, source } = await withColumns([{ name: 'Datum', cells: ['03.04.2025'] }])
+    const columns = [{ ...source.typing.columns[0], verdict: 'unresolved', evidence: null }]
+    const restored = { ...source, typing: Object.freeze({ columns, confirmed: false }) }
+
+    expect(() => typingDiagnostics(restored.typing)).not.toThrow()
+    expect(typingDiagnostics(restored.typing).map((d) => d.code)).toEqual([
+      'typing.ambiguous_locale',
+      'typing.unconfirmed',
+    ])
+    expect(typingDiagnostics(restored.typing)[0].values).toEqual({
+      column: 'Datum',
+      alternatives: [],
+    })
+    expect(store.get(source.id)).toBeDefined()
   })
 
   it('leaves a 19-digit order number as text rather than confirmable digits', async () => {
