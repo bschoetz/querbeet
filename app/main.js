@@ -2,14 +2,17 @@
 // (AD-1), and it owns startup and the build version (AD-12 — a Consumer must be
 // able to read the build version back to the Author).
 //
-// Nothing is wired yet: no adapter exists. What this file proves today is that
-// the driving adapter mounts and the core is reachable from it without the core
-// reaching back.
+// The source store receives its readers keyed by extension; ui/ sees the store
+// and issues its named commands (AD-10), never the adapter behind it.
 
 import { createApp } from 'vue'
 import App from '@ui/App.vue'
 import '@ui/style.css'
+import { createSourceStore } from '@core/exec/source-store.js'
+import { csvReader } from '@adapters/csv/csv-reader.js'
 
 export const BUILD_VERSION = '0.0.0'
 
-createApp(App, { buildVersion: BUILD_VERSION }).mount('#app')
+const store = createSourceStore({ csv: csvReader })
+
+createApp(App, { buildVersion: BUILD_VERSION, store }).mount('#app')

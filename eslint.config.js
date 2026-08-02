@@ -67,9 +67,10 @@ export default [
     },
   },
 
-  // Node-side tooling.
+  // Node-side tooling. The e2e specs run under Node (Playwright drives the
+  // browser from outside) and build fixture bytes with Buffer.
   {
-    files: ['scripts/**/*.mjs', '*.config.js'],
+    files: ['scripts/**/*.mjs', '*.config.js', 'tests/**/*.js'],
     languageOptions: { globals: globals.node },
   },
 
@@ -79,7 +80,10 @@ export default [
     languageOptions: {
       // Not globals.browser. A reference to `document` here is an undefined
       // variable, which is the second line of defence behind the rule below.
-      globals: globals.es2025,
+      // TextDecoder/TextEncoder are JS primitives of the WHATWG Encoding
+      // standard, present in Node and every engine — the encoding ladder of
+      // CAP-2 runs on them in core/types, and AD-2 explicitly allows them.
+      globals: { ...globals.es2025, TextDecoder: 'readonly', TextEncoder: 'readonly' },
     },
     rules: {
       'no-restricted-imports': [

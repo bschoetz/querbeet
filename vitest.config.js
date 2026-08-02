@@ -21,6 +21,8 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['core/**/*.test.js', 'ports/**/*.test.js'],
+    // adapters/ is included because an adapter is framework-free code behind a
+    // port; only the built artefact needs the Playwright envelope (AD-27).
+    include: ['core/**/*.test.js', 'ports/**/*.test.js', 'adapters/**/*.test.js'],
   },
 })

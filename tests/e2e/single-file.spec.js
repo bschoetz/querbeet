@@ -69,12 +69,12 @@ test.describe('the artefact opens from file://', () => {
   test('renders German text with umlauts intact', async ({ page }) => {
     await page.goto(ARTIFACT_URL)
 
-    // Proves the whole chain in one assertion: the build inlined the module, Vue
-    // mounted, core/diagnostics was reachable from the driving adapter, and the
-    // German sentence was composed in ui/ from a code and a structured value
-    // (AD-13, C-6). The umlaut proves the charset survived inlining.
-    await expect(page.getByText('Gerüst steht')).toBeVisible()
-    await expect(page.getByText('nichts in der Spalte entscheidet die Lesart')).toBeVisible()
+    // Anchored to the real Sources pane (the scaffold demo is gone): the build
+    // inlined the module, Vue mounted, and the German drop-zone sentence
+    // composed in ui/ renders with its umlaut intact — which proves the charset
+    // survived inlining.
+    await expect(page.getByRole('heading', { name: 'Quellen' })).toBeVisible()
+    await expect(page.getByText('per Klick auswählen')).toBeVisible()
   })
 
   test('shows no raw core vocabulary — the interface is German, not just its sentences', async ({
@@ -110,7 +110,17 @@ test.describe('the artefact opens from file://', () => {
     // 4200 → "4.200", not "4,200". CAP-31 requires German display conventions
     // regardless of the locale a value was read in, and a headless browser with a
     // C locale is exactly where an implicit host-locale dependency would show up.
-    await expect(page.getByText('4.200 → 61.000')).toBeVisible()
+    // Anchored to the real UI: a 4,200-row CSV loads, and the Source card
+    // renders its row count through the German formatter.
+    const lines = ['Nr,Wert']
+    for (let i = 1; i <= 4200; i += 1) lines.push(`${i},${i * 2}`)
+    await page.getByLabel('Dateien auswählen').setInputFiles({
+      name: 'werte.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from(lines.join('\n')),
+    })
+
+    await expect(page.getByText('4.200 Zeilen')).toBeVisible()
   })
 })
 

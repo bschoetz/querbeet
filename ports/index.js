@@ -36,7 +36,26 @@
  * carry strings. Step zero honours the declaration instead of assuming strings,
  * which is what keeps CAP-9's gate from degrading into a rubber stamp for the
  * natively typed formats.
- * @property {(bytes: ArrayBuffer, config: object) => object} read
+ *
+ * `media` names what `read` receives. A `text` reader gets a string the
+ * encoding ladder in core/types decoded from the registry's retained bytes
+ * (AD-3, AD-7) — decoding is never a reader's concern. A `binary` reader gets
+ * the bytes themselves (XLSX, Parquet).
+ *
+ * `config` is format-specific; `null` fields mean "propose", explicit values
+ * are user corrections and survive re-reads. `read` returns
+ *
+ *   {
+ *     table: { columns: [{ name, domain, cells }], rowCount },
+ *     proposal: { ...the effective, correctable parse decisions },
+ *     damage: { mismatches: [{ row, fields, raw }], unclosedQuoteRow },
+ *     diagnostics: Diagnostic[],
+ *   }
+ *
+ * Damaged rows are excluded from the table but kept raw and inspectable in
+ * `damage` — never padded or guessed into alignment (CAP-39, C-10).
+ * @property {'text' | 'binary'} media
+ * @property {(data: string | ArrayBuffer, config: object) => object} read
  */
 
 /**
