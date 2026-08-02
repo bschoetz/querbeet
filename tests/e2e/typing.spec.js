@@ -139,6 +139,28 @@ test('a confirmation does not survive a re-read, even a silent one', async ({ pa
   await expect(card.getByTestId('typing')).toContainText('Typen noch nicht bestätigt.')
 })
 
+test('an overridden type can be handed back to detection', async ({ page }) => {
+  // Overriding used to be one-way: nothing in the pane returned a column to the
+  // proposal, and the only route back was a re-read, which drops the
+  // confirmation with it.
+  await pick(page, csv('umsatz.csv', 'Kunde;Betrag\nAnna;1.234,56\nBernd;80,00\n'))
+
+  const card = cards(page)
+  const betrag = columnRow(page, 'Betrag')
+  await expect(card.getByLabel('Typ: Betrag')).toHaveValue('number')
+
+  await card.getByLabel('Typ: Betrag').selectOption('text')
+  await expect(betrag.getByTestId('typing-hitrate')).toHaveText('2 von 2 Werten lesbar')
+  await expect(card.getByLabel('Typ: Betrag')).toHaveValue('text')
+
+  // The way back appears only now, because only now is there a choice to
+  // withdraw — and it restores the reading as well as the type.
+  await card.getByLabel('Typ: Betrag').selectOption({ label: 'Zurück zum Vorschlag' })
+
+  await expect(card.getByLabel('Typ: Betrag')).toHaveValue('number')
+  await expect(card.getByLabel('Lesart: Betrag')).toHaveValue('de-DE')
+})
+
 test('a column of leading zeros stays text — the zeros are the information', async ({ page }) => {
   await pick(page, csv('artikel.csv', 'Nummer\n0123\n0456\n0789\n'))
 

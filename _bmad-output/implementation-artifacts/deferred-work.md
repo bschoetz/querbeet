@@ -7,24 +7,18 @@ so a later reader can see what was decided rather than only what remains.
 ## Open
 
 - source_spec: `spec-3-typing-step-zero.md`
-  summary: Detection walks every value on the main thread with no feedback — measured 613 ms for one 500,000-row date column, so a 100,000-row Source of 20 columns freezes the interface for roughly 2.5 seconds on load and again on every encoding or header-row re-read.
-  evidence: Reading every value is the frozen premise of the story (FR-9) and is not up for revision; the cost of doing so is. NFR-3 targets ~100,000 rows per Source and ~500,000 in total and asks for the app to be responsive there, and no verification in this story measures against that. The cheap half is already fixed — `score()` no longer allocates a row-index set per candidate, and the exclusive counts are a second pass over the top two only. What remains is a product decision with more than one answer: move detection off the main thread, show progress above a stated row count, or accept the pause and say so. Any of them wants a measurement harness this story does not have.
+  summary: Detection blocks the main thread for 991 ms at the NFR-3 per-Source target of 100,000 rows by 20 columns, and again on every encoding or header-row re-read. It is linear in rows × columns, so a 200-column Source of that height costs about ten seconds.
+  evidence: Reading every value is the frozen premise of the story (FR-9) and is not up for revision; the cost of doing so was. Two rounds of it are already paid — `score()` no longer allocates a row-index set per candidate, and a single pass now narrows the candidates to those a value could match, which took the NFR-3 shape from 1,499 ms to 991 ms and a 500,000-row integer column from 322 ms to 164 ms. The measured rate is about 2 million cells per second. What is left is real per-value work, and the routes out are all costly. **A worker is not one of them:** AD-15 forbids sending a dataset off-thread to compute on it, and R4 measured why — a structured clone of 100,000 rows blocks the sender for 109–132 ms and half a million for 511–627 ms, against 263–446 ms for the whole pipeline. That leaves making detection async so it can yield between columns, which turns `addSource` into an async command and touches the AD-10 command shape everywhere; or fusing the per-candidate walks into one pass over the values, which is maybe another third and makes `score` markedly harder to read. Both want a measurement harness in the repo rather than a script in a session, and neither belongs to a story about what a column is.
 
 - source_spec: `spec-3-typing-step-zero.md`
   summary: An annotation on a column whose name does not survive a re-read is gone for good — correcting the header row back does not bring it back.
-  evidence: Carry-over is keyed by name because a name is the only thing a re-read preserves, which is what FR-10 promises and what the code does. The gap is beyond that promise: only the current typing is retained, so an annotation orphaned by a header-row correction has nowhere to wait. Holding orphaned annotations for later re-attachment means a second store of per-Source user content and a rule for when it expires — new scope, and probably the same mechanism a Recipe file will need in story 14.
-
-- source_spec: `spec-3-typing-step-zero.md`
-  summary: The Step zero panel renders every column expanded, with four controls each — a 200-column CSV puts 800 form controls in one Source card.
-  evidence: `<details open>` is deliberate: FR-9 says the proposed type, the proposed reading and the share that parses are shown per column, and a panel folded shut shows none of them. The DOM weight is the same concern that produced `RowWindow`'s ~50-row ceiling one story earlier, and the answer is likely the same shape — a window over the column list — but the column count at which it starts to matter has not been measured, and a ceiling chosen without one is a guess.
-
-- source_spec: `spec-3-typing-step-zero.md`
-  summary: `setColumnTyping`'s `type: null` reset — "back to whatever detection proposes" — is covered by a core test and reachable from no control in the product.
-  evidence: `TYPE_LABEL` offers Text, Zahl and Datum, so once a user overrides a type there is no way back to the proposal short of re-reading the Source. The command is right to exist; what is missing is one more option in the type select, and its German has to distinguish "the proposal" from a type without reading like a fourth type.
+  evidence: Carry-over is keyed by name because a name is the only thing a re-read preserves, which is what FR-10 promises and what the code does. The gap is beyond that promise: only the current typing is retained, so an annotation orphaned by a header-row correction has nowhere to wait. Holding orphaned annotations for later re-attachment means a second store of per-Source user content and a rule for when it expires — new scope, and the same mechanism a Recipe file needs anyway.
+  status: open — carried into story 14's `invoke_dev_with` in `_bmad-output/specs/spec-querbeet/stories.yaml` (2026-08-02). Deliberately not solved now: a second store for user content, invented before the first one exists, would be guessed rather than fitted.
 
 - source_spec: `spec-3-typing-step-zero.md`
   summary: Unparsed values are counted per column, not listed — the panel says "842 von 900 Werten lesbar" but cannot show *which* 58 failed.
   evidence: The matrix row reads "the 58 are listed as unparsed, original text kept". The originals are kept and visible — the preview grid renders the raw table untouched — and the count is exact, so nothing is lost or silently replaced. What is missing is the shortcut from the count to those rows. Listing them means marking cells in the preview under a confirmed type, which is boxed cells (AD-22) and therefore story 6's conversion; doing it here would mean a second scan whose result story 6 immediately replaces.
+  status: open — carried into story 6's `invoke_dev_with` in `_bmad-output/specs/spec-querbeet/stories.yaml` (2026-08-02). Story 6 already owns the boxes that carry the original text; what it now also owns is the jump from the count to the rows.
 
 - source_spec: `spec-2-source-preview.md`
   summary: `ui/RowWindow.vue` is billed as reusable by story 10 unchanged, but carries the Source story's vocabulary and a fixed height — `preview*` test ids, the default label `Tabellenvorschau`, and a hardcoded `VIEWPORT_ROWS = 10` with no height prop.
@@ -32,6 +26,16 @@ so a later reader can see what was decided rather than only what remains.
   status: open — carried into story 10's `invoke_dev_with` in `_bmad-output/specs/spec-querbeet/stories.yaml` (2026-08-02). Deliberately not solved now: a seam invented without a second consumer is guessed rather than measured.
 
 ## Closed
+
+- source_spec: `spec-3-typing-step-zero.md`
+  summary: The Step zero panel renders every column expanded, with four controls each — a 200-column CSV puts 800 form controls in one Source card.
+  evidence: `<details open>` is deliberate: FR-9 says the proposed type, the proposed reading and the share that parses are shown per column, and a panel folded shut shows none of them. The concern came from `RowWindow`'s ~50-row ceiling one story earlier, and the entry said itself that a ceiling chosen without a measurement is a guess.
+  status: closed 2026-08-02 — measured in the built artefact, Chromium, 200 data rows. 20 columns: 142 ms to render, 80 controls, 1,569 DOM nodes. 50 columns: 133 ms, 200 controls, 3,759 nodes. 100 columns: 156 ms, 400 controls, 7,409 nodes. 200 columns: 221 ms, 800 controls, 14,709 nodes. A type change at 200 columns costs 40 ms and a confirmation 107 ms, against 25 ms and 39 ms at 20. No ceiling is warranted: `RowWindow`'s exists because a spacer over half a million rows collapses in Firefox, which is a different order of magnitude from 800 controls. What does hurt at 200 columns is detection, and that is its own open entry.
+
+- source_spec: `spec-3-typing-step-zero.md`
+  summary: `setColumnTyping`'s `type: null` reset — "back to whatever detection proposes" — is covered by a core test and reachable from no control in the product.
+  evidence: `TYPE_LABEL` offers Text, Zahl and Datum, so once a user overrode a type the only route back was a re-read, which drops the confirmation with it.
+  status: fixed 2026-08-02 — the type select carries a "Zurück zum Vorschlag" option, rendered only while a choice of the user's stands, and `setType` maps its empty value to `{ type: null }`. The proposed type is deliberately not named in the label: it would have to ride on the column record and would be stale exactly when the user has been changing the most. Covered in the `ui/` envelope, both branches, and end to end in both engines — override to Text, hand it back, and the type *and* the reading return.
 
 - source_spec: `spec-3-typing-step-zero.md`
   summary: Story 3 shipped without the adversarial review pass that stories 1 and 2 went through.

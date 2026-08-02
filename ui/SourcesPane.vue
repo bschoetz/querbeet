@@ -304,10 +304,14 @@ const clearRefusal = (id) => {
 // Columns are addressed by position, not by name: a header may repeat a name,
 // and the store refuses to guess which of them a command meant.
 const setType = (id, at, type) => {
-  // No format is passed. The user picked a type and left the reading to
-  // detection, which scores the candidates — handing over the first one would
-  // give an Anglo column the German reading and a collapsed hit rate.
-  props.store.setColumnTyping(id, at, { type })
+  // The empty value is the reset, not a type: it withdraws the user's choice
+  // and puts the column back to whatever detection proposes — including back to
+  // an open question, if that is what the values support.
+  //
+  // No format is passed either way. The user picked a type and left the reading
+  // to detection, which scores the candidates — handing over the first one
+  // would give an Anglo column the German reading and a collapsed hit rate.
+  props.store.setColumnTyping(id, at, type === '' ? { type: null } : { type })
   clearRefusal(id)
   refresh()
 }
@@ -577,6 +581,20 @@ const unconfirm = (id) => {
                     class="rounded border border-slate-200 px-2 py-1"
                     @change="setType(s.id, at, $event.target.value)"
                   >
+                    <!-- Only while a choice of the user's stands. Without it,
+                         overriding a type is one-way: nothing in the pane puts
+                         the column back to the proposal, and a re-read is the
+                         only way out — which takes the confirmation with it.
+                         The proposed type is deliberately not named here: it
+                         would have to ride on the column record, and it would
+                         be stale exactly when the user has been changing the
+                         most. The reset says what it does instead. -->
+                    <option
+                      v-if="col.chosen"
+                      value=""
+                    >
+                      Zurück zum Vorschlag
+                    </option>
                     <option
                       v-for="(label, value) in TYPE_LABEL"
                       :key="value"

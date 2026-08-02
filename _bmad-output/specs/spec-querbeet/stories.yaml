@@ -90,7 +90,12 @@
     boxes carrying their original text (AD-22), dates normalize to
     UTC-midnight epoch ms (AD-21), and where that converted copy lives — and
     what it costs against R4/D2's 80.2 MB per 100k x 20 — is a Table question
-    answered here, not a typing question answered there.
+    answered here, not a typing question answered there. With the boxes come
+    the rows behind the number: story 3's panel says "842 von 900 Werten
+    lesbar" and cannot show *which* 58 failed, because finding them again
+    would be a second scan whose result this story immediately replaces. Once
+    a value is a box carrying its original text, marking those cells in the
+    preview is a render, not a search — and the count stops being a dead end.
 - id: "7"
   title: Execution full build — cache, cancellation, execution modes
   description: >-
@@ -197,6 +202,15 @@
     Unrecognised fields are refused, not ignored (AD-11); a version mismatch
     names both versions (AD-12). Ids are short readable strings, no UUIDs
     (AD-14). C-13: a linear pipeline must be the trivial case of the format.
+    This story is also where user content that outlives a column gets a home.
+    Story 3 carries a column's annotation across a re-read by name — the only
+    thing a re-read preserves — so a header-row correction that renames the
+    column drops the sentence someone wrote, and correcting the header back
+    does not return it, because only the current typing is retained. Once a
+    Recipe holds confirmations and annotations off to one side of the live
+    entry, the orphan has somewhere to wait and a rule for when it expires.
+    Deciding that here is fitting it to a store that exists; deciding it in
+    story 3 would have been inventing a second one.
 - id: "15"
   title: Input Contract, Pre-flight Check and column mapping
   description: >-

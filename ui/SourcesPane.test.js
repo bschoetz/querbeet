@@ -358,6 +358,25 @@ describe('the column edits', () => {
     expect(patch).toEqual({ type: 'number' })
   })
 
+  it('offers a way back to the proposal, but only once there is a choice to withdraw', async () => {
+    // Without it, overriding a type is one-way: the only route back is a
+    // re-read, which takes the confirmation with it.
+    const untouched = await render(stubStore(source([column('Betrag')])))
+    expect(untouched.get('select[aria-label="Typ: Betrag"]').text()).not.toContain('Vorschlag')
+
+    const store = stubStore(
+      source([column('Betrag', { type: 'text', chosen: { type: 'text', format: null } })]),
+    )
+    const w = await render(store)
+    const select = w.get('select[aria-label="Typ: Betrag"]')
+    expect(select.text()).toContain('Zurück zum Vorschlag')
+
+    await select.setValue('')
+
+    const [, , at, patch] = store.calls.find((c) => c[0] === 'setColumnTyping')
+    expect([at, patch]).toEqual([0, { type: null }])
+  })
+
   it('spells the empty cell as a word, so it can be typed back in', async () => {
     // "" in a comma-separated list is invisible and untypeable. It round-trips
     // through the word instead — matched whole, so a token that merely contains

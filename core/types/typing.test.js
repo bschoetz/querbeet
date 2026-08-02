@@ -192,6 +192,42 @@ describe('the state no comparable tool reports', () => {
   })
 })
 
+describe('narrowing the candidates before scoring', () => {
+  // Nine candidates against every value is nine column walks. Most of them
+  // cannot match anything: `readsAsDate` splits on its separator and requires
+  // three parts, so a pattern whose separator appears nowhere scores zero. The
+  // narrowing is arithmetic, not a heuristic — these cases exist so that a
+  // later candidate with a different shape cannot quietly break the argument.
+
+  it('still weighs every pattern whose separator does occur', () => {
+    // Both slash patterns must still be in the running, or the ambiguity below
+    // would be "settled" by never having been asked.
+    expect(detectColumn(['03/04/2025', '05/06/2025', '01/02/2024']).verdict).toBe('unresolved')
+    expect(detectColumn(['03.04.2025', '05.06.2025', '01.02.2024']).verdict).toBe('unresolved')
+    expect(detectColumn(['03-04-2025', '05-06-2025', '01-02-2024']).verdict).toBe('unresolved')
+  })
+
+  it('reaches the same verdict when a second separator is in the column', () => {
+    // A column carrying both `.` and `/` keeps every pattern in play, so the
+    // unreadable half is reported rather than narrowed away.
+    const mixed = [...Array.from({ length: 20 }, () => '31.12.2025'), '03/04/2025', '05/06/2025']
+    const r = detectColumn(mixed)
+
+    expect(r.type).toBe(DATE)
+    expect(r.format.pattern).toBe('dd.MM.yyyy')
+    expect(r.counts).toMatchObject({ parsed: 20, unparsed: 2 })
+  })
+
+  it('does not let a separator inside a missing token widen the field', () => {
+    // The tokens the user declared absent are not values, so they cannot put a
+    // candidate back in the running that no real value could match.
+    const r = detectColumn(['1', '2', 'n/a', '42'], { missingTokens: ['n/a'] })
+
+    expect(r).toMatchObject({ type: NUMBER, verdict: 'settled' })
+    expect(r.counts).toMatchObject({ missing: 1, parsed: 3, unparsed: 0 })
+  })
+})
+
 describe('missing values', () => {
   it('counts declared tokens as missing rather than as unreadable', () => {
     const cells = ['1.234,56', 'k.A.', '-', '', '80,00']
