@@ -1169,9 +1169,36 @@ portable file, from a `file://` page?
 
 ## R10 – A component-test envelope for `ui/`
 
-**Status:** [x] done (deep-recon, type technical, shape select, 2026-08-02)
+**Status:** [x] done (deep-recon, type technical, shape select, 2026-08-02) — **adopted and shipped
+the same day**
 **Report:** `_bmad-output/planning-artifacts/research/technical-component-test-envelope-ui-2026-08-02/research.md`
 (HTML briefing in the same folder: `research-briefing.html`)
+
+**ADOPTED 2026-08-02, unchanged from the recommendation.** `@vue/test-utils` 2.4.11 + `happy-dom`
+20.11.1 as a second Vitest project (`name: 'ui'`, `environment: 'happy-dom'`,
+`include: ['ui/**/*.test.js']`), and AD-27 in the architecture spine now names three envelopes
+instead of two. `ui/RowWindow.test.js` closes the gap that opened the research: nine cases over the
+paging controls, written exactly as recommendation 2 said they could be — a props-only fake table
+that claims 571,429 rows and allocates none of them. **Each assertion was checked by breaking what
+it names:** removing the page offset from the slice, forcing `v-if="view.pages > 1"` true, and
+unbinding the last page's `disabled` state each fail precisely the case that claims to catch them,
+and nothing else. The happy-dom stub caveat is written at the config boundary, per recommendation 3.
+
+**Two of the three open questions are now answered locally, and the first one goes against the
+report.**
+
+- **`@vue/test-utils` is not dormant.** `npm view @vue/test-utils time --json` — the route the
+  report itself named — shows **2.4.7 through 2.4.11 released between 2026-04-24 and 2026-06-04**,
+  five releases in six weeks, the last one two months before this run. The GitHub releases page's
+  `2024-06-04` was the stale signal and the WebSearch snippet was right. The ecosystem-health score
+  this criterion fed (18/25) was scored on a fact that is not true; the verdict does not change,
+  since it wins on the two criteria that decided it, but a re-run should not re-inherit the doubt.
+- **Wall-clock cost, measured in this repo: +321 ms** (`npx vitest run --project core` 559 ms
+  against 880 ms for both projects). Against `npm run verify`, whose Playwright leg alone is ~12 s,
+  it is not a cost worth a second thought — which is what the report suspected and could not show.
+- **Still open:** whether happy-dom's `ResizeObserver`/`getBoundingClientRect` stubs are being
+  worked on. It matters only the day a `ui/` component needs them, and that day the answer is the
+  named runner-up rather than a wait.
 
 **Verdict: `@vue/test-utils` + `happy-dom`, as a second Vitest `projects` entry scoped to `ui/**`**
 (84/100 on the weighted matrix). Runner-up: Playwright Component Testing's new built-in

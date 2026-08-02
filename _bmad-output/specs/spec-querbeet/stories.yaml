@@ -129,9 +129,10 @@
     Its viewport is VIEWPORT_ROWS = 10 hardcoded, and a Result table wants a
     pane-filling grid: make the height a prop, and keep the invariant that the
     container stays under WINDOW_SIZE rows, or a blank band appears below the
-    window (the e2e assertion on clientHeight must move with it). And the
-    paging branch itself is rendered by no test, because paging engages only
-    above 571,428 rows — see R10 in research-plan.md.
+    window (the e2e assertion on clientHeight must move with it). The paging
+    branch is covered since 2026-08-02 by ui/RowWindow.test.js in the ui/
+    Vitest envelope (AD-27, R10) — a props-only fake table, since happy-dom
+    has no layout; extend that file rather than reaching for a fixture.
 - id: "11"
   title: View filter, sort, promotion and full-dataset search
   description: >-

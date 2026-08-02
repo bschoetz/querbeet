@@ -7,16 +7,16 @@ so a later reader can see what was decided rather than only what remains.
 ## Open
 
 - source_spec: `spec-2-source-preview.md`
-  summary: The paging controls in `ui/RowWindow.vue` — the buttons, their German labels, their disabled states — are rendered by no test in any envelope; only the page math underneath them is covered.
-  evidence: Paging engages above `PAGE_ROWS` (571,428 rows), which no affordable e2e fixture reaches, and there is no `ui/` component-test envelope — `vitest.config.js` includes only `core/**`, `ports/**` and `adapters/**` under `environment: 'node'`, and the repo carries no component-test dependency. Adding one is marked "Ask First" in this story's spec, so it needs a human decision rather than a patch.
-  status: open — research queued as **R10** in `research-plan.md` (2026-08-02), to be answered before story 10 makes `RowWindow` its second consumer. Interim discipline, applied in story 2's review: push the interesting states down into `core/` as pure data so the template stays thin enough for e2e.
-
-- source_spec: `spec-2-source-preview.md`
   summary: `ui/RowWindow.vue` is billed as reusable by story 10 unchanged, but carries the Source story's vocabulary and a fixed height — `preview*` test ids, the default label `Tabellenvorschau`, and a hardcoded `VIEWPORT_ROWS = 10` with no height prop.
   evidence: Story 10's Result table wants a pane-filling grid; adopting the component at any taller height breaks the invariant that the container must stay under `WINDOW_SIZE` rows. The shared `preview` test id would also make the existing page-scoped `getByTestId('preview')` assertions match the Result table once both render.
   status: open — carried into story 10's `invoke_dev_with` in `_bmad-output/specs/spec-querbeet/stories.yaml` (2026-08-02). Deliberately not solved now: a seam invented without a second consumer is guessed rather than measured.
 
 ## Closed
+
+- source_spec: `spec-2-source-preview.md`
+  summary: The paging controls in `ui/RowWindow.vue` — the buttons, their German labels, their disabled states — were rendered by no test in any envelope; only the page math underneath them was covered.
+  evidence: Paging engages above `PAGE_ROWS` (571,428 rows), which no affordable e2e fixture reaches, and there was no `ui/` component-test envelope — `vitest.config.js` included only `core/**`, `ports/**` and `adapters/**` under `environment: 'node'`. Adding a dependency is marked "Ask First" in the story's spec, so it needed a decision rather than a patch.
+  status: fixed 2026-08-02 — R10 answered it (`@vue/test-utils` + `happy-dom` as a `ui/**`-scoped Vitest project, +321 ms measured on this repo), AD-27 now names three envelopes, and `ui/RowWindow.test.js` covers the branch in nine cases with a props-only fake table that claims 571,429 rows and allocates none. Verified by mutation: removing the page offset, forcing the controls visible, and unbinding the last page's disabled state each fail exactly the case that names them.
 
 - source_spec: `spec-2-source-preview.md`
   summary: The Source card's counts line had no German singular — a one-row, one-column Source read `1 Zeilen, 1 Spalten`.
