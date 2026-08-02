@@ -2,7 +2,7 @@
 title: 'Story 4 — XLSX and Parquet Sources'
 type: 'feature'
 created: '2026-08-02'
-status: 'draft'
+status: 'ready-for-dev'
 review_loop_iteration: 0
 context:
   - '_bmad-output/planning-artifacts/architecture/architecture-querbeet-2026-08-02/ARCHITECTURE-SPINE.md'
