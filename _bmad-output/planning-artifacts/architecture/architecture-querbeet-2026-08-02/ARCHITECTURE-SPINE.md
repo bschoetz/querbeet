@@ -145,13 +145,13 @@ graph LR
 
 - **Binds:** NFR-1, NFR-2, all adapters
 - **Prevents:** a build that works from a dev server and fails from a double-clicked file
-- **Rule:** no `fetch`, no lazy chunk, no CDN link, no sibling config file, no external font or stylesheet. A `file://` page has an opaque origin and anything it fetches fails CORS. Data enters only through file input or drag-and-drop; a model is reached only through the clipboard.
+- **Rule:** no `fetch`, no lazy chunk, no CDN link, no sibling config file, no external font or stylesheet. A `file://` page has an opaque origin and anything it fetches fails CORS. Data enters only through file input or drag-and-drop; a model is reached only through the clipboard. **There is no exception for dead code, and the bundler writes some:** `build.modulePreload` must be `false`, because Vite otherwise injects a polyfill that walks `link[rel=modulepreload]` and calls `fetch(el.href)`. Nothing preloads in a single-file bundle so it never runs, but it is `fetch(` in the shipped artefact and it cannot be told apart from the real thing by inspection.
 
 ### AD-18 — The build emits exactly one file, asserted where the assertion can fail
 
 - **Binds:** NFR-1, NFR-2, FR-36
 - **Prevents:** the documented silent failure where an idiomatic worker or a lazy import splits the bundle with no build-time signal
-- **Rule:** the build asserts that `dist/` contains exactly one entry — a filesystem check, independent of any browser. **The network assertion runs in Chromium only.** Measured: Playwright's Firefox reports 1 of 5 requests from a `file://` page, because it observes HTTP channels and `file://` is not one, so a split bundle would pass green. A green Firefox network check is not evidence and must not be written as if it were.
+- **Rule:** the build asserts that `dist/` contains exactly one entry — a filesystem check, independent of any browser. **The network assertion runs in Chromium only.** Playwright's Firefox observes Gecko's HTTP channels and `file://` is not one, so a split bundle would pass green. A green Firefox network check is not evidence and must not be written as if it were. **Re-confirmed 2026-08-02** against the built artefact under Playwright 1.62.1, counted per scheme: Chromium sees 6 of 6, while Firefox sees the `file://` document 0 times, relative `file://` subresources 0 of 2, ordinary `http://` 2 of 2, and `http://` to a port on Firefox's banned list 0 of 1. **The blindness is specific and the specificity is the point** — an external font or CDN link is caught in both engines; only the split-bundle case goes unobserved, which is the one this rule exists for. When re-measuring, do not probe with a port on Gecko's `network.security.ports.banned` default list — 9, 19, 25 and some fifty others: Firefox never opens a channel at all, so the probe reads as engine blindness that is not there. A first probe of this rule made exactly that mistake and had to be retracted.
 
 ### AD-19 — The transformation engine sits behind a port and absorbs its own hazards
 
@@ -246,12 +246,13 @@ graph LR
 
 ## Stack
 
-Seed, inherited from research runs R1–R9 and re-verified against the registries on 2026-08-02. Twelve of thirteen pins are current; the exceptions are noted. Permanent constraints that happen to attach to a library are rules, not stack rows — see AD-19, AD-20 and AD-26.
+Seed, inherited from research runs R1–R9 and re-verified against the registries on 2026-08-02. Twelve of thirteen pins are current; the exceptions are noted. The build toolchain and test harness rows were unpinned in the first cut and are pinned now, the toolchain because it was settled by building and the harness because AD-18's Firefox caveat is a property of a harness version rather than of Firefox. Permanent constraints that happen to attach to a library are rules, not stack rows — see AD-19, AD-20 and AD-26.
 
 | Name | Version |
 | --- | --- |
 | Vue | 3.5.40 |
-| `vite-plugin-singlefile` | 2.3.3 — see Deferred, the Vite pin is an open question |
+| Vite | 8.2.0 — the major is settled; `build.modulePreload` is off per AD-17 |
+| `vite-plugin-singlefile` | 2.3.3 — verified emitting one file under Vite 8 from this project's config |
 | Arquero | 8.0.3, pinned and vendored; no upstream commit in 14 months |
 | Vue Flow | 1.48.2 — MIT across core and addons, verified in the shipped bundle |
 | Apache ECharts | 6.1.0 |
@@ -263,7 +264,8 @@ Seed, inherited from research runs R1–R9 and re-verified against the registrie
 | `date-fns` | 4.4.0 |
 | Tailwind CSS | v4.3.3, `preflight.css` omitted from the split import |
 | IndexedDB | platform, no library |
-| Vitest / Playwright | test substrate, current |
+| Vitest | 4.1.10 |
+| `@playwright/test` | 1.62.1 — pinned because AD-18's caveat is a property of this harness version |
 
 ## Structural Seed
 
@@ -340,7 +342,6 @@ erDiagram
 
 - **The view-document adapter (FR-37).** R8 is written and unrun. `ports/DocumentWriter` (AD-28) fixes the contract; no implementation exists, so the capability is absent rather than half-built.
 - **The Package container (FR-24).** R9 is answered only at its IndexedDB gate. Whether the container is a zip, and whether it stores data as Parquet internally, is open. AD-7's retained bytes and AD-16's namespacing already bound what it must fit between.
-- **The Vite major version.** The plugin is pinned at 2.3.3; which Vite it is pinned against is not settled, because Vite 8 replaced its bundler and the plugin's single-file path under it has open upstream issues. Resolve by building, not by reading — AD-18's one-file assertion is the test.
 - **Undo and redo.** Not in the MVP requirements. AD-10 makes it cheap later, since the commands are already the record.
 - **Recipe format migration.** AD-12 refuses a version mismatch instead. The PRD names it as the first post-MVP candidate.
 - **Graph auto-layout.** The editor library ships none and the MVP has no requirement for it.

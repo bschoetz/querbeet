@@ -4,17 +4,29 @@
 // Two caveats are written into this file rather than left to be rediscovered,
 // because both are ways this suite can be green and wrong:
 //
-//   AD-18 — the network assertion runs in Chromium only, because Playwright
-//   observes HTTP channels and file:// is not one. Re-measured here on 2026-08-02
-//   against Playwright 1.62.1, by sabotaging a built artefact with five runtime
-//   subresources (three http://, two relative file://) and asking each engine what
-//   it saw: **Chromium reported 6 of 6** — the document and all five — while
-//   **Firefox reported 0**, not even the document. A split bundle would pass green
-//   there. The spine records this caveat as "1 of 5" from an earlier probe of a
-//   different composition; the direction is identical and the figure here is the
-//   one this suite was built against. A green Firefox network check is not
-//   evidence, so the assertion is skipped with that reason attached rather than
-//   run and believed.
+//   AD-18 — the network assertion runs in Chromium only, because Playwright's
+//   Firefox network layer is built on Gecko's HTTP-channel observer topics and
+//   file:// is not an HTTP channel. Re-confirmed 2026-08-02 against Playwright
+//   1.62.1 and a real built artefact, sabotaged with five runtime subresources and
+//   counted per scheme:
+//
+//     scheme                              Chromium   Firefox
+//     the file:// document                       1         0
+//     http:// on an open port                    2         2
+//     http:// on a Firefox-banned port (9)       1         0
+//     relative file:// subresources              2         0
+//
+//   So the blindness is specific, and the specificity matters: Firefox sees
+//   ordinary http:// fine — a CDN link or an external font *is* caught in both
+//   engines — and sees no file:// traffic at all. The split-bundle case is exactly
+//   the one that goes unobserved, which is the failure AD-18 exists to prevent, so
+//   a green Firefox run here is not evidence and the assertion is skipped with
+//   that reason attached rather than run and believed.
+//
+//   Recorded because it cost a wrong conclusion once: the first probe used port 9
+//   for every http:// request. Port 9 is on Firefox's default banned-port list, so
+//   Firefox reported nothing and the probe appeared to show it blind to http://
+//   as well. It is not. Pick an unbanned port when re-measuring this.
 //
 //   AD-16 — the storage-isolation rule is NOT TESTED HERE AND CANNOT BE. Playwright's
 //   bundled Firefox ships `security.fileuri.strict_origin_policy: false` and is more
@@ -106,10 +118,10 @@ test.describe('nothing is fetched at runtime', () => {
   test('issues no request beyond the document itself', async ({ page, browserName }) => {
     test.skip(
       browserName === 'firefox',
-      'AD-18: Playwright observes HTTP channels and file:// is not one. Measured against a ' +
-        'sabotaged artefact carrying five subresources, Firefox reported 0 requests where ' +
-        'Chromium reported all 6. A split bundle would pass green. Chromium is the only ' +
-        'engine where this assertion is evidence.',
+      'AD-18: Playwright observes HTTP channels and file:// is not one. Measured, Firefox ' +
+        'reports zero file:// requests — not the document, not a sibling chunk — where ' +
+        'Chromium reports every one. A split bundle would pass green here. Chromium is the ' +
+        'only engine where this assertion is evidence.',
     )
 
     const requested = []
