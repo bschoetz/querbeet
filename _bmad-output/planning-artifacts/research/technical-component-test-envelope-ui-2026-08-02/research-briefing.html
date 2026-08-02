@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>technical research: A component-test envelope for ui/</title>
+<style>
+  :root{
+    --bg:#fbfaf8; --panel:#ffffff; --ink:#1f2320; --ink-soft:#4b5049; --line:#e4e0d8;
+    --accent:#3f6b4f; --accent-soft:#e9f0ea;
+    --hi:#1f6e3f; --hi-bg:#e6f4ea;
+    --med:#8a6a12; --med-bg:#fbf1d6;
+    --lo:#8a3a1f; --lo-bg:#fbe9e2;
+    --unv:#7a1f3d; --unv-bg:#fbe4ec;
+    --code-bg:#f1efe9;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#181a17; --panel:#1f221e; --ink:#eae7df; --ink-soft:#b7b2a5; --line:#33362f;
+      --accent:#7fbf95; --accent-soft:#213228;
+      --hi:#7fd39a; --hi-bg:#1c3324;
+      --med:#e0b84a; --med-bg:#33290f;
+      --lo:#e39271; --lo-bg:#3a2118;
+      --unv:#e88bab; --unv-bg:#3a1c28;
+      --code-bg:#26291f;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#181a17; --panel:#1f221e; --ink:#eae7df; --ink-soft:#b7b2a5; --line:#33362f;
+    --accent:#7fbf95; --accent-soft:#213228;
+    --hi:#7fd39a; --hi-bg:#1c3324;
+    --med:#e0b84a; --med-bg:#33290f;
+    --lo:#e39271; --lo-bg:#3a2118;
+    --unv:#e88bab; --unv-bg:#3a1c28;
+    --code-bg:#26291f;
+  }
+  :root[data-theme="light"]{
+    --bg:#fbfaf8; --panel:#ffffff; --ink:#1f2320; --ink-soft:#4b5049; --line:#e4e0d8;
+    --accent:#3f6b4f; --accent-soft:#e9f0ea;
+    --hi:#1f6e3f; --hi-bg:#e6f4ea;
+    --med:#8a6a12; --med-bg:#fbf1d6;
+    --lo:#8a3a1f; --lo-bg:#fbe9e2;
+    --unv:#7a1f3d; --unv-bg:#fbe4ec;
+    --code-bg:#f1efe9;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  .wrap{max-width:960px; margin:0 auto; padding:0 20px 80px}
+  code{background:var(--code-bg); padding:.1em .35em; border-radius:4px; font-size:.92em}
+  pre code{display:block; padding:.8em; overflow-x:auto}
+  a{color:var(--accent)}
+  header.masthead{
+    border-bottom:1px solid var(--line); padding:28px 0 20px; margin-bottom:8px;
+  }
+  header.masthead .kicker{
+    text-transform:uppercase; letter-spacing:.08em; font-size:.75rem; color:var(--ink-soft); font-weight:600;
+  }
+  header.masthead h1{font-size:1.6rem; margin:.3em 0 .4em; line-height:1.3}
+  .meta-row{display:flex; flex-wrap:wrap; gap:8px 18px; font-size:.85rem; color:var(--ink-soft)}
+  .meta-row b{color:var(--ink)}
+  nav.toc{
+    position:sticky; top:0; z-index:5; background:var(--bg);
+    border-bottom:1px solid var(--line); padding:10px 0; margin-bottom:28px;
+    overflow-x:auto; white-space:nowrap;
+  }
+  nav.toc a{
+    display:inline-block; margin-right:14px; font-size:.82rem; color:var(--ink-soft);
+    text-decoration:none; padding:4px 2px; border-bottom:2px solid transparent;
+  }
+  nav.toc a:hover{color:var(--accent); border-color:var(--accent)}
+  section{margin:38px 0}
+  h2{font-size:1.25rem; border-bottom:1px solid var(--line); padding-bottom:.35em; margin-top:0}
+  h3{font-size:1.02rem; margin-bottom:.3em}
+  .card{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px;
+    padding:20px 22px; margin:14px 0;
+  }
+  .exec-card{background:var(--accent-soft); border-color:var(--accent)}
+  .badge{
+    display:inline-block; font-size:.72rem; font-weight:700; letter-spacing:.02em;
+    padding:2px 8px; border-radius:999px; vertical-align:middle;
+  }
+  .badge-high{color:var(--hi); background:var(--hi-bg)}
+  .badge-medium,.badge-medium-high{color:var(--med); background:var(--med-bg)}
+  .badge-low,.badge-low-medium{color:var(--lo); background:var(--lo-bg)}
+  .badge-unverified{color:var(--unv); background:var(--unv-bg)}
+  table{border-collapse:collapse; width:100%; margin:12px 0; font-size:.9rem}
+  table th, table td{border:1px solid var(--line); padding:8px 10px; text-align:left; vertical-align:top}
+  table th{background:var(--code-bg)}
+  table.sources td:nth-child(1){white-space:nowrap; font-weight:600}
+  table.matrix td:nth-child(1){font-weight:600}
+  table.matrix td:not(:first-child){text-align:center}
+  .win{font-weight:800; color:var(--accent)}
+  details.appendix{background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px 18px; margin:14px 0}
+  details.appendix summary{cursor:pointer; font-weight:700}
+  ul{padding-left:1.3em}
+  li{margin:.35em 0}
+  .foot{margin-top:60px; padding-top:16px; border-top:1px solid var(--line); font-size:.8rem; color:var(--ink-soft)}
+  .stale-table td:nth-child(1){white-space:nowrap; font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <div class="kicker">Technical research &middot; select shape &middot; querbeet R10</div>
+  <h1>A component-test envelope for <code>ui/</code></h1>
+  <div class="meta-row">
+    <span><b>Decision:</b> Should querbeet add a third test envelope for Vue components, and if so which one?</span>
+  </div>
+  <div class="meta-row" style="margin-top:8px">
+    <span><b>Date:</b> 2026-08-02</span>
+    <span><b>Preset:</b> standard (3 researchers, depth 2)</span>
+    <span><b>Validation:</b> normal</span>
+    <span><b>Claims:</b> 10 verified / 4 unverified of 14 tracked</span>
+    <span><b>Status:</b> complete</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#exec">Executive summary</a>
+  <a href="#frame">Requirements frame</a>
+  <a href="#screen">Candidate screen</a>
+  <a href="#evidence">Evidence per criterion</a>
+  <a href="#no-third">No third envelope</a>
+  <a href="#cost">Cost &amp; lock-in</a>
+  <a href="#verdict">Verdict</a>
+  <a href="#cross">Cross-dimension insights</a>
+  <a href="#contrary">Contrary evidence</a>
+  <a href="#recs">Recommendations</a>
+  <a href="#open">Open questions</a>
+  <a href="#sources">Sources</a>
+  <a href="#stale">Staleness map</a>
+</nav>
+
+<section id="exec">
+  <h2>Executive summary</h2>
+  <div class="card exec-card">
+    <p><b>Verdict:</b> add <code>@vue/test-utils</code> + <code>happy-dom</code> as a second Vitest project, scoped to <code>ui/**</code> only <span class="badge badge-high">weighted score 84/100</span>. Runner-up: <b>Playwright Component Testing's new built-in model</b> <span class="badge badge-medium">82/100, near-tie</span> &mdash; reach for it specifically when a future <code>ui/</code> component needs real <code>ResizeObserver</code>/<code>getBoundingClientRect</code> behavior, since the project already carries <code>@playwright/test</code> ^1.62 and this costs zero new dependencies. Vitest Browser Mode scores third <span class="badge badge-low">72/100</span>: real-browser fidelity, but a documented CI wall-clock regression and an extra helper dependency of unresolved provenance make it the more expensive of the two real-browser options for no fidelity gain over the runner-up.</p>
+
+    <p><b>The gap that opened this research does not need what the brief worried it might need.</b> <code>ui/RowWindow.vue</code>'s untested AD-24 paging branch depends only on <code>core/view/row-window.js</code>'s <code>buildWindow()</code>, which derives <code>.pages</code> from <code>table.rowCount</code> alone &mdash; verified by reading the source directly. A fake <code>props.table</code> with a large <code>rowCount</code> and a tiny <code>columns[].cells</code> array reaches the branch; no real scroll gesture, no real layout, and no <code>getBoundingClientRect</code>/<code>ResizeObserver</code> at all. jsdom or happy-dom are sufficient for exactly the trigger case, which is why the geometry-fidelity criterion turns out not to decide this run.</p>
+
+    <p><b>What does decide it is cost against a five-year horizon.</b> happy-dom needs no browser binary, starts near-instantly, and slots into the existing <code>npm test</code> (Vitest) runner as one more project. Both real-browser candidates run through a Vite dev server over HTTP, not the shipped <code>file://</code> artefact (verified for all three), so none of the three candidates tests what AD-27's second envelope already owns &mdash; that job stays where it is.</p>
+
+    <p><b>One correction that changed the shape of this run:</b> round 1 surfaced an apparent contradiction about whether Playwright Component Testing is "stable" or "still experimental." Verified directly against Playwright's own release notes and the <code>@playwright/experimental-ct-vue</code> npm package: <b>both are true, about two different things.</b> The old per-framework package is still published and its own README still says "EXPERIMENTAL, does not respect semver." A new, package-free <code>fixtures.mount()</code> model shipped in 1.62.0 &mdash; the version this project already runs &mdash; as a real feature the docs call "stable." A new adopter reaches for the new model.</p>
+
+    <p><b>Biggest caveat:</b> happy-dom's own docs are silent on <code>ResizeObserver</code>/<code>getBoundingClientRect</code>/<code>scrollTop</code> fidelity. This research read happy-dom's TypeScript source directly: <code>ResizeObserver</code> and <code>getBoundingClientRect</code> are unimplemented stubs (same failure as jsdom), but <code>scrollTop</code> is a genuine settable/gettable property &mdash; the one this project's current need actually touches. The stub gap is real and will bite the day a <code>ui/</code> component needs to assert <code>ResizeObserver</code> behavior &mdash; that day, reach for the runner-up.</p>
+  </div>
+</section>
+
+<section id="frame">
+  <h2>Requirements frame</h2>
+  <p>Sourced from the project itself &mdash; AD-27, AD-6, AD-24 (<code>ARCHITECTURE-SPINE.md</code>), <code>ui/RowWindow.vue</code>, <code>core/view/row-window.js</code>, and <code>deferred-work.md</code> &mdash; not from web research, per the select-shape method.</p>
+  <ul>
+    <li><b>AD-27</b> (&laquo;The browser matrix and the test envelope are rules, not preferences&raquo;): <code>core/</code>, <code>ports/</code>, <code>adapters/</code> run under Vitest with <code>environment: 'node'</code>; the built artefact runs under Playwright from a real <code>file://</code> URL. A third envelope must be scoped to <code>ui/**</code> only and must not leak a DOM into a <code>core/**</code> test.</li>
+    <li><b>AD-6</b> (&laquo;Datasets never enter the graph model, and never enter reactive state&raquo;): tables live in a <code>Map</code> registry, held via <code>shallowRef</code> in <code>ui/</code>. Not directly at stake for a component-props test, but disqualifying if a candidate's mounting mechanism forced reactivity onto a table handed in as a prop.</li>
+    <li><b>AD-24</b> (&laquo;The Result table is windowed, and the scroll extent is guarded&raquo;): fixed-height row windowing, ~50-row window, mandatory spacer clamp, pages past the clamp. The paging controls are the named gap in <code>deferred-work.md</code>: <i>"The paging controls in <code>ui/RowWindow.vue</code> &mdash; the buttons, their German labels, their disabled states &mdash; are rendered by no test in any envelope; only the page math underneath them is covered."</i></li>
+    <li><b>Direct code read, this run:</b> <code>buildWindow(table, page, scrollTop)</code> sets <code>pages: pageCount(total)</code>, a pure function of the row count alone. <code>sliceRows()</code> only ever indexes the window actually shown. The gap is reachable with a fake <code>table</code> prop &mdash; a props-in/DOM-out test, not a geometry test.</li>
+  </ul>
+</section>
+
+<section id="screen">
+  <h2>Candidate screen</h2>
+  <p>All four candidates clear the <code>ui/**</code>-only hard gate and can drive component props directly &mdash; differentiation happens entirely on the weighted criteria below.</p>
+  <ul>
+    <li><b><code>@vue/test-utils</code> + <code>happy-dom</code></b>, as a second Vitest <code>projects</code> entry scoped to <code>ui/**</code>.</li>
+    <li><b>Vitest Browser Mode</b> (<code>@vitest/browser</code> + a provider), real Chromium/Firefox via the Vitest runner, plus the community helper <code>vitest-browser-vue</code>.</li>
+    <li><b>Playwright Component Testing</b>, the model shipped inside core <code>@playwright/test</code> 1.62.0 (<code>fixtures.mount()</code>, "stories and galleries") &mdash; not the older, separately-versioned <code>@playwright/experimental-ct-vue</code> package.</li>
+    <li><b>No third envelope</b> &mdash; push every interesting state into <code>core/</code> as pure data, keep templates thin enough that e2e coverage suffices.</li>
+  </ul>
+</section>
+
+<section id="evidence">
+  <h2>Evidence per criterion</h2>
+  <table class="matrix">
+    <thead><tr><th>Criterion (weight)</th><th>test-utils + happy-dom</th><th>Vitest Browser Mode</th><th>Playwright CT (built-in)</th></tr></thead>
+    <tbody>
+      <tr><td>Ecosystem health / 5-yr horizon (25)</td><td>18</td><td>19</td><td>22</td></tr>
+      <tr><td>Geometry fidelity (20)</td><td>14</td><td>18</td><td>18</td></tr>
+      <tr><td>Setup / dependency cost (20)</td><td>19</td><td>13</td><td>18</td></tr>
+      <tr><td><code>npm run verify</code> wall-clock (20)</td><td>19</td><td>10</td><td>13</td></tr>
+      <tr><td>Prop-driven ergonomics (15)</td><td>14</td><td>12</td><td>11</td></tr>
+      <tr><td><b>Total</b></td><td class="win">84</td><td>72</td><td>82</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Ecosystem health <span class="badge badge-medium">mixed</span></h3>
+  <p><code>@vue/test-utils</code> is the Vue core team's own package [5], but its latest release, 2.4.11, is dated 2024-06-04 by GitHub's own releases page &mdash; against a conflicting snippet claiming "2 months ago" this run could not reconcile [5][6]. Vitest Browser Mode graduated to stable in Vitest 4.0 (2025-10-22) [10], but its Vue helper <code>vitest-browser-vue</code> has an unresolved organizational home [15]. Playwright CT's new model ships inside <code>@playwright/test</code> core &mdash; the package this project already pins for e2e &mdash; confirmed as a headline feature of 1.62.0, the version already installed [16][17].</p>
+
+  <h3>Geometry fidelity <span class="badge badge-high">verified from source</span></h3>
+  <p>Read directly from happy-dom's TypeScript source: <code>ResizeObserver.observe()</code>/<code>unobserve()</code>/<code>disconnect()</code> are each a bare <code>// TODO: Not implemented</code> [8]; <code>Element.getBoundingClientRect()</code> unconditionally <code>return new DOMRect()</code> [9] &mdash; the same failure documented for jsdom via its own issues [1][2][3][4]. But happy-dom's <code>scrollTop</code>/<code>scrollLeft</code>/<code>scrollHeight</code>/<code>scrollWidth</code> are genuine settable/gettable properties, not stubs [9] &mdash; all this project's mechanism needs. Both real-browser candidates get real layout by construction [11][14][16].</p>
+
+  <h3>Setup / dependency cost</h3>
+  <p>happy-dom + <code>@vue/test-utils</code> is additive to the existing Vitest config [7]. Playwright CT's new model needs no new package at all. Vitest Browser Mode needs a provider package plus, for ergonomic Vue mounting, <code>vitest-browser-vue</code> &mdash; a second config surface, and Playwright's own browser binaries if that provider is chosen [11].</p>
+
+  <h3><code>npm run verify</code> wall-clock <span class="badge badge-unverified">one data point</span></h3>
+  <p>happy-dom needs no browser launch. Vitest Browser Mode has one concrete, dated data point against it: a GitHub issue reporting that adding 3 Browser Mode tests to a 507-test jsdom suite raised total CI wall-clock from 284.83s to 473.52s &mdash; a ~66% increase &mdash; closed by Vitest maintainers as "not planned" [12]. Single, CI-specific, not independently corroborated &mdash; but for a gate every developer runs before every commit, it outweighs Playwright CT's absence of any equivalent report, scored here on architectural reasoning about already-warm, already-parallel workers.</p>
+
+  <h3>Prop-driven ergonomics</h3>
+  <p><code>mount(Component, { props })</code> and <code>render(Component, { props })</code> are direct, single-call mounting APIs. Playwright CT's <code>fixtures.mount()</code> requires authoring a "story" rather than calling mount with ad hoc props inline &mdash; real but modest extra ceremony.</p>
+</section>
+
+<section id="no-third">
+  <h2>No third envelope &mdash; evaluated, not dismissed</h2>
+  <div class="card">
+    <p>A live alternative, not a null option &mdash; it is what closed most of Story 2's gaps already, moving page-composition arithmetic into <code>core/view/row-window.js</code> so a deleted offset fails a Vitest test rather than passing silently. But the remaining gap is proof this discipline has a ceiling: <code>v-if="view.pages &gt; 1"</code>, a button's <code>:disabled</code> binding, and German label interpolation are Vue template execution that exists only inside the render function. Pushing them further into <code>core/</code> would mean rebuilding Vue inside <code>core/</code>, in direct tension with AD-2. The discipline stays the right default for state derivation &mdash; it cannot, by itself, close a gap that is about what the template does with state it already has correctly.</p>
+  </div>
+</section>
+
+<section id="cost">
+  <h2>Cost &amp; lock-in</h2>
+  <p>All three technology candidates are devDependencies only &mdash; none ships in the built single-file artefact. No licensing or hosting cost: <code>@vue/test-utils</code> (MIT), <code>happy-dom</code> (MIT), <code>@playwright/test</code> (Apache-2.0, already accepted for e2e) are all permissive with no runtime key. Migration-away cost is low for all three &mdash; each is exercised only inside test files behind a <code>mount</code>/<code>render</code>-shaped call.</p>
+</section>
+
+<section id="verdict">
+  <h2>Verdict</h2>
+  <div class="card exec-card">
+    <p><b>Pick:</b> <code>@vue/test-utils</code> + <code>happy-dom</code>, as a second Vitest <code>projects</code> entry scoped to <code>ui/**</code>. It clears both hard gates, closes the concrete gap at the lowest cost on every axis this project already cares about, and its one real weakness &mdash; no <code>ResizeObserver</code>/<code>getBoundingClientRect</code> fidelity &mdash; does not touch the trigger case.</p>
+    <p><b>Named runner-up and the switch condition:</b> Playwright Component Testing's built-in model out-scores the pick on ecosystem backing and matches it on fidelity, but loses on wall-clock risk and authoring ceremony. The day a <code>ui/</code> component's untested branch depends on real <code>ResizeObserver</code> firing or a real computed <code>getBoundingClientRect</code> &mdash; the Editor canvas's per-node <code>ResizeObserver</code> mechanism (R4/D4) is the shape to watch &mdash; happy-dom's stub cannot assert it and Playwright CT can, at zero new dependency cost.</p>
+    <p><b>Strongest argument against the pick:</b> happy-dom's own documentation never states what this research had to determine by reading source code &mdash; a project adopting it without that check could believe <code>ResizeObserver</code>/<code>getBoundingClientRect</code> work, and ship a component test that never actually failed under a broken resize handler.</p>
+    <p><b>Cheapest reversibility hedge:</b> keep the DOM-emulator choice inside <code>vitest.config.js</code>'s per-project <code>environment</code> field, never inside a component or test assertion &mdash; a later switch changes one line of config and adds files; it rewrites nothing already-passing.</p>
+    <p><b>Implementation note:</b> carry one comment at the DOM-emulator boundary (mirroring <code>vitest.config.js</code>'s existing AD-27 comment) stating plainly that <code>ResizeObserver</code> and <code>getBoundingClientRect</code> are not implemented under happy-dom.</p>
+  </div>
+</section>
+
+<section id="cross">
+  <h2>Cross-dimension insights</h2>
+  <ul>
+    <li>The fidelity concern and the cost concern (Executive summary) only look opposed in the abstract. Checked against <code>core/view/row-window.js</code>'s actual implementation rather than against the brief's worry in isolation, they turn out not to conflict for this gap &mdash; only for gaps this project hasn't hit yet.</li>
+    <li>The round-1 "stable vs. experimental" contradiction for Playwright CT was not actually a contradiction &mdash; two research assistants each accurately described one of two coexisting mechanisms. This is exactly what a landing-time verification pass against primary sources is for, rather than accepting or rejecting a whole candidate on a single blog's framing.</li>
+    <li>All three candidates share one structural property this project should lean on: none of them tests the shipped <code>file://</code> artefact, and none needs to &mdash; that job is already Playwright's, from AD-27, and stays there. A third envelope's job is narrower (and cheaper) than the second envelope's.</li>
+  </ul>
+</section>
+
+<section id="contrary">
+  <h2>Contrary evidence</h2>
+  <p>The red-team pass was not run this cycle (<code>red_team</code> = off, validation = normal). The strongest counter-argument surfaced organically &mdash; happy-dom's undocumented stub behavior being invisible without reading source &mdash; is carried in the Verdict section above rather than duplicated here, since it came from this run's own verification step, not a dedicated skeptic pass.</p>
+</section>
+
+<section id="recs">
+  <h2>Recommendations</h2>
+  <ol>
+    <li><b>Add <code>@vue/test-utils</code> + <code>happy-dom</code> as a second Vitest <code>projects</code> entry</b>, <code>environment: 'happy-dom'</code>, scoped to <code>ui/**</code>. <span class="badge badge-high">high</span> on the mechanism [7]; <span class="badge badge-medium">medium</span> on release cadence.</li>
+    <li><b>Write RowWindow.vue's paging-branch test as a props-only test</b> &mdash; a fake <code>table</code> object with a large <code>rowCount</code>, no real CSV fixture. <span class="badge badge-high">high</span> confidence.</li>
+    <li><b>Document, at the DOM-emulator config boundary, that <code>ResizeObserver</code> and <code>getBoundingClientRect</code> are unimplemented stubs under happy-dom.</b> <span class="badge badge-high">high</span> confidence.</li>
+    <li><b>Do not adopt Vitest Browser Mode or Playwright CT now</b> &mdash; hold Playwright CT as the named upgrade path for the first geometry-dependent component. <span class="badge badge-medium">medium</span> confidence.</li>
+  </ol>
+</section>
+
+<section id="open">
+  <h2>Open questions</h2>
+  <ul>
+    <li>Does <code>@vue/test-utils</code> 2.4.11's ~2-year release gap indicate dormancy, or a stable API needing no further releases? Route: <code>npm view @vue/test-utils time --json</code> against the live registry.</li>
+    <li>Real measured <code>npm run verify</code> wall-clock cost, in this project's own repo, for each candidate &mdash; settle with a local spike rather than more research.</li>
+    <li>Whether happy-dom's <code>ResizeObserver</code>/<code>getBoundingClientRect</code> stubs are being actively worked on &mdash; not distinguished from "permanently unimplemented" in this run.</li>
+  </ul>
+</section>
+
+<section id="sources">
+  <h2>Source appendix</h2>
+  <details class="appendix" open>
+    <summary>25 sources &mdash; click a row's link to open the source</summary>
+    <div style="overflow-x:auto">
+      <table class="sources">
+        <thead><tr><th>#</th><th>Claim / finding it supports</th><th>Publisher</th><th>Pub. date</th><th>Accessed</th><th>Confidence</th></tr></thead>
+        <tbody id="sources-body"><tr id="src-1"><td>[1]</td><td>jsdom has no layout engine; `getBoundingClientRect()` returns zero-valued rects</td><td><a href="https://github.com/jsdom/jsdom/issues/3621" target="_blank" rel="noopener">GitHub — jsdom/jsdom#3621</a></td><td>open issue</td><td>2026-08-02</td><td>high</td></tr><tr id="src-2"><td>[2]</td><td>`ResizeObserver` not implemented in jsdom</td><td><a href="https://github.com/jsdom/jsdom/issues/3368" target="_blank" rel="noopener">GitHub — jsdom/jsdom#3368</a></td><td>2022-05 (open)</td><td>2026-08-02</td><td>high</td></tr><tr id="src-3"><td>[3]</td><td>`scrollHeight`/`clientHeight` always zero in jsdom</td><td><a href="https://github.com/jsdom/jsdom/issues/1013" target="_blank" rel="noopener">GitHub — jsdom/jsdom#1013</a></td><td>open issue</td><td>2026-08-02</td><td>medium-high</td></tr><tr id="src-4"><td>[4]</td><td>Corroborates #1013 from a second project</td><td><a href="https://github.com/testing-library/react-testing-library/issues/353" target="_blank" rel="noopener">GitHub — testing-library/react-testing-library#353</a></td><td>open issue</td><td>2026-08-02</td><td>medium-high</td></tr><tr id="src-5"><td>[5]</td><td>`@vue/test-utils` latest release 2.4.11, dated 2024-06-04; Vue-core-org ownership</td><td><a href="https://github.com/vuejs/test-utils/releases" target="_blank" rel="noopener">GitHub — vuejs/test-utils releases</a></td><td>2024-06-04</td><td>2026-08-02</td><td>high (date), medium (recency of maintenance)</td></tr><tr id="src-6"><td>[6]</td><td>Conflicting &quot;2 months ago&quot; snippet for the same package, unreconciled</td><td>npm/WebSearch aggregator snippet</td><td>n/a</td><td>2026-08-02</td><td>low</td></tr><tr id="src-7"><td>[7]</td><td>Vitest `projects` config supports per-project `environment`, scoped by `include`</td><td><a href="https://vitest.dev/guide/projects" target="_blank" rel="noopener">vitest.dev/guide/projects</a></td><td>current docs (Vitest 4.x)</td><td>2026-08-02</td><td>high</td></tr><tr id="src-8"><td>[8]</td><td>happy-dom `ResizeObserver` is an unimplemented stub</td><td><a href="https://github.com/capricorn86/happy-dom/blob/master/packages/happy-dom/src/resize-observer/ResizeObserver.ts" target="_blank" rel="noopener">GitHub — capricorn86/happy-dom, packages/happy-dom/src/resize-observer/ResizeObserver.ts</a></td><td>source, read live</td><td>2026-08-02</td><td>high (primary source, read directly)</td></tr><tr id="src-9"><td>[9]</td><td>happy-dom `getBoundingClientRect()` always returns a zero rect; `scrollTop` etc. are genuine settable properties</td><td><a href="https://github.com/capricorn86/happy-dom/blob/master/packages/happy-dom/src/nodes/element/Element.ts" target="_blank" rel="noopener">GitHub — capricorn86/happy-dom, packages/happy-dom/src/nodes/element/Element.ts</a></td><td>source, read live</td><td>2026-08-02</td><td>high (primary source, read directly)</td></tr><tr id="src-10"><td>[10]</td><td>Vitest 4.0 (2025-10-22) removed the experimental tag from Browser Mode</td><td><a href="https://vitest.dev/blog/vitest-4" target="_blank" rel="noopener">vitest.dev/blog/vitest-4</a></td><td>2025-10-22</td><td>2026-08-02</td><td>high</td></tr><tr id="src-11"><td>[11]</td><td>Browser Mode serves tests via Vite dev server (HTTP, not `file://`); provider/setup shape</td><td><a href="https://vitest.dev/guide/browser/" target="_blank" rel="noopener">vitest.dev/guide/browser/</a></td><td>current docs</td><td>2026-08-02</td><td>high</td></tr><tr id="src-12"><td>[12]</td><td>Adding 3 Browser Mode tests raised CI wall-clock ~66% in one reported case, closed unresolved</td><td><a href="https://github.com/vitest-dev/vitest/issues/9323" target="_blank" rel="noopener">GitHub — vitest-dev/vitest#9323</a></td><td>2025-12-22</td><td>2026-08-02</td><td>medium (single, uncorroborated report)</td></tr><tr id="src-13"><td>[13]</td><td>Further Browser Mode rough edges (disk usage, `projects` friction, Node-API crash)</td><td>GitHub — vitest-dev/vitest #9437, #10261, #9801</td><td>various, last ~12mo</td><td>2026-08-02</td><td>medium (title-level only)</td></tr><tr id="src-14"><td>[14]</td><td>Blog claims of real CSS/layout/`ResizeObserver` under Browser Mode</td><td>SitePoint, alexop.dev, mayashavin.com (multiple blogs)</td><td>2025-2026</td><td>2026-08-02</td><td>medium (converging secondary sources, no doc naming each API)</td></tr><tr id="src-15"><td>[15]</td><td>`vitest-browser-vue` helper package, version and org-ownership ambiguity</td><td><a href="https://www.npmjs.com/package/vitest-browser-vue" target="_blank" rel="noopener">npmjs.com/package/vitest-browser-vue</a> + GitHub repo page</td><td>current</td><td>2026-08-02</td><td>medium</td></tr><tr id="src-16"><td>[16]</td><td>Playwright CT&#x27;s new built-in `fixtures.mount()` model; served via dev server, not `file://`</td><td><a href="https://playwright.dev/docs/test-components" target="_blank" rel="noopener">playwright.dev/docs/test-components</a></td><td>current docs</td><td>2026-08-02</td><td>high</td></tr><tr id="src-17"><td>[17]</td><td>Playwright 1.62.0 shipped the new component-testing model as a headline feature</td><td><a href="https://github.com/microsoft/playwright/releases/tag/v1.62.0" target="_blank" rel="noopener">GitHub — microsoft/playwright, release v1.62.0</a></td><td>1.62.0 release</td><td>2026-08-02</td><td>high (primary source, read directly)</td></tr><tr id="src-18"><td>[18]</td><td>Playwright 1.59.0 removed `@playwright/experimental-ct-svelte` (Breaking Changes)</td><td><a href="https://github.com/microsoft/playwright/releases/tag/v1.59.0" target="_blank" rel="noopener">GitHub — microsoft/playwright, release v1.59.0</a></td><td>1.59.0 release</td><td>2026-08-02</td><td>high (primary source, read directly)</td></tr><tr id="src-19"><td>[19]</td><td>`@playwright/experimental-ct-vue` still published at 1.62.1, maintained by Playwright/Microsoft team, tracks core release in lockstep</td><td>`npm view @playwright/experimental-ct-vue` against the live npm registry</td><td>1.62.1, &quot;3 days ago&quot;</td><td>2026-08-02</td><td>high (primary source, read directly)</td></tr><tr id="src-20"><td>[20]</td><td>The old ct-vue package&#x27;s own README still says &quot;EXPERIMENTAL, does not respect semver&quot;</td><td><a href="https://github.com/microsoft/playwright/blob/main/packages/playwright-ct-vue/README.md" target="_blank" rel="noopener">GitHub — microsoft/playwright, packages/playwright-ct-vue/README.md</a></td><td>current</td><td>2026-08-02</td><td>high (primary source, read directly)</td></tr><tr id="src-21"><td>[21]</td><td>2023 maintainer comment: no timeline for a non-experimental CT release (superseded by [17] for the new model)</td><td><a href="https://github.com/microsoft/playwright/issues/26778" target="_blank" rel="noopener">GitHub — microsoft/playwright#26778</a></td><td>2023-08-29</td><td>2026-08-02</td><td>high (primary source, read directly)</td></tr><tr id="src-22"><td>[22]</td><td>Characterizes Playwright CT as &quot;remains experimental with no public timeline for stable release&quot; (round-1 framing, corrected in the executive summary — see [16][17][19][20]); also: teams migrating off Playwright CT go to Vitest Browser Mode, Storybook+Vitest, Cypress CT, or Jest/RTL</td><td>currents.dev, &quot;Playwright Component Testing in Large Frontend Codebases&quot;</td><td>undated in this run</td><td>2026-08-02</td><td>low-medium (single secondary source)</td></tr><tr id="src-23"><td>[23]</td><td>The paging branch&#x27;s actual dependency on `rowCount` alone, not on rendering or scroll</td><td>Project source: `ui/RowWindow.vue`, `core/view/row-window.js`</td><td>—</td><td>2026-08-02</td><td>high (primary, read directly)</td></tr><tr id="src-24"><td>[24]</td><td>AD-27, AD-6, AD-24 requirements frame</td><td>Project doc: `ARCHITECTURE-SPINE.md` (`_bmad-output/planning-artifacts/architecture/architecture-querbeet-2026-08-02/`)</td><td>2026-08-02</td><td>2026-08-02</td><td>high</td></tr><tr id="src-25"><td>[25]</td><td>The named gap and its stated reason</td><td>Project doc: `_bmad-output/implementation-artifacts/deferred-work.md`</td><td>—</td><td>2026-08-02</td><td>high</td></tr></tbody>
+      </table>
+    </div>
+  </details>
+</section>
+
+<section id="stale">
+  <h2>Staleness map</h2>
+  <table class="stale-table">
+    <thead><tr><th>Window</th><th>Re-check</th></tr></thead>
+    <tbody>
+      <tr><td>&le; 1 month</td><td>Playwright 1.62.0 CT status [17], <code>@playwright/experimental-ct-vue</code>'s continued publication [19], Vitest Browser Mode's stable status [10]</td></tr>
+      <tr><td>&le; 6 months</td><td><code>@vue/test-utils</code>'s release cadence [5][6] (unresolved &mdash; check first), <code>vitest-browser-vue</code>'s org home [15], whether happy-dom shipped real <code>ResizeObserver</code>/<code>getBoundingClientRect</code> [8][9]</td></tr>
+      <tr><td>&le; 12 months</td><td>Whether these three remain the field's real candidates</td></tr>
+    </tbody>
+  </table>
+  <p>This report is due for a Refresh by <b>2027-02-02</b> regardless of the above, per the select shape's staleness rule.</p>
+</section>
+
+<div class="foot">
+  querbeet &middot; technical research (deep-recon, select shape) &middot; run folder <code>technical-component-test-envelope-ui-2026-08-02</code> &middot; full markdown report and memlog in the same folder.
+</div>
+
+</div>
+</body>
+</html>

@@ -1169,7 +1169,74 @@ portable file, from a `file://` page?
 
 ## R10 – A component-test envelope for `ui/`
 
-**Status:** [ ] open — added 2026-08-02 after Story 2
+**Status:** [x] done (deep-recon, type technical, shape select, 2026-08-02)
+**Report:** `_bmad-output/planning-artifacts/research/technical-component-test-envelope-ui-2026-08-02/research.md`
+(HTML briefing in the same folder: `research-briefing.html`)
+
+**Verdict: `@vue/test-utils` + `happy-dom`, as a second Vitest `projects` entry scoped to `ui/**`**
+(84/100 on the weighted matrix). Runner-up: Playwright Component Testing's new built-in
+`fixtures.mount()` model (82/100, a near-tie) — the named upgrade path for the first `ui/`
+component whose untested branch genuinely needs `ResizeObserver`/`getBoundingClientRect`
+fidelity, at zero new dependency cost since the project already carries `@playwright/test`
+^1.62. Vitest Browser Mode scores third (72/100): real-browser fidelity bought at the cost of
+an extra, ownership-ambiguous helper dependency (`vitest-browser-vue`) and the one concrete
+wall-clock regression report found in this whole run (one GitHub issue: +66% CI time from
+adding 3 Browser Mode tests to a 507-test suite, closed unresolved).
+
+**The trigger case turned out not to need what the brief worried it might need.** Read directly
+from `core/view/row-window.js`: `RowWindow.vue`'s untested AD-24 paging branch depends only on
+`buildWindow()`'s `pages`, which is a pure function of `table.rowCount` — not of anything
+rendered, scrolled or measured. A fake `props.table` with a large `rowCount` and a short
+`cells` array reaches the branch; no real CSV fixture, no real scroll gesture, and — contrary
+to this plan's own stated fidelity worry — no `getBoundingClientRect`/`ResizeObserver` at all.
+This is why the geometry-fidelity criterion, which looked like it might force browser mode as
+"the only real candidate," does not decide this run: jsdom or happy-dom are sufficient for
+exactly the gap that opened the research.
+
+**happy-dom's fidelity gap is real, but only for APIs this trigger case never touches — verified
+from source, not docs.** happy-dom's own README/wiki are silent on `ResizeObserver` /
+`getBoundingClientRect` / `scrollTop` fidelity, so this run read the TypeScript source directly:
+`ResizeObserver.observe()`/`unobserve()`/`disconnect()` are each a bare `// TODO: Not
+implemented`, and `Element.getBoundingClientRect()` unconditionally returns an all-zero
+`DOMRect()` — the same failure mode already documented for jsdom via its own open issues. But
+`scrollTop`/`scrollLeft`/`scrollHeight`/`scrollWidth` are genuine settable/gettable properties
+backed by private fields, not stubs — which is all `RowWindow.vue`'s mechanism needs, since it
+never asks a DOM emulator to *compute* a scroll offset from real layout. **The day a `ui/`
+component needs to assert real `ResizeObserver` firing — the Editor canvas's per-node observer
+mechanism (R4/D4) is the shape to watch — happy-dom's stub cannot assert it and the runner-up
+can, for free.**
+
+**One correction that changed the shape of this run.** Round 1's two research assistants
+returned an apparent contradiction: is Playwright Component Testing "stable" or "still
+experimental"? Verified directly against Playwright's own 1.59.0/1.62.0 release notes (via
+`gh api`) and the live npm registry (via `npm view`): **both are true, about two different,
+currently coexisting things.** The old per-framework package, `@playwright/experimental-ct-vue`,
+is still published (1.62.1, maintained in lockstep with each Playwright core release by
+Playwright's own team) and its own README still says "BEWARE This package is EXPERIMENTAL and
+does not respect semver." A **new**, package-free `fixtures.mount()` "stories and galleries"
+model shipped as a headline feature of 1.62.0 — the version this project already runs — and is
+what the docs call stable. A new adopter reaches for the new model; the old package's
+experimental status is real but irrelevant to this decision. This is the run's own worked
+example of why a landing-time verification pass against primary sources beats accepting or
+rejecting a whole candidate on one secondary source's framing.
+
+**"No third envelope" was evaluated, not dismissed, and shown to have a real ceiling.** Story
+2's review already pushed the page-composition arithmetic into `core/view/row-window.js` by
+hand — exactly the discipline this option proposes. The remaining gap is proof the discipline
+cannot go further for this project's own architecture: `v-if`, a button's `:disabled` binding
+and German label interpolation are Vue template execution, existing only inside the render
+function. Pushing them further into `core/` would mean rebuilding Vue's conditional rendering
+and reactive attribute binding as plain JS, which is not "thinner templates" — it is rebuilding
+Vue inside `core/`, in direct tension with AD-2's reason for existing. The discipline stays the
+right default for *state derivation*, and should stay the first move for any future `ui/` gap —
+it just cannot, by itself, close a gap that is genuinely about what the template does with state
+it already has correctly.
+
+None of the three real-browser-adjacent candidates test the shipped `file://` artefact — all
+run through a Vite dev server over HTTP, verified for both real-browser candidates directly from
+their own docs — but none needs to: that job is already Playwright's, from AD-27, and stays
+there. A third envelope's job is narrower and cheaper than the second envelope's, which is part
+of why the cheapest candidate wins.
 
 **Why it arose.** Story 2 built `ui/RowWindow.vue`, and its paging branch — the AD-24 guard that
 makes a table past the spacer clamp page instead of silently rendering nothing — is executed by no
@@ -1265,12 +1332,15 @@ every component whose interesting states are unreachable through the built artef
    produced correct pagination and selectable German axis labels, and should be tried before any PDF
    library is researched.
 8. **R9's remainder** – package container and storage cost.
-9. **R10 – a component-test envelope for `ui/`.** Added 2026-08-02, during implementation rather
-   than before it, which is why it sits last. Not blocking: implementation continues without it, and
-   Story 2 showed the interim discipline — push the interesting states down into `core/` as pure
-   data so the templates stay thin enough for e2e. Worth answering before Story 10 adopts
-   `ui/RowWindow.vue` as its second consumer, since that is when an untested branch starts costing
-   twice.
+9. ~~**R10 – a component-test envelope for `ui/`.**~~ Done (2026-08-02). Added during
+   implementation rather than before it, which is why it sat last. Verdict: `@vue/test-utils` +
+   `happy-dom` as a second Vitest project scoped to `ui/**` (84/100); runner-up Playwright
+   Component Testing's new built-in model (82/100, near-tie, held as the upgrade path for
+   geometry-dependent components). The trigger case (`RowWindow.vue`'s paging branch) turned out
+   to depend on `rowCount` alone, not on rendering or scroll, verified by reading
+   `core/view/row-window.js` directly — so the fidelity worry that opened this research does not
+   decide it. Worth doing before Story 10 adopts `ui/RowWindow.vue` as its second consumer, since
+   that is when an untested branch starts costing twice.
 
 **Outside this numbering, because it is a spike rather than research: the FR-28 Recipe-authorship
 spike.** ~~Unblocked since 2026-08-01.~~ **Done 2026-08-01**
