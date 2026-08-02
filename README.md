@@ -30,7 +30,15 @@ Nowhere, unless you send it.
 
 ## Status
 
-🚧 Early stage. Planning and technical research are done and live under `_bmad-output/planning-artifacts/`; the product contract is the PRD there. The feature set above describes the goal, not the current state of the code.
+🚧 Early stage — the feature list above describes the goal. Planning and technical research are done and live under `_bmad-output/planning-artifacts/`; the product contract is the PRD there, and the architecture's load-bearing rules are the numbered decisions in `ARCHITECTURE-SPINE.md`.
+
+Three of twenty-three stories are built. What runs today:
+
+- **CSV Sources.** Load files as named, removable Sources. The encoding ladder — BOM, strict UTF-8 probe, Windows-1252 — with a visible override, delimiter and header-row detection you can correct, and structurally damaged rows reported and kept as raw text rather than guessed into alignment.
+- **Source preview.** A bounded row window over each Source's parsed table. The counts are always the Source's totals while the DOM holds about fifty rows, and past ~571,000 rows the view pages rather than scrolls, because a spacer taller than roughly 17.2 M px collapses to zero height in Firefox.
+- **Typing as Step zero.** A type and, where relevant, a number or date locale proposed per column by reading *every* value — not a sample, which is how comparable engines corrupt large files silently. Where the evidence decides, the deciding count is named; where nothing in a column settles the reading, the interface says exactly that instead of picking, and the Source cannot be confirmed until a person answers. Free-text annotations per column.
+
+Not yet: the pipeline editor, execution, the Result view, export, Recipes, and the LLM assistance. Sources cannot yet be transformed — only loaded, inspected and typed.
 
 ## Getting started
 
@@ -39,6 +47,29 @@ Nowhere, unless you send it.
 3. Load your report files and start clicking your pipeline together.
 
 Nothing to install, nothing to configure, and no internet connection needed – not even the first time you open it.
+
+## Developing
+
+```
+npm install
+npm run dev       # Vite dev server
+npm run build     # emits dist/index.html — and fails unless it is exactly one file
+npm run verify    # lint + both Vitest projects + Playwright in both engines
+```
+
+`npm run verify` is the gate to run before every commit. It takes well under a minute.
+
+**Three test envelopes, and which code runs in which is a rule rather than a habit** (AD-27):
+
+| Envelope | Covers | Why it is separate |
+| --- | --- | --- |
+| Vitest, `environment: 'node'` | `core/`, `ports/`, `adapters/` | The absent DOM is the assertion. A core test that needs one means the framework-free core has been broken upstream of the test. |
+| Vitest, `environment: 'happy-dom'` | `ui/` components | A `v-if`, a `:disabled` binding, an interpolated German label exist only inside a render function. Reached for last: state derivation belongs in `core/`. |
+| Playwright, `file://` | the built `dist/index.html`, Chromium and Firefox | The shipped artefact has an opaque origin and no network. Only opening the real file from a real `file://` URL tests that. |
+
+Under happy-dom, `ResizeObserver` and `getBoundingClientRect` are unimplemented stubs while `scrollTop` is genuine — so a component test can drive a scroll offset and cannot assert layout. Do not debug an observer that "should" fire there. The details, and the upgrade path when a component genuinely needs real geometry, are in `vitest.config.js` and in R10 of `research-plan.md`.
+
+**The build gate is not decorative.** `dist/` must contain exactly one file: nothing may be fetched at runtime, because a `file://` page cannot fetch. A library that lazy-loads its own icons, fonts or worker chunk fails only in the built artefact, never during development.
 
 ## Roadmap
 
