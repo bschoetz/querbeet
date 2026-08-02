@@ -5,3 +5,8 @@ _bmad/
 # Build outputs and dependencies of spike/probe artefacts
 node_modules/
 dist/
+
+# Playwright run artefacts
+test-results/
+playwright-report/
+blob-report/
