@@ -9,9 +9,12 @@
 // is the point: Parquet carries more types than querbeet has conversions for.
 
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { brotliCompressSync, gzipSync } from 'node:zlib'
 import { parquetWriteBuffer } from 'hyparquet-writer'
 import { parquetMetadata, parquetReadObjects } from 'hyparquet'
+import { compressors } from 'hyparquet-compressors'
+import { detectColumn } from '@core/types/typing.js'
 import { parquetReader } from './parquet-reader.js'
 
 const file = (columnData, schema, over = {}) =>
@@ -337,24 +340,11 @@ describe('the edges of a file', () => {
     expect(Object.isFrozen(result.table.columns[0].cells)).toBe(true)
   })
 
-  it('takes its columns from the schema by position, not from row keys by name', async () => {
-    // This is the reason for `parquetRead` with array rows over
-    // `parquetReadObjects`, pinned on the library rather than asserted about
-    // querbeet: object rows are keyed by column name, so two columns of one name
-    // would occupy one key and the second would be lost.
-    //
-    // The duplicate itself cannot be built here — `hyparquet-writer` resolves
-    // `columnData` against the schema by name, so it writes both entries into
-    // the first matching element. What is pinned is the shape that makes the
-    // collapse inevitable, plus the reader's own positional indexing.
+  it('keeps distinct column names in schema order, addressed by position', async () => {
     const buffer = file([
       { name: 'Betrag', data: [1n, 2n], type: 'INT64' },
       { name: 'Kunde', data: ['Anna', 'Bernd'], type: 'STRING' },
     ])
-
-    const objects = await parquetReadObjects({ file: buffer })
-    expect(Object.keys(objects[0])).toEqual(['Betrag', 'Kunde'])
-    expect(Object.keys(objects[0])).toHaveLength(2) // one key per *name*, not per column
 
     const result = await read(buffer)
     expect(result.table.columns.map((c) => c.name)).toEqual(['Betrag', 'Kunde'])
@@ -422,6 +412,111 @@ describe('the edges of a file', () => {
       code: 'parquet.unsupported_codec',
       values: { codec: 'LZO' },
     })
+  })
+})
+
+describe('the shapes hyparquet-writer cannot write', () => {
+  // Real files under `tests/fixtures/`, made by pyarrow 25.0.0 and reproducible
+  // with `node tests/fixtures/generate.mjs` — which says what each one contains.
+  // These three were carried in the ledger as "unreachable" on the strength of
+  // the *writer's* limits; the bytes always could exist, and now do. Two of the
+  // three behaved better than the ledger feared. The third was a live defect.
+  const fixture = (name) => {
+    const bytes = readFileSync(new URL(`../../tests/fixtures/${name}`, import.meta.url))
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+  }
+
+  it('reads an INT96 timestamp as a datetime, at the instant the file holds', async () => {
+    // The ledger's `risk:` note said INT96 would fall through `compactJson` into
+    // a natively typed column and count 100 % unparsed. Measured against the
+    // real file, it does not: hyparquet's default parsers turn INT96 into a
+    // `Date`, so the mapping and the canonicalization both hold.
+    const result = await read(fixture('parquet-int96-timestamp.parquet'))
+
+    expect(result.table.columns.map((c) => [c.name, c.domain])).toEqual([
+      ['Erfasst', 'native:datetime'],
+      ['Kunde', 'text'],
+    ])
+    expect(byName(result.table, 'Erfasst').cells).toEqual([
+      '2025-08-01T14:30:00.000Z',
+      '',
+      '2024-02-29T00:00:00.000Z',
+    ])
+    expect(result.table.rowCount).toBe(3)
+    expect(codes(result)).toEqual([])
+
+    // …and the column is genuinely readable under its own type, which is the
+    // half the ledger was most worried about.
+    const swept = detectColumn(byName(result.table, 'Erfasst').cells, { domain: 'native:datetime' })
+    expect(swept.counts).toMatchObject({ missing: 1, parsed: 2, unparsed: 0 })
+  })
+
+  it('reads a DECIMAL backed by a byte array as the amount it holds', async () => {
+    // `decimal128(38, 2)` is stored as FIXED_LEN_BYTE_ARRAY, the backing
+    // `hyparquet-writer` cannot emit. hyparquet still hands over the multiplied
+    // double, so the same scale recovery applies and the same float artefact
+    // would appear without it — `1234567.8900000001` is what arrives.
+    const result = await read(fixture('parquet-decimal-fixed-len-byte-array.parquet'))
+
+    expect(byName(result.table, 'Preis')).toMatchObject({ domain: 'native:number' })
+    expect(byName(result.table, 'Preis').cells).toEqual(['1234567.89', '-0.05', ''])
+    expect(codes(result)).toEqual([])
+
+    const swept = detectColumn(byName(result.table, 'Preis').cells, { domain: 'native:number' })
+    expect(swept.counts).toMatchObject({ missing: 1, parsed: 2, unparsed: 0 })
+  })
+
+  it('refuses a repeated column name rather than showing one column’s values under another’s header', async () => {
+    // THE DEFECT THIS FIXTURE FOUND. `rowgroup.js` maps an array slot back to a
+    // column with `findIndex(c => c.pathInSchema[0] === name)`, which answers
+    // with the *first* match for both duplicates. Measured against the real
+    // file, the second `Betrag` — a UTF8 column of `brutto`/`netto` — came back
+    // holding the INT64 column's `1`/`2`, silently, under its own header. That
+    // is the plausible-table-from-a-damaged-file failure the product exists to
+    // refuse, and array rows had been documented as the cure for it.
+    //
+    // There is no by-position accessor in hyparquet's public API, so neither
+    // column is read. Blanking both rather than keeping the first is deliberate:
+    // first-wins is an implementation detail, and two columns of one name *and*
+    // one physical type would be indistinguishable anyway.
+    const result = await read(fixture('parquet-duplicate-column-name.parquet'))
+
+    expect(result.table.columns.map((c) => c.name)).toEqual(['Betrag', 'Betrag'])
+    expect(result.table.columns[0].cells).toEqual(['', ''])
+    expect(result.table.columns[1].cells).toEqual(['', ''])
+    // Emphatically not `['1','2']` in the second column, which is what shipped
+    // before this fixture existed.
+    expect(result.table.columns[1].cells).not.toContain('1')
+    expect(result.table.rowCount).toBe(2)
+
+    expect(codes(result)).toEqual([['warning', 'parquet.duplicate_column_name']])
+    expect(result.diagnostics[0].values).toEqual({ column: 'Betrag', columns: 2 })
+  })
+
+  it('reads every other column of a file that has a repeated name in it', async () => {
+    // The refusal is per column, not per file — the same rule INTERVAL follows.
+    const buffer = file([
+      { name: 'Kunde', data: ['Anna', 'Bernd'], type: 'STRING' },
+      { name: 'Betrag', data: [1n, 2n], type: 'INT64' },
+    ])
+    const withDuplicate = await read(fixture('parquet-duplicate-column-name.parquet'))
+    const withoutDuplicate = await read(buffer)
+
+    expect(withDuplicate.diagnostics).toHaveLength(1)
+    expect(withoutDuplicate.diagnostics).toHaveLength(0)
+    expect(withoutDuplicate.table.columns[0].cells).toEqual(['Anna', 'Bernd'])
+  })
+
+  it('is still keyed by name in hyparquet’s object rows, which is why array rows were chosen', async () => {
+    // The original reason for `parquetRead` over `parquetReadObjects`, now
+    // measured on a file that actually has the duplicate: object rows lose one
+    // of the two columns outright rather than duplicating the other.
+    const objects = await parquetReadObjects({
+      file: fixture('parquet-duplicate-column-name.parquet'),
+      compressors,
+    })
+
+    expect(Object.keys(objects[0])).toEqual(['Betrag'])
   })
 })
 

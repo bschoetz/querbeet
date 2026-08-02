@@ -2,12 +2,15 @@
 // (AD-27) — an adapter is framework-free code behind a port, and only the built
 // artefact needs Playwright.
 //
-// The fixtures are written here with `write-excel-file` (a devDependency) rather
-// than committed as binaries: a checked-in `.xlsx` is opaque in a diff, and the
-// one thing every case below turns on is which *type* a cell was written as.
+// Most fixtures are written here with `write-excel-file` (a devDependency),
+// because the one thing every case below turns on is which *type* a cell was
+// written as, and a generated workbook states that in the test itself. Where the
+// writer cannot produce a shape at all, a real file is committed under
+// `tests/fixtures/` instead — that is the better fixture, not a forbidden one.
 // Nothing about the read depends on the writer — `read-excel-file` sees only a
 // zip archive of XML, whoever produced it.
 
+import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import writeXlsxFile from 'write-excel-file/node'
 import { xlsxReader } from './xlsx-reader.js'
@@ -324,6 +327,58 @@ describe('nothing to read', () => {
   it('throws on bytes that are not a workbook, so the store can refuse the Source', async () => {
     await expect(read(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3]).buffer)).rejects.toThrow()
     await expect(read(new Uint8Array([1, 2, 3, 4]).buffer)).rejects.toThrow()
+  })
+})
+
+describe('the workbooks write-excel-file cannot produce', () => {
+  // Real files under `tests/fixtures/`, reproducible with
+  // `node tests/fixtures/generate.mjs`, which says what each one contains and
+  // which tool made it. Both were carried in the ledger as untestable on the
+  // strength of the *writer's* limits rather than the bytes'.
+  const fixture = (name) => {
+    const bytes = readFileSync(new URL(`../../tests/fixtures/${name}`, import.meta.url))
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+  }
+
+  it('refuses a password-protected workbook instead of half-reading it', async () => {
+    // The protected half of the matrix's "encrypted / corrupt XLSX" row, which
+    // until now was pinned only by truncated and non-zip rubbish. This is a real
+    // OOXML-encrypted workbook from LibreOffice (password `geheim`), verified
+    // decryptable with `msoffcrypto-tool` when it was made.
+    const bytes = fixture('xlsx-password-protected.xlsx')
+
+    // An encrypted workbook is not a zip at all: OOXML encryption wraps the
+    // package in a CFB container, which is why the reader refuses it at the
+    // leading bytes rather than somewhere deep in the XML.
+    expect([...new Uint8Array(bytes).slice(0, 4)]).toEqual([0xd0, 0xcf, 0x11, 0xe0])
+
+    await expect(read(bytes)).rejects.toThrow()
+  })
+
+  it('refuses a workbook that declares no sheet, and the reason is the library', async () => {
+    // What this fixture actually proves is not what it was written for. The
+    // reader's `sheets.length === 0` branch — `xlsx.empty` with `sheet: ''` — is
+    // unreachable, and now for a *measured* reason rather than a guessed one:
+    // `read-excel-file` 9.3.5 never returns an empty sheet list. With no sheet
+    // to parse, none of the parse functions in `parseSpreadsheetContents`'s
+    // third pass returns a promise, so `readFiles` hands back a plain object and
+    // the library calls `.then` on it — `TypeError: readFiles(...).then is not a
+    // function`, thrown before any result exists.
+    //
+    // The branch stays: it costs nothing and is correct the day that is fixed.
+    // What the product does today is refuse the file, which is defensible for a
+    // workbook Excel itself will not produce, and it is pinned here rather than
+    // assumed.
+    await expect(read(fixture('xlsx-zero-sheets.xlsx'))).rejects.toThrow()
+  })
+
+  it('still reads an ordinary workbook built from the same bytes', async () => {
+    // The zero-sheet fixture is an ordinary workbook with one element rewritten,
+    // so this is what says the refusal above is about the missing sheet rather
+    // than about the rezipping.
+    const result = await read(await oneSheet([[s('Kunde')], [s('Anna')]]))
+
+    expect(result.table.columns.map((c) => c.name)).toEqual(['Kunde'])
   })
 })
 

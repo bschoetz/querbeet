@@ -74,7 +74,7 @@ context:
 - `ui/SourcesPane.vue:440-510` — parse controls render unconditionally; make them per-format (encoding+delimiter CSV-only, header-row CSV+XLSX, sheet select XLSX). L134-138: `isSettable` guards by type — a `native:number` column passes it and gets the full select; guard by domain, off the catalogue. L611-615: `typing-native` shows the raw English type — give `date`/`datetime`/`number`/`boolean` German words (Datum/Zeitstempel/Zahl/Wahrheitswert), keyed off the catalogue so a type without a German word is a build-visible gap rather than a raw English word on the card.
 - `ui/SourcesPane.test.js` — native column renders no type select but keeps missing-token and annotation controls; sheet select issues the command.
 - `app/main.js` — register `{ csv, xlsx, parquet }` readers.
-- `tests/e2e/xlsx-parquet.spec.js` — new: fixtures generated at test setup with `write-excel-file` + `hyparquet-writer` (devDependencies; no binaries in git), incl. one ≥ 512 KB XLSX for the worker path. Load via `setInputFiles` as in `typing.spec.js:31`.
+- `tests/e2e/xlsx-parquet.spec.js` — new: fixtures generated at test setup with `write-excel-file` + `hyparquet-writer` (devDependencies) where the writers can produce the shape, and committed files under `tests/fixtures/` where they cannot, incl. one ≥ 512 KB XLSX for the worker path. Load via `setInputFiles` as in `typing.spec.js:31`.
 - `scripts/assert-single-file.mjs` — read-only: the informational `new Worker` count moves 0 → 2 (fflate + the bundled-but-unreached worker-f); both are blob-URL constructions, not gate failures.
 
 ## Tasks & Acceptance
@@ -100,6 +100,18 @@ context:
 - Given `npm run verify`, then lint, both Vitest projects and Playwright (Chromium + Firefox, `file://`) pass.
 
 ## Spec Change Log
+
+### 2026-08-02 — real fixture files, and the silent corruption one of them found
+
+**A rule that was never the owner's.** "No binaries in git — a checked-in `.xlsx` is opaque in a diff" was invented during this story and used to justify leaving five shapes untested. The project owner has struck it. Binary fixtures are allowed; the claim is gone from the Code Map and from the XLSX test header, and it is not a reason again.
+
+**Five files, produced and committed.** `tests/fixtures/` now holds an INT96 Parquet, a DECIMAL backed by `FIXED_LEN_BYTE_ARRAY` (`decimal128(38, 2)`), a Parquet with two top-level `Betrag` columns of different physical types, a genuinely OOXML-encrypted workbook, and a workbook declaring `<sheets/>`. `generate.mjs` and `generate.py` are committed beside them, saying what each file contains and which tool made it — a committed binary with a committed generator answers the only real objection to checked-in fixtures. pyarrow 25.0.0 made the Parquet three; LibreOffice through the **UNO API** made the protected workbook, because `--convert-to`'s filter options silently ignore a password for xlsx — every documented spelling produced a plain `PK\x03\x04` zip, which is worth recording so nobody retries it; `fflate` made the zero-sheet workbook, used from the generator only and deliberately not added to `package.json`.
+
+**The defect they were written to find, found.** A repeated Parquet column name was **silently showing one column's values under another's header**. hyparquet's `rowgroup.js` maps an array slot back to a column with `findIndex(c => c.pathInSchema[0] === name)`, which answers with the first match for every duplicate — so a UTF8 column of `brutto`/`netto` came back holding the INT64 column's `1`/`2`. Worse, the reader's own header documented array rows as the *cure* for exactly this, and the test written for it pinned only the library's object-row shape, so nothing was watching. A repeated name is now refused per column with `parquet.duplicate_column_name`; every other column in the file is still read, the same rule INTERVAL follows. Blanking both rather than keeping the first is deliberate: first-wins is an implementation detail, and two duplicates of one physical type would be indistinguishable anyway.
+
+**Two fears that turned out to be unfounded, and are recorded as such.** The ledger's `risk:` note predicted INT96 and byte-array DECIMAL would fall through `compactJson` into a natively typed column and count 100 % unparsed — a Source that loads, looks typed and cannot be confirmed. Measured against the real bytes, neither does: hyparquet's default parsers return a `Date` for INT96 and a scaled number for a byte-array DECIMAL, so the type map and the canonicalizer already held, and both columns sweep fully readable. The scale recovery matters as much here as for the INT64-backed case — `1234567.8900000001` is what arrives.
+
+**What the zero-sheet workbook actually proves.** Not the `xlsx.empty` branch it was written for. `read-excel-file` 9.3.5 never returns an empty sheet list: with no sheet to parse, nothing in `parseSpreadsheetContents`'s third pass returns a promise, `readFiles` hands back a plain object and the library calls `.then` on it — `TypeError: readFiles(...).then is not a function`. So the product refuses the file, and that is what the test pins. The branch stays, correct the day the library is fixed, and the ledger entry now names the bug instead of saying "unreachable".
 
 ### 2026-08-02 — Ask First answered by the project owner: `hyparquet-compressors` is in
 

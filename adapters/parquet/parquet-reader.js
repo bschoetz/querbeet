@@ -11,8 +11,17 @@
 //
 //   `parquetRead` with `rowFormat: 'array'`, not `parquetReadObjects`. Object
 //   rows are keyed by column name, so two columns of one name would occupy one
-//   key and the second would be lost — the same care the CSV reader already
-//   takes over a repeated header.
+//   key and the second would be lost outright.
+//
+//   **Array rows are not the cure they look like, and a real file proved it.**
+//   `rowgroup.js` maps each array slot back to a column with
+//   `asyncColumns.findIndex(c => c.pathInSchema[0] === name)`, which answers with
+//   the *first* match for every duplicate — so both slots carry the first
+//   column's values. Measured against a pyarrow-written file with two `Betrag`
+//   columns, a `BYTE_ARRAY` column of `brutto`/`netto` came back as the INT64
+//   column's `1`/`2`, silently, under its own header. There is no by-position
+//   accessor anywhere in the public API to route around it, so a repeated name
+//   is refused rather than guessed (see `duplicated` below).
 //
 //   A partial `parsers` option replaces all defaults rather than merging, which
 //   crashes inside `stringFromBytes`. None is passed. What the defaults deliver,
@@ -256,7 +265,33 @@ export const parquetReader = {
       topLevel.push(takeSubtree())
     }
 
+    // A name the schema uses twice. hyparquet resolves a column by name and
+    // answers with the first match, so every slot sharing a repeated name
+    // carries the *first* such column's values — measured, a string column came
+    // back holding the integers of the column above it, under its own header.
+    // That is the plausible-table-from-a-damaged-file failure this product
+    // exists to refuse, so none of them is read.
+    //
+    // Keeping the first and blanking the rest would preserve real data and is
+    // right for this file, but only because `findIndex` happens to return the
+    // first: two columns of one name *and* one physical type would be
+    // indistinguishable, and the rule has to hold there too. Every other column
+    // in the file is unaffected.
+    const nameCounts = new Map()
+    for (const element of topLevel) {
+      nameCounts.set(element.name, (nameCounts.get(element.name) ?? 0) + 1)
+    }
+    const duplicated = new Set([...nameCounts].filter(([, n]) => n > 1).map(([name]) => name))
+    for (const name of duplicated) {
+      diagnostics.push(
+        warning('parquet.duplicate_column_name', { column: name, columns: nameCounts.get(name) }),
+      )
+    }
+
     const columnPlan = topLevel.map((element) => {
+      if (duplicated.has(element.name)) {
+        return { element, type: null, readable: false, scale: 0, decimal: false }
+      }
       // A group is a LIST, a MAP or a STRUCT. It arrives as a structure and
       // leaves as compact JSON; splitting it into columns is story 17's job.
       if (element.num_children) {
@@ -294,13 +329,11 @@ export const parquetReader = {
     /** @type {Array<Array<unknown>>} one array per column, in schema order */
     const raw = columnPlan.map(() => [])
 
-    // Only the columns hyparquet can decode are requested. Subsetting is by
-    // name, so it is skipped where names repeat — there the whole read is the
-    // only correct request, and a repeated name alongside an INTERVAL is a file
-    // nobody has produced yet.
+    // Only the columns hyparquet can decode *and* address are requested.
+    // Subsetting is by name, which is safe here by construction: a repeated name
+    // is never in `wanted`, so what is asked for is always unique.
     const wanted = columnPlan.filter((plan) => plan.readable)
-    const names = columnPlan.map((plan) => plan.element.name)
-    const subset = wanted.length < columnPlan.length && new Set(names).size === names.length
+    const subset = wanted.length < columnPlan.length
 
     if (wanted.length > 0) {
       const slots = subset

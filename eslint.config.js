@@ -70,7 +70,7 @@ export default [
   // Node-side tooling. The e2e specs run under Node (Playwright drives the
   // browser from outside) and build fixture bytes with Buffer.
   {
-    files: ['scripts/**/*.mjs', '*.config.js', 'tests/**/*.js'],
+    files: ['scripts/**/*.mjs', '*.config.js', 'tests/**/*.js', 'tests/**/*.mjs'],
     languageOptions: { globals: globals.node },
   },
 

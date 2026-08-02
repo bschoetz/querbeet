@@ -717,6 +717,11 @@ describe('the typing diagnostics in German', () => {
             },
             {
               severity: 'warning',
+              code: 'parquet.duplicate_column_name',
+              values: { column: 'Betrag', columns: 2 },
+            },
+            {
+              severity: 'warning',
               code: 'parquet.decimal_precision',
               values: { column: 'preis', values: 1 },
             },
@@ -771,6 +776,7 @@ describe('the typing diagnostics in German', () => {
     expect(text).toContain('In der Kopfzeile sind die Spalten 2, 5 leer')
     expect(text).toContain('Die Kopfzeile vergibt „Betrag“ mehrfach')
     expect(text).toContain('Spalte „dauer“ hat den Parquet-Typ INTERVAL, den querbeet nicht')
+    expect(text).toContain('Die Datei enthält 2 Spalten mit dem Namen „Betrag“')
     expect(text).toContain('Spalte „preis“: ein Wert hat mehr Stellen')
     expect(text).toContain('Spalte „preis“: 4 Werte haben mehr Stellen')
     expect(text).toContain('Spalte „erfasst“ ist in Mikrosekunden gespeichert')

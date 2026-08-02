@@ -137,6 +137,10 @@ const GERMAN = {
   'parquet.unsupported_type': (v) =>
     `Spalte „${v.column}“ hat den Parquet-Typ ${v.type}, für den querbeet noch keine ` +
     `Umrechnung kennt — sie wird als Text gelesen.`,
+  'parquet.duplicate_column_name': (v) =>
+    `Die Datei enthält ${nf(v.columns)} Spalten mit dem Namen „${v.column}“. querbeet kann sie ` +
+    `nicht auseinanderhalten und lässt sie deshalb leer — sonst stünden unter der einen ` +
+    `Überschrift die Werte der anderen. Die übrigen Spalten sind vollständig gelesen.`,
   'parquet.unreadable_column': (v) =>
     `Spalte „${v.column}“ hat den Parquet-Typ ${v.type}, den querbeet nicht entschlüsseln ` +
     `kann — sie bleibt leer. Die übrigen Spalten der Datei sind vollständig gelesen.`,
