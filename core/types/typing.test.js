@@ -536,6 +536,45 @@ describe('piece 2 — datetime, and the two-digit year', () => {
     }
   })
 
+  it('carries a fractional second on every shape, not on ISO alone', () => {
+    // The shape that renegotiated AD-21: `2026-02-13 15:57:35.4616727` is what
+    // SQL Server `datetime2(7)` and .NET write into a CSV. Before the amendment
+    // the fraction was allowed behind a `T` and nowhere else, so a space made
+    // the difference between a typed column and text — on the exact shape this
+    // story exists to stop being text.
+    const cases = [
+      [['2026-02-13 15:57:35.4616727', '2026-02-14 08:01:02.1000000'], 'yyyy-MM-dd HH:mm'],
+      [['2026-02-13 15:57:35.461', '2026-02-14 08:01:02.100'], 'yyyy-MM-dd HH:mm'],
+      [['31.12.2025 14:30:00.123', '01.01.2026 08:00:00.900'], 'dd.MM.yyyy HH:mm'],
+      [['31.12.25 14:30:00.123', '01.01.26 08:00:00.900'], 'dd.MM.yy HH:mm'],
+    ]
+
+    for (const [cells, pattern] of cases) {
+      const r = detectColumn(cells)
+      expect([pattern, r.type, r.format.pattern, r.counts.parsed]).toEqual([
+        pattern,
+        DATETIME,
+        pattern,
+        cells.length,
+      ])
+    }
+  })
+
+  it('reads nine fractional digits and refuses a tenth, because nine is the representation', () => {
+    // AD-21 holds nanoseconds, so nine digits is what survives into a Table and
+    // the cap is the representation rather than a number someone picked. A tenth
+    // digit is counted unparsed rather than quietly dropped — the same discipline
+    // the overflow guard applies to a 19-digit order number.
+    const readable = Array.from({ length: 9 }, (_, i) => `2026-02-1${i} 15:57:35.461672789`)
+    const r = detectColumn([...readable, '2026-02-13 15:57:35.4616727891'])
+
+    expect(r).toMatchObject({ type: DATETIME, verdict: 'settled' })
+    expect(r.counts).toMatchObject({ parsed: 9, unparsed: 1 })
+
+    // And a fraction without seconds is not a shape anything writes.
+    expect(detectColumn(['2026-02-13 15:57.461', '2026-02-14 08:01.100']).type).toBe(TEXT)
+  })
+
   it('offers no MM/dd datetime mirror, and says so on purpose', () => {
     // A candidate enters with a real Source that needs it — the rule
     // `NUMBER_LOCALES` already follows. Nothing seen so far carries an American

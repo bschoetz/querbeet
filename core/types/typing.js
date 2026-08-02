@@ -45,9 +45,9 @@
 //      almost every real table, over the most common column type there is.
 //
 //   3. NOTHING HERE CONVERTS A VALUE. This module decides what a column *is*
-//      and counts what would parse. Turning cells into numbers and UTC-midnight
-//      epoch milliseconds happens on the way into a Table (AD-21, AD-22), in
-//      story 6, because the raw text has to survive for the preview and the
+//      and counts what would parse. Turning cells into numbers and into epoch
+//      nanoseconds as a `BigInt` happens on the way into a Table (AD-21, AD-22),
+//      in story 6, because the raw text has to survive for the preview and the
 //      damage report to keep reading it.
 //
 // Pure, framework-free, browser-free (AD-1, AD-2). `Intl` is a JS built-in of
@@ -437,20 +437,33 @@ function readsAsDate(text, { separator, order, shortYear = false }) {
 
 // ------------------------------------------------- datetime, time, duration
 //
-// AD-21 is amended by this story: a `time` column holds milliseconds since
-// midnight and a `duration` column plain milliseconds, both at millisecond
-// resolution. Nothing here converts anything — this is what a column *is* — but
-// the representation is what makes `duration` a type a user can choose, and a
-// type nobody can choose is an alternative nobody can answer with.
+// AD-21 is amended by this story: every temporal column holds **nanoseconds as a
+// `BigInt`** — a date UTC-midnight epoch nanoseconds, a datetime UTC epoch
+// nanoseconds, a `time` nanoseconds since midnight, a `duration` plain
+// nanoseconds. One unit for all four, because a split rule would make a
+// date-against-datetime join a unit conversion. Nothing here converts anything —
+// this is what a column *is* — but the representation decides two things that do
+// live here: that `duration` is a type a user can choose at all, and that a
+// fractional second is read rather than rounded away.
 
 /** Seconds optional, fraction 1–9 digits and only alongside seconds, offset
- *  `Z` / `±HH:mm` / `±HHmm`. The fraction is counted readable and truncated to
- *  milliseconds at conversion — the `parquet.timestamp_precision` line. */
+ *  `Z` / `±HH:mm` / `±HHmm`. Nine digits is the representation's own resolution
+ *  (AD-21), not an arbitrary cap: every digit that matches here survives into a
+ *  Table, and a tenth is not readable rather than quietly dropped. */
 const ISO_DATETIME =
   /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|[+-]\d{2}:?\d{2})?$/
 
-/** `HH:mm(:ss)` with a two-digit hour — the shape that rides behind a date. */
-const DATETIME_CLOCK = /^(\d{2}):([0-5]\d)(?::([0-5]\d))?$/
+/**
+ * `HH:mm(:ss(.fffffffff))` with a two-digit hour — the shape that rides behind a
+ * date.
+ *
+ * The fraction is here and not only on the ISO candidate, which is the whole
+ * point of the amendment: `2026-02-13 15:57:35.4616727` is what SQL Server
+ * `datetime2(7)` and .NET write into a CSV, and before this a space instead of a
+ * `T` was the difference between a typed column and text — on the exact shape
+ * this story exists to stop being text.
+ */
+const DATETIME_CLOCK = /^(\d{2}):([0-5]\d)(?::([0-5]\d)(?:\.(\d{1,9}))?)?$/
 
 /** `HH:mm(:ss)`, hours 00–23 in one or two digits. */
 const CLOCK_TIME = /^(\d{1,2}):([0-5]\d)(?::([0-5]\d))?$/

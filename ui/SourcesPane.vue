@@ -152,9 +152,15 @@ const GERMAN = {
       : `Spalte „${v.column}“: ${nf(v.values)} Werte haben mehr Stellen, als sich hier exakt ` +
         `rechnen lassen. Sie stehen unverändert in der Tabelle und zählen als nicht lesbar, ` +
         `damit keine falschen Zahlen weiterverwendet werden.`,
+  // querbeet itself holds nanoseconds (AD-21), so this loss is the reader's and
+  // not the representation's: the Parquet library hands over a `Date`, which is
+  // millisecond-resolution by construction, so the finer digits are gone before
+  // anything of ours sees the value. Saying "querbeet rechnet in Millisekunden"
+  // here would now be false — and would send someone looking in the wrong place.
   'parquet.timestamp_precision': (v) =>
     `Spalte „${v.column}“ ist in ${v.unit === 'NANOS' ? 'Nanosekunden' : 'Mikrosekunden'} ` +
-    `gespeichert; querbeet rechnet in Millisekunden. Die feineren Stellen gehen verloren.`,
+    `gespeichert und wird beim Einlesen auf Millisekunden gerundet. Die feineren Stellen ` +
+    `gehen verloren.`,
   'parquet.non_finite_number': (v) =>
     v.values === 1
       ? `Spalte „${v.column}“ enthält einen Wert, der keine Zahl ist (unendlich oder ` +
