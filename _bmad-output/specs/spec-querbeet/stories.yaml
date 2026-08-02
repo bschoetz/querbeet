@@ -46,7 +46,14 @@
     SourceReader declares text or native:<type> per column (AD-20).
     read-excel-file 9.3.5 returns [{sheet,data}], not a flat grid, when no
     sheet is named; its own fflate blob-URL workers are permitted — AD-15
-    constrains only querbeet's code.
+    constrains only querbeet's code. This story is the first real consumer of
+    the native:<type> branch: story 3 built and tested it, but only against a
+    hand-written reader result, because no reader in the tree delivers
+    anything but text. core/types/typing.js detectColumn returns a native
+    column pre-typed with format null, skips locale inference, and still
+    counts missing values — and the confirmation gate still requires a person,
+    which is the whole point (AD-20). If a real XLSX column does not fit that
+    shape, the assumption is wrong here, not in story 3's tests.
 - id: "5"
   title: Step graph model and Editor
   description: >-

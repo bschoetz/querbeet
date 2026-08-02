@@ -7,6 +7,10 @@ so a later reader can see what was decided rather than only what remains.
 ## Open
 
 - source_spec: `spec-3-typing-step-zero.md`
+  summary: Story 3 shipped without the adversarial review pass that stories 1 and 2 went through, and its `done_checkpoint` is still outstanding.
+  evidence: Stories 1 and 2 ran the three review layers — blind hunter, edge-case hunter, verification-gap reviewer — as independent context-free subagents, and story 2's produced eight patches including two real defects nobody would have found by re-reading their own work (rows expressed in rem against a px geometry; a virtualized table announcing ~50 rows to a screen reader). Story 3 was implemented directly on request and self-reviewed by mutation instead: sampling the column, letting a tie name a winner, opening the gate, carrying a confirmation across a re-read, and dropping an annotation each fail exactly the tests that name them. That is evidence the tests bite, not evidence the design is right. `stories.yaml` also marks story 3 `spec_checkpoint: true` and `done_checkpoint: true`; the spec checkpoint was bypassed by an explicit instruction and the done checkpoint has not happened. Anyone reading the green suite should know both facts before trusting it.
+
+- source_spec: `spec-3-typing-step-zero.md`
   summary: Unparsed values are counted per column, not listed — the panel says "842 von 900 Werten lesbar" but cannot show *which* 58 failed.
   evidence: The matrix row reads "the 58 are listed as unparsed, original text kept". The originals are kept and visible — the preview grid renders the raw table untouched — and the count is exact, so nothing is lost or silently replaced. What is missing is the shortcut from the count to those rows. Listing them means marking cells in the preview under a confirmed type, which is boxed cells (AD-22) and therefore story 6's conversion; doing it here would mean a second scan whose result story 6 immediately replaces.
 

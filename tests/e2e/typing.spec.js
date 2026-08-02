@@ -5,6 +5,14 @@
 //
 // Fixture bytes are built inline, as in the other suites — a fixture file on
 // disk carries whatever encoding an editor last saved it as.
+//
+// ONE TRAP, WORTH KNOWING BEFORE WRITING A FIXTURE HERE: a German number
+// contains a comma, so a fixture of German numbers cannot use comma as its
+// delimiter. Written that way, `Anna,1.234,56` is three fields against a
+// two-column header, the row is excluded as structurally damaged (CAP-39), and
+// the test fails somewhere far from the cause — a missing column control rather
+// than a parse complaint. Real German exports use semicolons for exactly this
+// reason, so the fixtures do too.
 
 import { existsSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'

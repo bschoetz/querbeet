@@ -238,6 +238,12 @@ export function detectColumn(cells, options = {}) {
   const numbers = values.some(hasLeadingZero) ? [] : score(values, numberCandidates(), readsAsNumber)
   const dates = score(values, DATE_PATTERNS, readsAsDate)
 
+  // Number and date are scored independently and the higher hit rate wins; a
+  // tie goes to number. The two barely overlap in practice — `31.12.2025` has
+  // two decimal marks under en-US and a two-digit group under de-DE, so it is
+  // not a number under either reading — and where they do overlap, as in a
+  // column of bare four-digit years, "number" is the reading that loses less if
+  // it is wrong, because a year is a number and a number is not a date.
   const bestNumber = numbers[0]?.parsed ?? 0
   const bestDate = dates[0]?.parsed ?? 0
   const winner = bestDate > bestNumber ? { kind: DATE, hits: dates } : { kind: NUMBER, hits: numbers }
