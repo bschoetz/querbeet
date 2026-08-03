@@ -218,6 +218,18 @@
     would be a second scan whose result this story immediately replaces. Once
     a value is a box carrying its original text, marking those cells in the
     preview is a render, not a search — and the count stops being a dead end.
+    One conversion hazard is named here rather than left to be discovered:
+    story 4a's datetime candidates accept end-of-day `24:00`, on all four of
+    them, because ISO 8601 permits it — `2025-12-31T24:00:00Z`,
+    `2025-12-31 24:00`, `31.12.2025 24:00` and `31.12.25 24:00` all read. What
+    `24:00` means is **the next calendar day**: `2025-12-31T24:00:00Z` is
+    `2026-01-01T00:00Z`, and on 31 December it is also the next year. A
+    conversion that reads the date part and the hour independently — parse the
+    date, add hours*3600e9 — is off by exactly one day on every value this
+    admits, and the values it admits are the ones nothing else in the column
+    distinguishes, so the error is invisible in the counts. The hour `24` is
+    accepted only where minutes, seconds and any fraction are all zero, so the
+    rollover is always to midnight and never to anything else.
 - id: "7"
   title: Execution full build — cache, cancellation, execution modes
   description: >-
@@ -333,18 +345,29 @@
     entry, the orphan has somewhere to wait and a rule for when it expires.
     Deciding that here is fitting it to a store that exists; deciding it in
     story 3 would have been inventing a second one.
-    Four things story 4a added must round-trip, and an older Recipe will lack
+    Six things story 4a added must round-trip, and an older Recipe will lack
     every one of them, so the loader needs a stated answer per field rather
     than a default that looks harmless. A column record now carries `affix`
     (the `%`, `€` or `$` a number column rides on — story 13 writes it back on
-    export, so losing it changes exported values) and `mixedAffixes` (the
+    export, so losing it changes exported values), `mixedAffixes` (the
     two-units finding; a proposal-time fact, absent once a user has chosen a
-    type, so a missing key and an empty list are not the same state). A
+    type, so a missing key and an empty list are not the same state) and
+    `mixedBooleanPairs` (its sibling — the two-pairs finding, same shape, same
+    absent-once-chosen rule; it is a fifth record field and was missed on the
+    first count of this list). A
     verdict's `evidence` now carries `over: 'kind'` where the alternatives are
     type codes rather than readings — `[time, duration]` or `[date, text]` —
     and `core/exec/source-store.js` reads it through `?.` precisely because a
     restored typing may not have it; without it a restored ambiguity points the
-    card at the wrong control. And AD-21's temporal columns are epoch
+    card at the wrong control. A stored `chosen` may now be
+    `{ type: 'date', format: null }` — a legal state, not a missing field: the
+    user answered the kind question and was never asked the reading one, so
+    `null` means "no reading chosen" for every type rather than only for the
+    three that have no readings. Restoring it is `setColumnTyping(id, i,
+    chosen)` and the column comes back `unresolved` over the reading, which is
+    where it was; a loader that treated the `null` as absent and re-proposed a
+    best reading would answer for the user the question the record exists to
+    keep open. And AD-21's temporal columns are epoch
     nanoseconds held as `BigInt`, which JSON cannot express at all: the
     encoding is this story's to fix, and `JSON.stringify` throws on a `BigInt`
     rather than rounding it, so the failure is loud but only if a test reaches

@@ -640,6 +640,7 @@ const AMBIGUOUS = { name: 'Datum', cells: ['03.04.2025', '05.06.2025'] }
 const GERMAN = { name: 'Betrag', cells: ['1.234,56', '80,00'] }
 const DD = { pattern: 'dd.MM.yyyy', separator: '.', order: 'dmy' }
 const MM = { pattern: 'MM.dd.yyyy', separator: '.', order: 'mdy' }
+const DD_SHORT = { pattern: 'dd.MM.yy', separator: '.', order: 'dmy', shortYear: true }
 
 const codes = (entry) => entry.diagnostics.map((d) => [d.severity, d.code])
 
@@ -1235,13 +1236,59 @@ describe('setColumnTyping', () => {
     expect(() =>
       store.setColumnTyping(source.id, 0, { type: 'date', format: { pattern: 'dd|MM|yyyy' } }),
     ).toThrow(TypeError)
-    expect(() => store.setColumnTyping(source.id, 0, { type: 'number', format: null })).toThrow(
-      TypeError,
-    )
     // A reading without a type, and a command with nothing to do, are both
     // caller bugs — the second would unmake a confirmation for no reason.
     expect(() => store.setColumnTyping(source.id, 0, { format: DD })).toThrow(TypeError)
     expect(() => store.setColumnTyping(source.id, 0, {})).toThrow(TypeError)
+  })
+
+  it('writes a chosen shape it will accept back, on the column that produces one', async () => {
+    // The round trip story 14 makes. `{ type: 'date' }` with no reading leaves
+    // `bestFormat` to answer, and on a genuine tie it answers `null` — so the
+    // store *writes* `{ type: 'date', format: null }` and used to throw
+    // "a date column needs a reading" on being handed that exact object back.
+    // A shape the store produces and refuses is a defect whichever end finds it.
+    const { store, source } = await withColumns([{ name: 'Datum', cells: ['03.04.25', '05.06.25'] }])
+
+    const first = store.setColumnTyping(source.id, 0, { type: 'date' })
+    expect(first.typing.columns[0].chosen).toEqual({ type: 'date', format: null })
+    // …and the column is still asking the reading question it was never asked.
+    expect(first.typing.columns[0]).toMatchObject({ type: 'date', verdict: 'unresolved' })
+    expect(store.confirmTyping(source.id).unresolved).toEqual(['Datum'])
+
+    const replayed = store.setColumnTyping(source.id, 0, first.typing.columns[0].chosen)
+    expect(replayed.typing.columns[0].chosen).toEqual(first.typing.columns[0].chosen)
+    expect(replayed.typing.columns[0].verdict).toBe('unresolved')
+
+    // `null` is now "no reading chosen" for every type, not only for the three
+    // that have no readings at all — the same sentence on `number` and `date`.
+    const numbers = await withColumns([{ name: 'Betrag', cells: ['1.234', '5.678'] }])
+    const chosen = numbers.store.setColumnTyping(numbers.source.id, 0, { type: 'number' })
+    expect(chosen.typing.columns[0].chosen).toEqual({ type: 'number', format: null })
+    expect(chosen.typing.columns[0]).toMatchObject({ type: 'number', verdict: 'unresolved' })
+    expect(numbers.store.confirmTyping(numbers.source.id).unresolved).toEqual(['Betrag'])
+  })
+
+  it('does not write a reading nobody chose onto the record', async () => {
+    // The record and its `chosen` are serialized together by story 14, so a
+    // record naming `dd.MM.yy` beside a `chosen.format` of `null` would store a
+    // reading the user declined to give. The card never showed it, because the
+    // reading select keys on the verdict — which is what kept it invisible
+    // rather than what made it harmless.
+    const { store, source } = await withColumns([{ name: 'Datum', cells: ['03.04.25', '05.06.25'] }])
+    const column = store.setColumnTyping(source.id, 0, { type: 'date' }).typing.columns[0]
+
+    expect(column.format).toBeNull()
+    expect(column.format).toEqual(column.chosen.format)
+    // The counts are still the column's, and they are true of *both* readings —
+    // an unresolved verdict is exactly the state where the two parse the same
+    // number of values.
+    expect(column.counts).toMatchObject({ parsed: 2, unparsed: 0 })
+    expect(column.evidence).toEqual({ alternatives: ['dd.MM.yy', 'MM.dd.yy'] })
+
+    // A choice that *does* settle the reading still names it.
+    const settled = store.setColumnTyping(source.id, 0, { type: 'date', format: DD_SHORT })
+    expect(settled.typing.columns[0].format.pattern).toBe('dd.MM.yy')
   })
 })
 

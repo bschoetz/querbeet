@@ -40,9 +40,12 @@
 //      and a variant with the five new two-digit date patterns removed is back
 //      at 4.75 s while a variant without the always-scored ISO candidate is
 //      unchanged at 6.24 s. The mirrors are the whole of it: `marksPresent`
-//      narrows date candidates by separator, but a column that contains `.`,
-//      `/` or `-` at all now scores four patterns on that separator where it
-//      scored three. It is deliberately **not** optimised here: the project
+//      narrows date candidates by separator, but the count on each separator
+//      grew, and it grew by a different amount on each — **`.` from three to
+//      four, `/` from two to four, `-` from three to five**, and `-` again to
+//      **six** when `yy-MM-dd` joined. "Four where it scored three" was true of
+//      the dot alone and was written as if it were true of all three, which
+//      understated the slash by half. It is deliberately **not** optimised here: the project
 //      owner decided on 2026-08-02 that a committed measurement harness comes
 //      before any optimisation of detection, and the open ledger entries carry
 //      the candidate routes and the reason none may be chosen by feel.
@@ -120,6 +123,26 @@ const PROPOSAL_THRESHOLD = 0.9
  *  means bringing a Source that needs it, and checking it against that. */
 const NUMBER_LOCALES = ['de-DE', 'en-US']
 
+/**
+ * A candidate list is a rule, and a rule is not a place to keep mutable state.
+ *
+ * `Object.freeze` on the array alone freezes the array: the entries stay
+ * writable, and every one of these lists is *exported* — through
+ * `dateCandidates` and `candidatesFor`, so a caller that only meant to render a
+ * reading select holds a writable copy of the rule. Measured before this was
+ * added: `dateCandidates()[2].preferred = false` flipped `['31.12.25',
+ * '01.03.26']` from `decisive` to `unresolved` for the rest of the process. The
+ * list is also where `preferred` lives *because* "there is no second list", so a
+ * writable list is that argument's one hole. Deep, because a candidate carries a
+ * nested `date` object and freezing the outside of that is the same hole one
+ * level down.
+ */
+function freezeDeep(value) {
+  if (value === null || typeof value !== 'object') return value
+  for (const key of Object.keys(value)) freezeDeep(value[key])
+  return Object.freeze(value)
+}
+
 /** All-numeric date shapes. Month names are deliberately absent: they need a
  *  calendar per language, and no Source seen so far carries them. A story that
  *  needs them adds them here with its own evidence.
@@ -127,8 +150,8 @@ const NUMBER_LOCALES = ['de-DE', 'en-US']
  *  Every dmy and mdy pattern has its two-digit mirror, and that symmetry is the
  *  rule rather than a convenience: six four-digit patterns against one two-digit
  *  one was the century rule reaching German dot dates and nothing else, which is
- *  a separator deciding whether a rule applies. `yyyy-MM-dd` is the one shape
- *  with no mirror, and deliberately — see `expandTwoDigitYear`.
+ *  a separator deciding whether a rule applies. `yyyy-MM-dd` has its mirror too,
+ *  `yy-MM-dd`, and dash-only — see `expandTwoDigitYear`.
  *
  *  **`preferred` is the two-digit tie-break, and it lives on the list rather
  *  than in the code that reads it.** With both orders mirrored, `31.12.25` and
@@ -146,8 +169,11 @@ const NUMBER_LOCALES = ['de-DE', 'en-US']
  *  ordering question the user is *shown* and answers on the reading select;
  *  three two-digit parts raise a kind question in front of it, and the reading
  *  select is suppressed while that one is open. A preference is needed exactly
- *  where the question cannot be asked. */
-const DATE_PATTERNS = Object.freeze([
+ *  where the question cannot be asked. `yy-MM-dd` does **not** carry it: it is a
+ *  mirror owed to a four-digit pattern, not a declared preference, so a column
+ *  whose only reading is `yy-MM-dd` is the kind question like any other
+ *  non-preferred two-digit reading. */
+const DATE_PATTERNS = freezeDeep([
   { pattern: 'dd.MM.yyyy', separator: '.', order: 'dmy' },
   { pattern: 'MM.dd.yyyy', separator: '.', order: 'mdy' },
   { pattern: 'dd.MM.yy', separator: '.', order: 'dmy', shortYear: true, preferred: true },
@@ -161,6 +187,7 @@ const DATE_PATTERNS = Object.freeze([
   { pattern: 'dd-MM-yy', separator: '-', order: 'dmy', shortYear: true, preferred: true },
   { pattern: 'MM-dd-yy', separator: '-', order: 'mdy', shortYear: true },
   { pattern: 'yyyy-MM-dd', separator: '-', order: 'ymd' },
+  { pattern: 'yy-MM-dd', separator: '-', order: 'ymd', shortYear: true },
 ])
 
 /** The date shapes on offer, for a caller that has to render a choice. */
@@ -176,12 +203,26 @@ export const dateCandidates = () => DATE_PATTERNS
  * deliberately refused: it would make a Recipe produce a different table in
  * 2031 than it produced in 2026, over data that never changed.
  *
- * It applies to the two-digit mirror of **every** dmy and mdy pattern, on all
- * three separators. `yyyy-MM-dd` is the one four-digit pattern with no mirror:
- * `yy-MM-dd` and `dd-MM-yy` are the same six characters in the same three
- * groups, so adding it would make a dash column ambiguous three ways over a
- * shape no exporter writes. That is why `readsAsDate`'s `ymd` + `shortYear`
- * branch is unreachable and is kept anyway — see the note there.
+ * It applies to the two-digit mirror of **every** four-digit pattern, on all
+ * three separators, `yyyy-MM-dd` included: its mirror is `yy-MM-dd`.
+ *
+ * The argument that first excluded that one was exactly backwards, and it is
+ * worth keeping the correction where the rule is. It said `yy-MM-dd` and
+ * `dd-MM-yy` are the same six characters in the same three groups, so admitting
+ * it would make a dash column ambiguous three ways over a shape no exporter
+ * writes. Measured on the tree that shipped without it, `['25-12-31',
+ * '25-01-15', '25-06-30']` read as `date` / `dd-MM-yy` / **`settled`** — 25
+ * December **1931** — because `25` exceeds twelve and was therefore taken as
+ * decisive *day* evidence while `MM-dd-yy` read nothing and left no runner-up to
+ * argue with. Refusing the candidate did not make a truncated ISO date
+ * unreadable; it made it readable *as the wrong thing*, with no question raised
+ * and the gate open. Ambiguity was never the danger — it is the correct answer,
+ * and story 3 built the machinery to report it.
+ *
+ * The mirror is dash-only because `yyyy-MM-dd` is: a mirror is owed to a
+ * four-digit pattern that exists, and `yy/MM/dd` would be a new candidate rather
+ * than a reflection of one. The residue that leaves is `25/12/31`, which reads
+ * as `dd/MM/yy` and settles; it has a ledger entry.
  */
 export const expandTwoDigitYear = (yy) => (yy <= 29 ? 2000 + yy : 1900 + yy)
 
@@ -221,7 +262,7 @@ const TIME_SEPARATOR = ':'
  * residue, with an entry: they are a day count into a year, which this file
  * already knows how to bound, but nothing here converts one.
  */
-const DATETIME_PATTERNS = Object.freeze([
+const DATETIME_PATTERNS = freezeDeep([
   { pattern: 'ISO 8601', date: { separator: '-', order: 'ymd' }, iso: true },
   { pattern: 'yyyy-MM-dd HH:mm', date: { separator: '-', order: 'ymd' } },
   { pattern: 'dd.MM.yyyy HH:mm', date: { separator: '.', order: 'dmy' } },
@@ -237,7 +278,7 @@ const DATETIME_PATTERNS = Object.freeze([
  * case-insensitively: German Excel writes `WAHR`/`FALSCH` and that is the same
  * pair as `wahr`/`falsch`, not a fifth one.
  */
-const BOOLEAN_PAIRS = Object.freeze([
+const BOOLEAN_PAIRS = freezeDeep([
   { pattern: 'true/false', truthy: 'true', falsy: 'false', words: true },
   { pattern: 'wahr/falsch', truthy: 'wahr', falsy: 'falsch', words: true },
   { pattern: 'ja/nein', truthy: 'ja', falsy: 'nein', words: true },
@@ -263,7 +304,7 @@ const BOOLEAN_TOKEN_MAX = Math.max(
  * count, and a column where nothing passes `24:00` is `unresolved` — the state
  * that blocks the gate until a person answers.
  */
-const CLOCK_CANDIDATES = Object.freeze([{ type: TIME }, { type: DURATION }])
+const CLOCK_CANDIDATES = freezeDeep([{ type: TIME }, { type: DURATION }])
 
 /**
  * The affixes a number may carry (piece 5).
@@ -587,11 +628,10 @@ function readsAsDate(text, { separator, order, shortYear = false }) {
   }
 
   const [a, b, c] = parts.map(Number)
-  // `shortYear` on an `ymd` candidate is knowingly unreachable: the century rule
-  // reaches every dmy and mdy pattern and deliberately stops in front of
-  // `yyyy-MM-dd` (see `expandTwoDigitYear`), so no `ymd` candidate carries it.
-  // The branch stays because it is correct and because deleting it would have to
-  // be written back the day a `yy-MM-dd` candidate arrives.
+  // `shortYear` on an `ymd` candidate is `yy-MM-dd`, and it was knowingly
+  // unreachable until the 2026-08-03 amendment gave `yyyy-MM-dd` its mirror. The
+  // branch was kept through that whole period rather than deleted to reach
+  // coverage, and this is the day it would otherwise have had to be written back.
   if (order === 'ymd') return isRealDate(shortYear ? expandTwoDigitYear(a) : a, b, c)
   const year = shortYear ? expandTwoDigitYear(c) : c
   if (order === 'dmy') return isRealDate(year, b, a)
@@ -658,20 +698,45 @@ const BASIC_CLOCK = /^(\d{2})([0-5]\d)(?:([0-5]\d)(?:[.,](\d{1,9}))?)?(Z|z|[+-]\
  *  direction over. */
 const BASIC_DATE = /^(\d{4})(\d{2})(\d{2})$/
 
-/** The widest offset any zone has, in minutes: +14:00 (Line Islands) against
- *  −12:00 (Baker Island), so ±14:00 bounds both directions. Everything past it
- *  is a typo or a mangled field, and read unbounded it becomes a confident
- *  instant — the same reasoning as the minute bound, one field to the left. */
+/**
+ * How far from UTC an offset may be, in minutes — **the same distance in both
+ * directions**, and that symmetry is the rule rather than an approximation of
+ * one.
+ *
+ * The widest offset in use today is +14:00 (Line Islands) and the widest
+ * westward one is −12:00 (Baker Island), so an argument from *current* zones
+ * would cut this asymmetrically. It deliberately does not, for two reasons. The
+ * bound is a **typo filter**, not a zone table: what it exists to refuse is
+ * `+23:59` and `+25:00`, a mangled field read as a confident instant, and a
+ * filter that has to be justified separately in each direction is a zone table
+ * being written by hand — the kind of thing this file refuses for locale
+ * separators one screen up. And "the widest offset any zone has" does not cut at
+ * −12:00 either once zones are taken over their whole history: tzdata carries
+ * Asia/Manila at LMT −15:56 before 1844 and America/Anchorage at +14:00:24
+ * before 1867, both from the date line moving rather than from a typo. A rule
+ * that would have to name its own exceptions is not the rule it looks like.
+ *
+ * So: ±14:00, symmetric, stated in the Boundaries as the spec's bound rather
+ * than one the code invented. Two hours of westward slack is the price, and it
+ * is named here rather than discovered — `-13:00` reads and no zone has it.
+ */
 const OFFSET_MAX_MINUTES = 14 * 60
 
 /** Is the zone offset one a zone actually has? `Z` and an absent offset are UTC
  *  and need no arithmetic; everything else is minutes, bounded at ±14:00, with
- *  the minute field still 00–59 because `+02:99` is not two hours and 99. */
+ *  the minute field still 00–59 because `+02:99` is not two hours and 99.
+ *
+ *  `-00:00` is refused, and it is the one spelling the standard itself rules
+ *  out: ISO 8601 has no negative zero, because zero is not west of anything.
+ *  (RFC 3339 borrows the spelling for "offset unknown", which is a different
+ *  claim in a different standard and not one a `datetime` column can carry.)
+ *  `+00:00`, `-00:01` and `Z` are all unaffected. */
 function readsAsOffset(offset) {
   if (offset === undefined || offset === 'Z' || offset === 'z') return true
   const digits = offset.slice(1).replace(':', '')
   const hours = Number(digits.slice(0, 2))
   const minutes = digits.length === 2 ? 0 : Number(digits.slice(2))
+  if (offset[0] === '-' && hours === 0 && minutes === 0) return false
   return minutes <= 59 && hours * 60 + minutes <= OFFSET_MAX_MINUTES
 }
 
@@ -1189,16 +1254,24 @@ function isTwoDigitTriple(value, separator) {
 }
 
 /** Which part of a candidate's three is the day. Taken from the candidate rather
- *  than assumed to be the first: `MM.dd.yy` puts a *month* there, and a month
- *  can never exceed twelve.
+ *  than assumed to be the first: `MM.dd.yy` puts a *month* there and `yy-MM-dd`
+ *  puts a *year* there, and neither can exceed twelve the way a day does.
  *
- *  It is now the preferred order alone whose day-past-twelve evidence settles a
- *  column, so today this only ever answers `0` — and it stays written from the
- *  candidate anyway, because that is what keeps the preference a property of
- *  `DATE_PATTERNS`. Moving `preferred` onto the mdy mirrors is then one edit to
- *  the list and none to `shortYearVerdict`; hard-coding `parts[0]` here would
- *  make it two, with the second one silent. */
-const dayIndex = ({ order }) => (order === 'dmy' ? 0 : order === 'mdy' ? 1 : 2)
+ *  It is the preferred order alone whose day-past-twelve evidence settles a
+ *  column, and only the three dmy mirrors are preferred, so today this only ever
+ *  decides anything at `0` — and it stays written from the candidate anyway,
+ *  because that is what keeps the preference a property of `DATE_PATTERNS`.
+ *  Moving `preferred` onto the mdy mirrors or onto `yy-MM-dd` is then one edit
+ *  to the list and none to `shortYearVerdict`; hard-coding `parts[0]` here would
+ *  make it two, with the second one silent.
+ *
+ *  **Exported because that last sentence is otherwise unfalsifiable.** No column
+ *  reaches the `mdy` or `ymd` answer through `detectColumn` — the preference
+ *  check runs in front of the day check — so `dayIndex = () => 0` passes the
+ *  whole suite while quietly deleting the property the docblock claims. A
+ *  derivation nothing can observe is a derivation a mutation can remove, and the
+ *  test that observes it walks `dateCandidates()` rather than repeating it. */
+export const dayIndex = ({ order }) => (order === 'dmy' ? 0 : order === 'mdy' ? 1 : 2)
 
 /**
  * What a `dd.MM.yy` column has settled about itself: `TEXT`, `'unresolved'`, or
@@ -1210,13 +1283,21 @@ const dayIndex = ({ order }) => (order === 'dmy' ? 0 : order === 'mdy' ? 1 : 2)
  * Two kinds of value settle it, and they are story 3's exclusive evidence in
  * both directions:
  *
- *   - a triple that **cannot** be a date under the pattern — `01.32.03`, where
- *     no part order makes a day of 32 — reads only as a version, and settles the
- *     column as text. The example was `01.13.03` while `dd.MM.yy` was the only
- *     two-digit pattern there was, and the mdy mirrors killed it: `MM.dd.yy`
- *     reads it as 13 January 2003, so it is a date under one order rather than
- *     nonsense under both. `01.32.03` is nonsense under both, which is what the
- *     rule was always about — the rule is unchanged, only its illustration;
+ *   - a triple that **cannot** be a date under **any** candidate — `01.32.03`,
+ *     where no part order makes a day of 32 — reads only as a version, and
+ *     settles the column as text. The example was `01.13.03` while `dd.MM.yy`
+ *     was the only two-digit pattern there was, and the mdy mirrors killed it:
+ *     `MM.dd.yy` reads it as 13 January 2003, so it is a date under one order
+ *     rather than nonsense under both. `01.32.03` is nonsense under all of them,
+ *     which is what the rule was always about — the rule is unchanged, only its
+ *     illustration. **"Any candidate" is the whole list, not the winning
+ *     candidate**, and that is the Boundaries' word rather than a widening: the
+ *     rule's justification is that such a value "is a version number and nothing
+ *     else", which is a claim about the value and not about whichever reading
+ *     happened to win the column. Asking the winner instead was measurably
+ *     different — nineteen `31.12.25` beside one `01.13.03` settled as *text*,
+ *     because `01.13.03` does not read under `dd.MM.yy`, although 13 January
+ *     2003 is a reading it genuinely has;
  *   - a triple whose **day is past twelve** — `31.12.25`, where 31 is no
  *     month — cannot be a triple of month-sized components, and settles it as
  *     a date. This is why the shape the owner actually asked for is unaffected.
@@ -1252,8 +1333,15 @@ function shortYearVerdict(values, candidate) {
 
   for (const value of values) {
     if (!isTwoDigitTriple(value, separator)) continue
-    if (!readsAsDate(value, candidate)) decidesText = true
-    else if (Number(value.split(separator)[dayIndex(candidate)]) > 12) decidesDate = true
+    // Text evidence asks the whole list; date evidence asks the candidate that
+    // won, because a day is only a day under a reading that has one there.
+    if (!DATE_PATTERNS.some((p) => readsAsDate(value, p))) decidesText = true
+    else if (
+      readsAsDate(value, candidate) &&
+      Number(value.split(separator)[dayIndex(candidate)]) > 12
+    ) {
+      decidesDate = true
+    }
   }
 
   if (decidesText) return TEXT
@@ -1291,7 +1379,7 @@ export const candidatesFor = (type) =>
         ? DATETIME_PATTERNS
         : type === BOOLEAN
           ? BOOLEAN_PAIRS
-          : []
+          : EMPTY
 
 /** Which reader a chosen type is scored with. Neither the affix nor the
  *  accounting evidence is part of a format — a format answers which locale reads
@@ -1338,13 +1426,73 @@ export const scorableTypeGaps = () =>
     ).map((type) => type.code),
   )
 
-/** The candidates of a type that *this column* can tell apart — the narrowing
- *  detection does, in the one place a re-score can reach it. For `number` it is
- *  more than cost: two readings that differ only in separators no value carries
- *  are one reading, so a column of `1`, `2`, `42` is never asked a question
- *  whose two answers are the same number. */
-const readingsFor = (type, present) =>
-  type === NUMBER ? numberReadings(present) : candidatesFor(type)
+/**
+ * The column's one boolean pair, where it has one.
+ *
+ * A pair never mixes with another — the frozen rule, unconditional and not
+ * scored — so two pairs in a column is **not an ambiguity between two
+ * readings**. It is the finding that disqualifies `boolean` for the whole
+ * column, which detection reports as `text` plus a warning naming both. On the
+ * re-score path the user has already answered that finding by choosing the type
+ * regardless, and what is left is not a question but a property: *which* pair
+ * this column is scored under. Offering it as a reading question would be
+ * offering one the rule forbids, because neither answer makes a two-pair column
+ * a boolean column — measured before this was added, `scoreColumn(['ja',
+ * 'false'], { type: BOOLEAN, … })` came back `unresolved` between `ja/nein` and
+ * `true/false`, which is the card asking the user to pick a side in a mixture.
+ *
+ * So the pair is picked the way the column's **affix** is picked, field for
+ * field, which is what the frozen rule asks for: the one covering the most
+ * values, ties to the pair declared first. What the choice costs is the unparsed
+ * count, reported either way — the same sentence `scoreColumn` already carries
+ * about `mixedAffixes`.
+ *
+ * A column no pair reads at all gets the whole list back, so a text column
+ * retyped to `boolean` reports 0 of N under a named pair rather than under one
+ * this function invented.
+ */
+function booleanReadings(values) {
+  let best = null
+  let bestParsed = 0
+  for (const pair of BOOLEAN_PAIRS) {
+    let parsed = 0
+    for (const value of values) if (readsAsBoolean(value, pair)) parsed += 1
+    if (parsed > bestParsed) {
+      best = pair
+      bestParsed = parsed
+    }
+  }
+  return best === null ? BOOLEAN_PAIRS : [best]
+}
+
+/**
+ * The candidates of a type that *this column* is scored against, in the one
+ * place a re-score can reach it.
+ *
+ * Two types narrow and the rest do not, and the docblock used to claim the
+ * narrowing for all of them — which was false for `date`, where `detectColumn`
+ * filters by separator and this returns every pattern.
+ *
+ *   - `number` narrows for **correctness** before cost: two readings that differ
+ *     only in separators no value carries are one reading, so a column of `1`,
+ *     `2`, `42` is never asked a question whose two answers are the same number.
+ *   - `boolean` narrows to the column's one pair, because a pair never mixes and
+ *     so there is no reading question between two of them — see
+ *     `booleanReadings`.
+ *   - `date` and `datetime` get the full list, and that is deliberate rather
+ *     than an omission: a candidate whose separator the column lacks reads
+ *     nothing, and `ambiguity` already treats a runner-up that reads nothing as
+ *     no contest at all. Narrowing them here would change no verdict and no
+ *     count — it would only buy back a walk, on a path that runs once per user
+ *     click rather than once per column — and it would cost a `marksPresent`
+ *     pass this path does not otherwise make for a date.
+ */
+const readingsFor = (type, present, values) =>
+  type === NUMBER
+    ? numberReadings(present)
+    : type === BOOLEAN
+      ? booleanReadings(values)
+      : candidatesFor(type)
 
 /**
  * The reading a type the user just chose is scored under — **or `null` where the
@@ -1371,7 +1519,7 @@ export function bestFormat(cells, type, missingTokens) {
   if (candidatesFor(type).length === 0) return null
   const { values } = sift(cells, missingTokens)
   const present = type === NUMBER ? marksPresent(values) : null
-  const readings = readingsFor(type, present)
+  const readings = readingsFor(type, present, values)
   const { affix } = present ? affixScan(values, readings, present) : { affix: null }
   const reads = readerFor(type, affix, present)
 
@@ -1418,7 +1566,7 @@ export function scoreColumn(cells, { type, format, missingTokens, domain }) {
   // choosing `number` on a column of `4711-` part numbers must not resurrect the
   // negatives detection refused to read.
   const present = type === NUMBER ? marksPresent(values) : null
-  const readings = readingsFor(type, present)
+  const readings = readingsFor(type, present, values)
   const { affix } = present ? affixScan(values, readings, present) : { affix: null }
 
   const reads = readerFor(type, affix, present)
@@ -1442,9 +1590,29 @@ export function scoreColumn(cells, { type, format, missingTokens, domain }) {
 
   const { verdict, evidence } = unnamed ? ambiguity(values, hits, reads) : SETTLED
 
+  // **A reading nobody chose is not written onto the record.** Where the column
+  // came back `unresolved` over the reading, the top-scoring candidate is not a
+  // proposal, it is one of two answers we are asking the user for — and the
+  // record is what story 14 serializes, beside a `chosen.format` that is `null`
+  // for exactly this reason. Carrying the candidate anyway made the store write
+  // a record disagreeing with its own `chosen`, and a Recipe round-trip would
+  // have stored a reading the user declined to give. The card never showed it,
+  // because the reading select keys on the verdict — which is what kept it
+  // invisible rather than what made it harmless.
+  //
+  // The counts are unaffected and stay honest: `ambiguity` answers `unresolved`
+  // exactly when the two readings parse the same number of values (`only >
+  // contested` is `best.parsed > runnerUp.parsed` rewritten), so the count
+  // reported is true of *both* alternatives rather than of the one dropped here.
+  //
+  // Detection's own unresolved records keep their format, and that is not the
+  // same case: nothing has been chosen there, so there is no `chosen` to
+  // disagree with, and the shape is asserted whole by the story-3 suite.
+  const unchosen = unnamed && verdict === 'unresolved'
+
   return Object.freeze({
     type,
-    format: (unnamed ? scored?.candidate : format) ?? null,
+    format: (unnamed ? (unchosen ? null : scored?.candidate) : format) ?? null,
     counts: Object.freeze({
       total: cells.length,
       missing,

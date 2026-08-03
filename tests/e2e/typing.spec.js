@@ -323,10 +323,10 @@ test('a column of version numbers is asked about, not silently dated', async ({ 
   await expect(card.getByTestId('typing-refusal')).toContainText('Version')
 
   // Answering `Datum` closes the question that was asked and cannot close the
-  // one behind it: `03.04.25` reads the same under TT.MM.JJ and MM.TT.JJ, so the
-  // reading select comes back — with the placeholder, still asking — and the
-  // gate stays shut. A chosen type settles a column only where nothing else in
-  // it is open.
+  // one behind it: this column's own `01.02.03` and `04.05.06` read the same
+  // under TT.MM.JJ and MM.TT.JJ, so the reading select comes back — with the
+  // placeholder, still asking — and the gate stays shut. A chosen type settles
+  // a column only where nothing else in it is open.
   await card.getByLabel('Typ: Version').selectOption('date')
   await expect(card.getByLabel('Lesart: Version')).toHaveValue('')
   await expect(columnRow(page, 'Version').getByTestId('typing-verdict')).toContainText(

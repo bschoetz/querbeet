@@ -445,6 +445,7 @@ describe('the reading select', () => {
       'TT-MM-JJ',
       'MM-TT-JJ',
       'JJJJ-MM-TT',
+      'JJ-MM-TT',
     ])
     expect(options.filter((o) => /[dy]/.test(o))).toEqual([])
   })

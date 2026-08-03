@@ -582,26 +582,33 @@ export function createSourceStore(readers) {
    * A named format is resolved against the candidate list rather than trusted:
    * a reading no candidate offers would be scored as zero readable and then
    * confirmed, which is worse than being refused.
+   *
+   * **`null` is a legitimate reading for every type, and that changed with the
+   * 2026-08-03 amendment.** It used to be legitimate for `text`, `time` and
+   * `duration` only — the types with no readings — and a `null` on any other
+   * type was a caller's bug. Then `bestFormat` learned to answer `null` where
+   * the column names no reading, which is what carries "the user chose a type
+   * and was never asked the reading question" into `scoreColumn`. From that
+   * moment this function *wrote* `{ type: 'date', format: null }` on the two
+   * lines below and threw on being handed the same object back — a shape the
+   * store produces and refuses, which is precisely the call story 14 makes when
+   * it restores a choice from a Recipe. So `null` now means "no reading chosen"
+   * wherever it arrives, `scoreColumn` scores such a column exactly as detection
+   * does, and the round trip is closed.
+   *
+   * Anything else on a type with no readings is still refused, exactly as it is
+   * for every other type. There is deliberately no early return for `text`
+   * either — one for `time`/`duration` let `{ pattern: 'nonsense' }` through
+   * while the same nonsense on a `datetime` threw.
    */
   const resolveFormat = (cells, type, format, missingTokens) => {
     if (format === undefined) return bestFormat(cells, type, missingTokens)
+    if (format === null) return null
 
-    // `text`, `time` and `duration` offer no reading at all — for `text` because
-    // it reads everything, for the other two because the choice between them is
-    // the type and it has already been made by the time this runs. `null` is
-    // therefore their one legitimate reading: it is what `bestFormat` hands back
-    // and what a stored choice round-trips as. Anything else is still refused,
-    // exactly as it is for every other type. There is deliberately no early
-    // return for `text` either — one for `time`/`duration` let
-    // `{ pattern: 'nonsense' }` through while the same nonsense on a `datetime`
-    // threw, and a reading no candidate offers would be stored, scored as zero
-    // readable, and then confirmed.
     const candidates = candidatesFor(type)
     if (candidates.length === 0) {
-      if (format === null) return null
       throw new TypeError(`a ${type} column has no readings, and got: ${format.pattern ?? format.locale}`)
     }
-    if (format === null) throw new TypeError(`a ${type} column needs a reading`)
 
     const key = format.pattern ?? format.locale
     const found = candidates.find((c) => (c.pattern ?? c.locale) === key)
