@@ -126,7 +126,11 @@
     Intl in the FORMAT context, via formatToParts of a whole date, not from
     {month:'short'} alone — standalone yields Aug and Jul, in a date the same
     option yields Aug. and Juli, and a table built the easy way misses exactly
-    the owner's values. That derivation is the same discipline numberCandidates
+    the owner's values. Measured 2026-08-03, that example understates it
+    badly: in German short ELEVEN of the twelve entries differ between the two
+    contexts and only Mai coincides, so the easy table is not slightly wrong at
+    two entries, it is wrong nearly everywhere. That derivation is the same
+    discipline numberCandidates
     already applies through Intl.NumberFormat, and it is what keeps a
     hand-written list from being wrong about a language nobody on the team
     speaks. (4) Adding English costs a second vocabulary and a second ordering
@@ -139,13 +143,35 @@
     typing.js already refuses to ask about: an ambiguity between readings that
     mean the same thing is not an ambiguity. That argues for ONE candidate over
     the union of both vocabularies and all three orderings rather than a
-    reading select nobody can answer — check it rather than assume it. Two
-    things to settle in the spec: whether a browser's ICU version can shift a
-    spelling (Sept. against Sep.) and therefore whether a set of accepted
-    spellings per month beats one exact string, since an engine update must not
-    turn a typed column back into text — AD-27 makes that a two-engine
-    measurement, not a reading; and English ordinal suffixes (Aug 2nd, 2026),
-    which Intl never emits but exporters do. Story 4a's width strictness does
+    reading select nobody can answer, and it is now computed rather than
+    assumed: 34 distinct normalized spellings across the three locales, ZERO of
+    which mean two different months. The union is unambiguous, so the reading
+    select stays out. The two questions this story held open for its spec are
+    answered by the spike in
+    planning-artifacts/spikes/intl-month-names-2026-08-03 and should not be
+    reopened. (a) A set of accepted spellings per month beats one exact string,
+    and the deciding evidence is not drift at all: en-US abbreviates September
+    to Sep and en-GB to Sept, so both spellings the drift question feared an
+    ICU update might swap between are ALREADY in scope today, in every engine
+    measured, next to German Sept. The design follows from the locales this
+    story already carries — which also means the CLDR release history that
+    would otherwise have had to be researched is not needed: drift stays
+    unproven either way and no longer blocks anything. (b) Intl emits no
+    English ordinal suffix, over 2016 rendered values per engine, so
+    Aug 2nd, 2026 cannot come from a derived table and accepting it means
+    adding a rule Intl will never justify. Whether to accept it is this spec's
+    call; the spike deliberately does not make it. Two things the spike settled
+    that nobody asked: it is THREE engines, not two — AD-27 puts core/ under
+    Vitest with environment: 'node' and typing.js lives in core/, so Node's ICU
+    is what the unit tests see, and a Node-against-browser disagreement is a
+    green test over a broken product. Node 26.5.1 (ICU 78.3), Chromium 151 and
+    Firefox 153 agree on all 72 cells today. And the measured table belongs in
+    the suite as a FROZEN fixture, the same move the xlsx spike's workbook
+    makes for TableWriter: runtime derivation follows the engine, which is
+    right, and the frozen copy is what turns a future ICU change into a failing
+    test instead of a column that silently falls back to text. Month spellings
+    are transliterated in this file, which carries no umlauts; the exact bytes
+    are in the spike's measurements.json. Story 4a's width strictness does
     not bind here and the spec should say so: it exists so two NUMERIC patterns
     cannot agree on the values that distinguish them, and a month name has no
     competing pattern, so a one- or two-digit day is safe.

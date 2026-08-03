@@ -1,0 +1,1138 @@
+{
+  "engines": [
+    {
+      "name": "node",
+      "inMatrix": true,
+      "identity": {
+        "version": "v26.5.1",
+        "icu": "78.3",
+        "unicode": "17.0",
+        "tz": "2026a"
+      },
+      "result": {
+        "resolved": {
+          "de-DE/short": "de-DE",
+          "de-DE/long": "de-DE",
+          "en-US/short": "en-US",
+          "en-US/long": "en-US",
+          "en-GB/short": "en-GB",
+          "en-GB/long": "en-GB"
+        },
+        "formatContext": {
+          "de-DE/short": [
+            "Jan.",
+            "Feb.",
+            "März",
+            "Apr.",
+            "Mai",
+            "Juni",
+            "Juli",
+            "Aug.",
+            "Sept.",
+            "Okt.",
+            "Nov.",
+            "Dez."
+          ],
+          "de-DE/long": [
+            "Januar",
+            "Februar",
+            "März",
+            "April",
+            "Mai",
+            "Juni",
+            "Juli",
+            "August",
+            "September",
+            "Oktober",
+            "November",
+            "Dezember"
+          ],
+          "en-US/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-US/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ],
+          "en-GB/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sept",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-GB/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ]
+        },
+        "standalone": {
+          "de-DE/short": [
+            "Jan",
+            "Feb",
+            "Mär",
+            "Apr",
+            "Mai",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Okt",
+            "Nov",
+            "Dez"
+          ],
+          "de-DE/long": [
+            "Januar",
+            "Februar",
+            "März",
+            "April",
+            "Mai",
+            "Juni",
+            "Juli",
+            "August",
+            "September",
+            "Oktober",
+            "November",
+            "Dezember"
+          ],
+          "en-US/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-US/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ],
+          "en-GB/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sept",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-GB/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ]
+        },
+        "skeleton": {
+          "de-DE/short": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ". "
+            },
+            {
+              "type": "month",
+              "value": "Aug."
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "de-DE/long": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ". "
+            },
+            {
+              "type": "month",
+              "value": "August"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-US/short": [
+            {
+              "type": "month",
+              "value": "Aug"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ", "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-US/long": [
+            {
+              "type": "month",
+              "value": "August"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ", "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-GB/short": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "month",
+              "value": "Aug"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-GB/long": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "month",
+              "value": "August"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ]
+        },
+        "ownerValues": {
+          "de-DE/short": {
+            "augustSecond": "2. Aug. 2026",
+            "julyThirtyFirst": "31. Juli 2026"
+          },
+          "de-DE/long": {
+            "augustSecond": "2. August 2026",
+            "julyThirtyFirst": "31. Juli 2026"
+          },
+          "en-US/short": {
+            "augustSecond": "Aug 2, 2026",
+            "julyThirtyFirst": "Jul 31, 2026"
+          },
+          "en-US/long": {
+            "augustSecond": "August 2, 2026",
+            "julyThirtyFirst": "July 31, 2026"
+          },
+          "en-GB/short": {
+            "augustSecond": "2 Aug 2026",
+            "julyThirtyFirst": "31 Jul 2026"
+          },
+          "en-GB/long": {
+            "augustSecond": "2 August 2026",
+            "julyThirtyFirst": "31 July 2026"
+          }
+        },
+        "ordinalSuffixSeen": false
+      }
+    },
+    {
+      "name": "chromium",
+      "inMatrix": true,
+      "identity": {
+        "version": "151.0.7922.34",
+        "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36"
+      },
+      "result": {
+        "resolved": {
+          "de-DE/short": "de-DE",
+          "de-DE/long": "de-DE",
+          "en-US/short": "en-US",
+          "en-US/long": "en-US",
+          "en-GB/short": "en-GB",
+          "en-GB/long": "en-GB"
+        },
+        "formatContext": {
+          "de-DE/short": [
+            "Jan.",
+            "Feb.",
+            "März",
+            "Apr.",
+            "Mai",
+            "Juni",
+            "Juli",
+            "Aug.",
+            "Sept.",
+            "Okt.",
+            "Nov.",
+            "Dez."
+          ],
+          "de-DE/long": [
+            "Januar",
+            "Februar",
+            "März",
+            "April",
+            "Mai",
+            "Juni",
+            "Juli",
+            "August",
+            "September",
+            "Oktober",
+            "November",
+            "Dezember"
+          ],
+          "en-US/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-US/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ],
+          "en-GB/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sept",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-GB/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ]
+        },
+        "standalone": {
+          "de-DE/short": [
+            "Jan",
+            "Feb",
+            "Mär",
+            "Apr",
+            "Mai",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Okt",
+            "Nov",
+            "Dez"
+          ],
+          "de-DE/long": [
+            "Januar",
+            "Februar",
+            "März",
+            "April",
+            "Mai",
+            "Juni",
+            "Juli",
+            "August",
+            "September",
+            "Oktober",
+            "November",
+            "Dezember"
+          ],
+          "en-US/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-US/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ],
+          "en-GB/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sept",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-GB/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ]
+        },
+        "skeleton": {
+          "de-DE/short": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ". "
+            },
+            {
+              "type": "month",
+              "value": "Aug."
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "de-DE/long": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ". "
+            },
+            {
+              "type": "month",
+              "value": "August"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-US/short": [
+            {
+              "type": "month",
+              "value": "Aug"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ", "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-US/long": [
+            {
+              "type": "month",
+              "value": "August"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ", "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-GB/short": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "month",
+              "value": "Aug"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-GB/long": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "month",
+              "value": "August"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ]
+        },
+        "ownerValues": {
+          "de-DE/short": {
+            "augustSecond": "2. Aug. 2026",
+            "julyThirtyFirst": "31. Juli 2026"
+          },
+          "de-DE/long": {
+            "augustSecond": "2. August 2026",
+            "julyThirtyFirst": "31. Juli 2026"
+          },
+          "en-US/short": {
+            "augustSecond": "Aug 2, 2026",
+            "julyThirtyFirst": "Jul 31, 2026"
+          },
+          "en-US/long": {
+            "augustSecond": "August 2, 2026",
+            "julyThirtyFirst": "July 31, 2026"
+          },
+          "en-GB/short": {
+            "augustSecond": "2 Aug 2026",
+            "julyThirtyFirst": "31 Jul 2026"
+          },
+          "en-GB/long": {
+            "augustSecond": "2 August 2026",
+            "julyThirtyFirst": "31 July 2026"
+          }
+        },
+        "ordinalSuffixSeen": false
+      }
+    },
+    {
+      "name": "firefox",
+      "inMatrix": true,
+      "identity": {
+        "version": "153.0",
+        "userAgent": "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0"
+      },
+      "result": {
+        "resolved": {
+          "de-DE/short": "de-DE",
+          "de-DE/long": "de-DE",
+          "en-US/short": "en-US",
+          "en-US/long": "en-US",
+          "en-GB/short": "en-GB",
+          "en-GB/long": "en-GB"
+        },
+        "formatContext": {
+          "de-DE/short": [
+            "Jan.",
+            "Feb.",
+            "März",
+            "Apr.",
+            "Mai",
+            "Juni",
+            "Juli",
+            "Aug.",
+            "Sept.",
+            "Okt.",
+            "Nov.",
+            "Dez."
+          ],
+          "de-DE/long": [
+            "Januar",
+            "Februar",
+            "März",
+            "April",
+            "Mai",
+            "Juni",
+            "Juli",
+            "August",
+            "September",
+            "Oktober",
+            "November",
+            "Dezember"
+          ],
+          "en-US/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-US/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ],
+          "en-GB/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sept",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-GB/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ]
+        },
+        "standalone": {
+          "de-DE/short": [
+            "Jan",
+            "Feb",
+            "Mär",
+            "Apr",
+            "Mai",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Okt",
+            "Nov",
+            "Dez"
+          ],
+          "de-DE/long": [
+            "Januar",
+            "Februar",
+            "März",
+            "April",
+            "Mai",
+            "Juni",
+            "Juli",
+            "August",
+            "September",
+            "Oktober",
+            "November",
+            "Dezember"
+          ],
+          "en-US/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-US/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ],
+          "en-GB/short": [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sept",
+            "Oct",
+            "Nov",
+            "Dec"
+          ],
+          "en-GB/long": [
+            "January",
+            "February",
+            "March",
+            "April",
+            "May",
+            "June",
+            "July",
+            "August",
+            "September",
+            "October",
+            "November",
+            "December"
+          ]
+        },
+        "skeleton": {
+          "de-DE/short": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ". "
+            },
+            {
+              "type": "month",
+              "value": "Aug."
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "de-DE/long": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ". "
+            },
+            {
+              "type": "month",
+              "value": "August"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-US/short": [
+            {
+              "type": "month",
+              "value": "Aug"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ", "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-US/long": [
+            {
+              "type": "month",
+              "value": "August"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": ", "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-GB/short": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "month",
+              "value": "Aug"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ],
+          "en-GB/long": [
+            {
+              "type": "day",
+              "value": "2"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "month",
+              "value": "August"
+            },
+            {
+              "type": "literal",
+              "value": " "
+            },
+            {
+              "type": "year",
+              "value": "2026"
+            }
+          ]
+        },
+        "ownerValues": {
+          "de-DE/short": {
+            "augustSecond": "2. Aug. 2026",
+            "julyThirtyFirst": "31. Juli 2026"
+          },
+          "de-DE/long": {
+            "augustSecond": "2. August 2026",
+            "julyThirtyFirst": "31. Juli 2026"
+          },
+          "en-US/short": {
+            "augustSecond": "Aug 2, 2026",
+            "julyThirtyFirst": "Jul 31, 2026"
+          },
+          "en-US/long": {
+            "augustSecond": "August 2, 2026",
+            "julyThirtyFirst": "July 31, 2026"
+          },
+          "en-GB/short": {
+            "augustSecond": "2 Aug 2026",
+            "julyThirtyFirst": "31 Jul 2026"
+          },
+          "en-GB/long": {
+            "augustSecond": "2 August 2026",
+            "julyThirtyFirst": "31 July 2026"
+          }
+        },
+        "ordinalSuffixSeen": false
+      }
+    },
+    {
+      "name": "webkit",
+      "inMatrix": false,
+      "skipped": "Error: browserType.launch: "
+    }
+  ],
+  "cellsCompared": 72,
+  "disagreements": [],
+  "outOfMatrixOnly": [],
+  "union": {
+    "normalization": "toLocaleLowerCase(\"de-DE\"), trailing \".\" dropped",
+    "distinctSpellings": 34,
+    "collisions": [],
+    "spellingsByMonth": [
+      [
+        "Jan.",
+        "Januar",
+        "Jan",
+        "January"
+      ],
+      [
+        "Feb.",
+        "Februar",
+        "Feb",
+        "February"
+      ],
+      [
+        "März",
+        "Mar",
+        "March"
+      ],
+      [
+        "Apr.",
+        "April",
+        "Apr"
+      ],
+      [
+        "Mai",
+        "May"
+      ],
+      [
+        "Juni",
+        "Jun",
+        "June"
+      ],
+      [
+        "Juli",
+        "Jul",
+        "July"
+      ],
+      [
+        "Aug.",
+        "August",
+        "Aug"
+      ],
+      [
+        "Sept.",
+        "September",
+        "Sep",
+        "Sept"
+      ],
+      [
+        "Okt.",
+        "Oktober",
+        "Oct",
+        "October"
+      ],
+      [
+        "Nov.",
+        "November",
+        "Nov"
+      ],
+      [
+        "Dez.",
+        "Dezember",
+        "Dec",
+        "December"
+      ]
+    ]
+  }
+}
