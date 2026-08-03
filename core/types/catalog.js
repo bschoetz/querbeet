@@ -22,8 +22,12 @@
 // only a reader could produce them; now that detection reaches them from text
 // they are settable too, and the same table is typed whether it arrives as XLSX
 // or as CSV. `time` and `duration` go the other way: a user may choose either,
-// and **no reader may declare one** — Parquet's TIME is still a refused
-// declaration (story 4's closed list), and nothing in `adapters/` says the word.
+// and **no reader may declare one** — `time` is not on story 4's closed list and
+// nothing in `adapters/` says the word. Parquet's own TIME does not even reach
+// the refusal: the reader answers `null` for it, so the column arrives as plain
+// `text` with a diagnostic rather than as a declaration to turn down. The closed
+// list is defence in depth against a future reader, not a gate anything in this
+// build walks into — see `readDeclaration` in `core/types/typing.js`.
 // And `text` is never a native declaration — a reader that delivers strings
 // declares the domain `text`, not `native:text`.
 //

@@ -80,7 +80,7 @@ export const MEASURED_NORMALIZATION = 'toLocaleLowerCase("de-DE"), trailing "." 
  * **`Mär` on March is the whole of what the standalone axis added**, measured
  * 2026-08-03: every other German standalone name already arrived, either through
  * the dropped trailing point (`Okt` normalizes onto `Okt.`, `Dez` onto `Dez.`)
- * or through English (`Jun`, `Jul`, `Sep`, `Mar`). Three raw strings joined,
+ * or through English (`Jun`, `Jul`, `Sep`). Three raw strings joined,
  * one new normalized spelling came of it, 34 → 35, and nothing collided.
  */
 export const MEASURED_SPELLINGS = Object.freeze([

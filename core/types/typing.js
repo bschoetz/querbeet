@@ -15,10 +15,12 @@
 //      A querbeet column holds at most the NFR-3 target and this is already a
 //      column walk, so it walks all of it.
 //
-//      What it does *not* do is walk it once per candidate. Nine candidates
-//      against every value is the budget the Code Map names as rows × columns ×
-//      candidates, and most of those candidates cannot match a single value in
-//      a given column. One pass collects the separators the column contains and
+//      What it does *not* do is walk it once per candidate. **Twenty-seven**
+//      candidates against every value is the budget the Code Map names as rows ×
+//      columns × candidates — 15 date, 4 datetime, 4 boolean, 2 number and the
+//      2 of the clock kind, counted today rather than remembered from story 3,
+//      when it was nine — and most of those candidates cannot match a single
+//      value in a given column. One pass collects the separators the column contains and
 //      the rest score only against what could win. No count and no verdict
 //      changes, only how long they take.
 //
@@ -204,7 +206,7 @@ function freezeDeep(value) {
 //      one** spelling — `Mär` — and **zero** collisions, taking the union from
 //      34 to 35. Every other German standalone name already arrived, either
 //      through the dropped trailing point (`Okt` ≡ `Okt.`) or through the
-//      English vocabulary (`Jun`, `Jul`, `Sep`, `Mar`). So this is the same move
+//      English vocabulary (`Jun`, `Jul`, `Sep`). So this is the same move
 //      as rule 3 below — a *set* of accepted spellings rather than one exact
 //      string — one axis further out, and it is emphatically not the easy table
 //      being let back in as the source of truth. The day trailer is the line
@@ -427,7 +429,7 @@ export const monthNameSpellings = () => MONTHS.spellings
  *  It is **one** candidate over the union of both vocabularies and all three
  *  orderings, not three and not a reading select: the month name's position
  *  inside a value identifies that value's shape, and the union was measured to
- *  hold 34 spellings with 0 collisions, so no value reads as two different
+ *  hold 35 spellings with 0 collisions, so no value reads as two different
  *  dates. An ambiguity between readings that mean the same thing is not an
  *  ambiguity, and here there is not even that.
  *
@@ -670,9 +672,10 @@ const MARKS = Object.freeze(
 /**
  * Which of those characters this column actually contains.
  *
- * One pass, and it pays for several. Nine candidates against every value is
- * nine column walks — the budget the Code Map names as rows × columns ×
- * candidates — and most of those candidates cannot match a single value:
+ * One pass, and it pays for several. Every candidate against every value is one
+ * column walk each, twenty-seven of them today — the budget the Code Map names
+ * as rows × columns × candidates — and most of those candidates cannot match a
+ * single value:
  * `readsAsDate` splits on its separator and requires exactly three parts, so a
  * pattern whose separator appears nowhere scores zero without being asked.
  * Narrowing on this is arithmetic, not a heuristic; it changes no count and no
@@ -1310,7 +1313,9 @@ const CANONICAL = Object.freeze({
  * Without the invariant, adding a type to the catalogue leaves `reads`
  * undefined, the sweep throws a `TypeError`, the store catches it as a failed
  * read, and a perfectly good file is reported to the user as unreadable. Story
- * 4a adds six types and would land on exactly that. This is the same treatment
+ * 4a took the catalogue to seven types — two new codes, `time` and `duration`,
+ * and `datetime` and `boolean` flipped to settable — and would have landed on
+ * exactly that. This is the same treatment
  * `typeLabelGaps()` already gives the German words.
  */
 export const canonicalTypeGaps = () =>
@@ -1325,8 +1330,11 @@ export const canonicalTypeGaps = () =>
  * This is what makes ONE union candidate sound. If a spelling ever meant both
  * March and May, a value carrying it would read as two different dates and the
  * single candidate would be silently picking one — the exact class of invisible
- * wrong answer this file refuses. Measured 2026-08-03 across all three locales
- * and both widths: 34 distinct spellings, none of them shared.
+ * wrong answer this file refuses. Measured 2026-08-03 across all three locales,
+ * both widths **and both contexts**: 35 distinct spellings, none of them shared.
+ * The context axis is named here because it is where the 35th came from — a
+ * count quoted without it reads as the pre-standalone 34 and would look stale
+ * the moment someone re-derived it.
  */
 export const monthNameCollisions = () => MONTHS.collisions
 
@@ -1434,10 +1442,20 @@ function ambiguity(values, hits, reads, over = {}) {
  *
  * `domain` is what the column *is*, and it is the one of the three that travels:
  * story 14 serializes it into the Recipe and story 6 reads it as the instruction
- * for a conversion. So a declaration the catalogue does not admit — Parquet's
- * TIME, INTERVAL, DECIMAL, INT96 — is **discarded here**, not carried. The
- * column is `text`, exactly as if the reader had said nothing, and it is
- * detected and settable like any other text column.
+ * for a conversion. So a declaration the catalogue does not admit is **discarded
+ * here**, not carried. The column is `text`, exactly as if the reader had said
+ * nothing, and it is detected and settable like any other text column.
+ *
+ * **No reader this build ships can reach that branch, and the four types this
+ * paragraph used to name are the reason it cannot.** It said Parquet's TIME,
+ * INTERVAL, DECIMAL and INT96 arrive here and are refused; read the adapter and
+ * none of them does. `adapters/parquet/parquet-reader.js` maps DECIMAL to
+ * `number` and INT96 to `datetime` — both admitted, so both arrive as ordinary
+ * native declarations — drops an `INTERVAL` column from the read entirely, and
+ * answers `null` for TIME, which makes the domain plain `text` with a diagnostic
+ * rather than a declaration to refuse. So this is defence in depth against a
+ * *future* reader, which is what the ledger entry about the unreachable
+ * `typing.unknown_native_type` code says too, and the two now agree.
  *
  * What is kept is `refusedNativeType`: the bare word, as provenance rather than
  * as a domain. It is what lets the card say *which* type was refused and on
@@ -1699,10 +1717,16 @@ function isTwoDigitTriple(value, separator) {
  *  to the list and none to `shortYearVerdict`; hard-coding `parts[0]` here would
  *  make it two, with the second one silent.
  *
- *  **Exported because that last sentence is otherwise unfalsifiable.** No column
- *  reaches the `mdy` or `ymd` answer through `detectColumn` — the preference
- *  check runs in front of the day check — so `dayIndex = () => 0` passes the
- *  whole suite while quietly deleting the property the docblock claims. A
+ *  **Exported because that last sentence is otherwise unfalsifiable.** `dayIndex`
+ *  is *called* on the `mdy` and `ymd` answers — `shortYearVerdict` asks it inside
+ *  its value loop, and `detectColumn(['12.31.25', '03.04.25'])` comes back
+ *  `MM.dd.yy`, so the winner is an mdy mirror and this returns 1 for it. What no
+ *  column reaches is the answer *mattering*: the `!candidate.preferred` test runs
+ *  after the loop and returns `unresolved` before any of that work is read. So
+ *  `dayIndex = () => 0` passes the whole suite while quietly deleting the
+ *  property the docblock claims. (The earlier wording had the mechanism
+ *  backwards — it said the preference check runs *in front of* the day check.
+ *  It runs behind it, and the result is discarded rather than never computed.) A
  *  derivation nothing can observe is a derivation a mutation can remove, and the
  *  test that observes it walks `dateCandidates()` rather than repeating it. */
 export const dayIndex = ({ order }) => (order === 'dmy' ? 0 : order === 'mdy' ? 1 : 2)
