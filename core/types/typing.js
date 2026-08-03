@@ -65,7 +65,19 @@
 //      `yy-MM-dd` one did (+2.5 %) — that one rode a separator three patterns
 //      already narrowed on. The cost is per candidate per column it is *not*
 //      skipped on, and a space is the mark an ordinary column is least likely to
-//      lack. It is deliberately **not** optimised here: the project
+//      lack.
+//
+//      The month-name **datetime** candidate that followed the owner's overrule
+//      cost **about +2 %**: 6.46/6.45/6.42/6.42 s before against
+//      6.56/6.52/6.53/6.57 s after, and 6.53/6.53/6.54/6.33 against
+//      6.59/6.51/6.73/6.65 on the paired run before it — +1.7 % and +2.1 %.
+//      **Those absolutes do not belong beside the ones above and are not
+//      compared with them**: the machine was busier, which is the whole reason
+//      this file reports a paired ratio and the ledger says no single absolute
+//      belongs in its summary. It is cheaper than the date candidate because it
+//      rides the `:` narrowing rather than the space: a column has to carry a
+//      clock separator before it is scored at all, and most columns in a report
+//      do not. It is deliberately **not** optimised here: the project
 //      owner decided on 2026-08-02 that a committed measurement harness comes
 //      before any optimisation of detection, and the open ledger entries carry
 //      the candidate routes and the reason none may be chosen by feel.
@@ -570,12 +582,28 @@ const TIME_SEPARATOR = ':'
  * Ordinal dates (`2025-001`) were never weighed either way and are the one real
  * residue, with an entry: they are a day count into a year, which this file
  * already knows how to bound, but nothing here converts one.
+ *
+ * **The month-name candidate was excluded from this list by story 4b and the
+ * exclusion was wrong.** It said a month name inside a datetime was out of
+ * scope, on the strength of two date-only strings in the story brief — which
+ * were *examples* of the Source's vocabulary and were read as the Source's
+ * *form*. The Source is a Microsoft 365 security export: it logs events, events
+ * carry timestamps, and the column it actually ships is `2. Aug. 2026
+ * 04:44:34`. So the story shipped with `02.08.2026 04:44:34` reading as a
+ * datetime and `2. Aug. 2026 04:44:34` reading as text — the very asymmetry
+ * between a column spelled in digits and the same column spelled with a month
+ * name that the story existed to remove. Overruled by the project owner on
+ * 2026-08-03; the ledger entry is closed with the reason.
+ *
+ * It reuses the date candidate's derived table, because there is one month
+ * vocabulary in this file and a second would be a second thing to keep true.
  */
 const DATETIME_PATTERNS = freezeDeep([
   { pattern: 'ISO 8601', date: { separator: '-', order: 'ymd' }, iso: true },
   { pattern: 'yyyy-MM-dd HH:mm', date: { separator: '-', order: 'ymd' } },
   { pattern: 'dd.MM.yyyy HH:mm', date: { separator: '.', order: 'dmy' } },
   { pattern: 'dd.MM.yy HH:mm', date: { separator: '.', order: 'dmy', shortYear: true } },
+  { pattern: 'month name and clock', date: { separator: ' ', monthName: true } },
 ])
 
 /**
@@ -1173,9 +1201,49 @@ function readsAsClockTime(text, form) {
   return readsAsOffset(offset)
 }
 
-/** Where the date stops and the clock starts. ISO 8601 separates them with `T`
- *  and permits the lowercase form; every other candidate uses a space. */
-const clockStart = (text, candidate) => (candidate.iso ? text.search(/[Tt]/) : text.indexOf(' '))
+/**
+ * Where the date stops and the clock starts.
+ *
+ * ISO 8601 separates them with `T` and permits the lowercase form; every other
+ * candidate uses a space. **Which space is the candidate's own `separator` to
+ * say.** A date part built on `.`, `-` or `/` contains no space of its own, so
+ * the first one is the boundary. A date part whose separator *is* a space —
+ * `2. Aug. 2026` — contains two before the clock ever starts, and splitting at
+ * the first would hand `Aug. 2026 04:44:34` to the clock reader and `2.` to the
+ * date reader, so neither half reads and the value is text. The **last** space
+ * is the boundary there.
+ *
+ * This is read off `candidate.date.separator` rather than carried as a second
+ * flag beside it, deliberately: a boolean saying "this date has spaces in it"
+ * would be a restatement of the separator that could disagree with it, and the
+ * rule this file follows is that a property lives in one place — the same
+ * argument `preferred` rests on one list up. A date candidate that declares a
+ * space separator is exactly a date candidate whose parts contain spaces.
+ *
+ * What the last-space rule costs, named rather than discovered: a space before a
+ * zone offset (`2. Aug. 2026 04:44:34 +02:00`) takes the offset for the clock
+ * and the whole timestamp for the date, so it reads as neither. No candidate in
+ * this file allows a space there, so this loses nothing that worked before —
+ * ledger entry rather than a rule.
+ *
+ * **Measured: taking the last space for *every* non-ISO candidate is
+ * indistinguishable today, and the narrow form is still the right one.** A
+ * numeric date part contains no space, so a well-formed value has exactly one
+ * and the two rules pick the same character; a malformed value with two fails
+ * under both, from opposite ends. So the suite cannot tell them apart — this is
+ * the same honesty the two redundant branches in `readsAsMonthNameDate` get. The
+ * narrow form is kept because it states *why* the split moves rather than
+ * asserting that it always should, and the day the difference appears it will
+ * appear as a wrong answer rather than a refusal: it takes one candidate with an
+ * optional trailing token, which is exactly the shape of the spaced zone offset
+ * sitting in the ledger.
+ */
+const clockStart = (text, candidate) =>
+  candidate.iso
+    ? text.search(/[Tt]/)
+    : candidate.date.separator === ' '
+      ? text.lastIndexOf(' ')
+      : text.indexOf(' ')
 
 /** ISO 8601 refuses a basic date in front of an extended clock and the other way
  *  round, so the two halves are read as a pair rather than each on its own. */

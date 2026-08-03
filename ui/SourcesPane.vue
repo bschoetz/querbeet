@@ -36,6 +36,7 @@ const NAMED_READING = Object.freeze(
   Object.assign(Object.create(null), {
     'ISO 8601': 'ISO 8601',
     'month name': 'Monatsname (2. Aug. 2026)',
+    'month name and clock': 'Monatsname mit Uhrzeit (2. Aug. 2026 04:44:34)',
     'true/false': 'true/false',
     'wahr/falsch': 'wahr/falsch',
     'ja/nein': 'ja/nein',

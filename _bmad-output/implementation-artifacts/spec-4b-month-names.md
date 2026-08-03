@@ -44,7 +44,8 @@ context:
 **Never:**
 
 - **A two-digit year with a month name.** `Intl` with `year: 'numeric'` produces none, so the shape has no derivation behind it and would reopen the century question where no Source has shown it. Ledger entry, with the reason.
-- **A month name in a datetime.** `2. Aug. 2026 14:30` stays text this story; `DATETIME_PATTERNS` is untouched. Ledger entry.
+- ~~**A month name in a datetime.** `2. Aug. 2026 14:30` stays text this story; `DATETIME_PATTERNS` is untouched. Ledger entry.~~
+  **Overruled 2026-08-03 by the project owner, and struck rather than quietly edited, because this bullet was wrong on its facts.** It rested on the two values `stories.yaml` quotes from the Source — `2. Aug. 2026` and `31. Juli 2026` — read as the *form* of the owner's column when they were *examples* of its vocabulary. The Source is a Microsoft 365 security export: it logs events, events carry timestamps, and the column it ships is `2. Aug. 2026 04:44:34`. Excluding the clock therefore did not narrow the story's scope, it defeated the story's own purpose — `02.08.2026 04:44:34` read as a datetime and `2. Aug. 2026 04:44:34` read as text, which is precisely the digits-against-month-name asymmetry the Intent names. `DATETIME_PATTERNS` gains **one** candidate, `month name and clock`, over the same union and the same three orderings and reusing the date candidate's derived table. The clock reader does not change and there is still exactly one. Two things stay out and are ledgered: a two-digit year with a month name (unchanged, on both lists), and a space in front of a zone offset.
 - **A date library.** Luxon was measured at 356 ms per 100,000 values *per candidate* (~7 s for a 100k × 20 Source) and Day.js silently returns Invalid Date when a plugin is unregistered.
 - A reading select between the three orderings, or between German and English — 34 spellings, 0 collisions, so there is no question to ask, and an ambiguity between readings that mean the same thing is not an ambiguity.
 - ISO week dates, quarters and period labels — cut before this story and not reopened.
@@ -120,6 +121,81 @@ context:
 - Given `npm run verify`, when it runs on the finished story, then lint, unit and e2e all pass.
 
 ## Spec Change Log
+
+### 2026-08-03 — owner overrule: the `Never` bullet that excluded the Source's actual form
+
+**What was excluded, and on what reasoning.** The frozen **Never** section said a
+month name in a datetime stays text: "`2. Aug. 2026 14:30` stays text this story;
+`DATETIME_PATTERNS` is untouched. Ledger entry." The reasoning behind it was
+scope — a candidate enters with a real Source that needs it, the rule this file
+follows everywhere — and the Source was taken to need dates, because the two
+values `stories.yaml` quotes from it are dates.
+
+**The reasoning was wrong, and it was wrong in a way worth writing down rather
+than smoothing over.** Those two values are *examples of the vocabulary*, not the
+*form of the column*. The Source is a Microsoft 365 security export. It logs
+events; events carry timestamps; the column it actually ships is
+`2. Aug. 2026 04:44:34`. So the exclusion did not narrow the story's scope — it
+defeated the story's stated purpose. Reproduced before the overrule:
+
+```
+'2. Aug. 2026 04:44:34'  -> text
+'31. Juli 2026 09:15'    -> text
+'Aug 2, 2026 04:44:34'   -> text
+'2. Aug. 2026'           -> date / month name
+'02.08.2026 04:44:34'    -> datetime / dd.MM.yyyy HH:mm
+```
+
+The last two lines are the whole argument: **the same column reads when it is
+spelled in digits and does not when it is spelled with a month name**, which is
+the asymmetry the Intent says this story exists to remove.
+
+**How three stages missed it, since that is the finding and not the bug.** The
+spike measured month names against dates and answered exactly the two questions
+it was asked. The spec froze a `Never` bullet built on the spike's frame. Review
+round 1 checked the implementation against the spec and found ten real things —
+none of which could have been this one, because all three stages were looking at
+the same two example values and none of them asked what a security export logs.
+A brief's examples are not a Source's schema, and nothing in the loop was
+positioned to notice the difference.
+
+**What closed it.** One candidate in `DATETIME_PATTERNS` — `month name and
+clock` — over the same union and the same three orderings as the date candidate,
+reusing its derived table, because there is one month vocabulary in this file and
+a second would be a second thing to keep true. `clockStart` takes the **last**
+space where a date candidate declares a space separator, read off
+`candidate.date.separator` rather than carried as a second flag beside it that
+could disagree with it. **The clock reader did not change and there is still
+exactly one**: seconds, the 1–9 digit fraction with either decimal mark, every
+offset spelling, end-of-day `24:00` and the one-digit hour all arrive by reusing
+`readsAsClockTime`, and so do the refusals. The ordinal suffix works behind a
+clock because the date reader is reused, not because a second rule was written.
+
+**Cost, measured the way every amendment here is:** about **+2 %** —
+6.46/6.45/6.42/6.42 s before against 6.56/6.52/6.53/6.57 s after, and +2.1 % on
+the paired run before it. The absolutes are roughly 2.7× the ones in the earlier
+entries and are *not* comparable with them, because the machine was busier; that
+is exactly why this file reports paired ratios. It costs less than half what the
+date candidate did, and for a reason that confirms the model rather than
+contradicting it: it rides the `:` narrowing rather than the space, so a column
+must carry a clock separator before it is scored at all.
+
+**Boundaries held.** A two-digit year with a month name stays out on both lists,
+its entry unchanged. A space in front of a zone offset is out and has a new
+entry — it is what the last-space split costs, it loses nothing that ever
+worked (no candidate in this file allows a space there, on any date spelling),
+and it was named in the overrule rather than discovered after it.
+
+**Mutation-verified, and one result is a caveat rather than a pass.** Removing
+the candidate fails 8 cases, reverting `clockStart` to the first space fails 6,
+and letting the candidate escape the `:` narrowing fails 8. But taking the last
+space for *every* non-ISO candidate passes the whole file — a numeric date part
+has no space, so a well-formed value has exactly one and both rules pick the same
+character, while a malformed one fails under both. The narrow form is kept
+because it states why the split moves rather than asserting it always should, and
+the code and the test now say the case cannot tell the two apart instead of
+letting the rule read as observed. The shape that would expose it is the spaced
+zone offset now sitting in the ledger.
 
 ### 2026-08-03 — owner decision after done: the standalone gap closed by a second axis, not by a spelling
 

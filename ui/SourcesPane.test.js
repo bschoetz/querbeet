@@ -513,6 +513,12 @@ describe('the reading select', () => {
       'JJJJ-MM-TT HH:mm',
       'TT.MM.JJJJ HH:mm',
       'TT.MM.JJ HH:mm',
+      // The month-name datetime is *named* rather than spelled, for the same
+      // reason its date-only sibling is: one candidate over three orderings
+      // cannot be written as one pattern. So it comes from the label map, with
+      // the clock in the example because that is what distinguishes it from the
+      // date reading in a select that shows both words.
+      'Monatsname mit Uhrzeit (2. Aug. 2026 04:44:34)',
     ])
   })
 

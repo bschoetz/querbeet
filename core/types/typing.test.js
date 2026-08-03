@@ -665,18 +665,21 @@ describe('piece 2 — datetime, and the two-digit year', () => {
     }
   })
 
-  it('accepts the end of the day on all four candidates, and only where the clock is all zeros', () => {
+  it('accepts the end of the day on every candidate, and only where the clock is all zeros', () => {
     // `24:00` is legal ISO 8601 and means the next day's midnight. It belongs to
     // the shared *datetime* clock rather than to the ISO candidate — the story
     // committed to one clock, never narrower than the clock standing alone, and
     // a candidate that knew an hour another candidate refused would be the
-    // two-clocks-wearing-one-name situation round 1 removed. So all four take
-    // it, and this case walks the candidate list rather than sampling it.
+    // two-clocks-wearing-one-name situation round 1 removed. So every one of
+    // them takes it, and this case walks the candidate list rather than
+    // sampling it — which is what made adding the month-name candidate say so
+    // here instead of being remembered.
     const cases = [
       [['2025-12-31T24:00:00Z', '2025-06-30T24:00Z'], 'ISO 8601'],
       [['2025-12-31 24:00', '2025-06-30 24:00:00'], 'yyyy-MM-dd HH:mm'],
       [['31.12.2025 24:00', '30.06.2025 24:00:00'], 'dd.MM.yyyy HH:mm'],
       [['31.12.25 24:00', '30.06.25 24:00:00'], 'dd.MM.yy HH:mm'],
+      [['2. Aug. 2026 24:00', '30. Juni 2026 24:00:00'], 'month name and clock'],
     ]
 
     expect(cases.map(([, pattern]) => pattern)).toEqual(candidatesFor(DATETIME).map((c) => c.pattern))
@@ -691,13 +694,15 @@ describe('piece 2 — datetime, and the two-digit year', () => {
       ])
     }
 
-    // And `24:01` is refused on all four, which is the half of the rule that
-    // makes `24:00` a synonym for midnight rather than a twenty-fifth hour.
+    // And `24:01` is refused on every one of them, which is the half of the
+    // rule that makes `24:00` a synonym for midnight rather than a
+    // twenty-fifth hour.
     for (const cells of [
       ['2025-12-31T24:01:00Z', '2025-06-30T24:01Z'],
       ['2025-12-31 24:01', '2025-06-30 24:01:00'],
       ['31.12.2025 24:01', '30.06.2025 24:01:00'],
       ['31.12.25 24:01', '30.06.25 24:01:00'],
+      ['2. Aug. 2026 24:01', '30. Juni 2026 24:01:00'],
     ]) {
       expect([cells[0], detectColumn(cells).type]).toEqual([cells[0], TEXT])
     }
@@ -842,6 +847,7 @@ describe('piece 2 — datetime, and the two-digit year', () => {
       'yyyy-MM-dd HH:mm',
       'dd.MM.yyyy HH:mm',
       'dd.MM.yy HH:mm',
+      'month name and clock',
     ])
     expect(detectColumn(['12/31/2025 14:30', '01/02/2026 08:00']).type).toBe(TEXT)
   })
@@ -1899,10 +1905,136 @@ describe('piece 7 — month names', () => {
     expect(detectColumn(['2. Aug. 26', '31. Juli 26', '1. Sept. 26']).type).toBe(TEXT)
   })
 
-  it('leaves a month name inside a datetime as text, and that is the other one', () => {
-    // `DATETIME_PATTERNS` is untouched this story. The value has four tokens, so
-    // it is not the date candidate either.
-    expect(detectColumn(['2. Aug. 2026 14:30', '3. Aug. 2026 09:15']).type).toBe(TEXT)
+  it('reads a month name behind a clock, which is the shape the owner’s Source actually carries', () => {
+    // **This case asserted the opposite until 2026-08-03, and the reversal is
+    // the point.** Story 4b excluded a month name from `DATETIME_PATTERNS` on
+    // the strength of two date-only strings in the brief — which were *examples*
+    // of the Source's vocabulary and were read as the Source's *form*. The
+    // Source is a Microsoft 365 security export: it logs events, and events
+    // carry timestamps. So the story shipped with `02.08.2026 04:44:34` reading
+    // as a datetime while `2. Aug. 2026 04:44:34` read as text, which is the
+    // digits-against-month-name asymmetry the whole story exists to remove.
+    expect(detectColumn(['2. Aug. 2026 04:44:34', '31. Juli 2026 09:15'])).toMatchObject({
+      type: DATETIME,
+      format: { pattern: 'month name and clock' },
+      verdict: 'settled',
+      counts: { parsed: 2, unparsed: 0 },
+    })
+
+    // The same column spelled in digits, unchanged — the two now agree, which
+    // is the whole of what was wrong.
+    expect(detectColumn(['02.08.2026 04:44:34', '31.07.2026 09:15'])).toMatchObject({
+      type: DATETIME,
+      format: { pattern: 'dd.MM.yyyy HH:mm' },
+      counts: { parsed: 2, unparsed: 0 },
+    })
+  })
+
+  it('takes both English orderings behind a clock, under the one candidate', () => {
+    for (const cells of [
+      ['Aug 2, 2026 04:44:34', 'Sep 3, 2026 09:15'],
+      ['2 Aug 2026 04:44:34', '2 Sept 2026 09:15'],
+    ]) {
+      expect([cells[0], detectColumn(cells)]).toMatchObject([
+        cells[0],
+        {
+          type: DATETIME,
+          format: { pattern: 'month name and clock' },
+          counts: { parsed: 2, unparsed: 0 },
+        },
+      ])
+    }
+  })
+
+  it('puts the same clock behind a month name as behind any other date', () => {
+    // There is one clock reader in this file and there must still be exactly one
+    // after this: a clock does not change its rules because a date is in front
+    // of it, and it does not change them because that date is spelled in words.
+    // Seconds, a nine-digit fraction with either decimal mark, every offset
+    // spelling, and a one-digit hour — all of it arrives by reusing the reader,
+    // not by a second rule.
+    for (const cells of [
+      ['2. Aug. 2026 15:57:35', '3. Aug. 2026 08:01:02'],
+      ['2. Aug. 2026 15:57:35.4616727', '3. Aug. 2026 08:01:02.1000000'],
+      ['2. Aug. 2026 15:57:35,461', '3. Aug. 2026 08:01:02,100'],
+      ['2. Aug. 2026 15:57:35+02:00', '3. Aug. 2026 08:01:02-05:30'],
+      ['2. Aug. 2026 15:57:35Z', '3. Aug. 2026 08:01:02z'],
+      ['2. Aug. 2026 15:57:35+0200', '3. Aug. 2026 08:01:02+02'],
+      ['2. Aug. 2026 9:05', '3. Aug. 2026 8:00'],
+    ]) {
+      expect([cells[0], detectColumn(cells).type, detectColumn(cells).counts.parsed]).toEqual([
+        cells[0],
+        DATETIME,
+        2,
+      ])
+    }
+
+    // …and the refusals come from the same reader too, unchanged.
+    for (const cells of [
+      ['2. Aug. 2026 15:57:35.4616727891', '3. Aug. 2026 15:57:35.4616727891'],
+      ['2. Aug. 2026 15:57:35+14:01', '3. Aug. 2026 15:57:35+14:01'],
+      ['2. Aug. 2026 15:57:35-00:00', '3. Aug. 2026 15:57:35-00:00'],
+      ['2. Aug. 2026 12:60', '3. Aug. 2026 12:60'],
+    ]) {
+      expect([cells[0], detectColumn(cells).type]).toEqual([cells[0], TEXT])
+    }
+  })
+
+  it('reads the ordinal suffix behind a clock without a second rule for it', () => {
+    // It falls out of reusing the date reader, which is the only place the
+    // suffix is written down. A second rule here would be a second place.
+    expect(detectColumn(['Aug 2nd, 2026 04:44:34', 'Aug 3rd, 2026 09:15']).type).toBe(DATETIME)
+  })
+
+  it('keeps a two-digit year out on the datetime side as well as the date side', () => {
+    // The ledger entry stands on both lists: `Intl` with `year: 'numeric'`
+    // produces no two-digit year beside a month name, so the shape has no
+    // derivation behind it, and a clock behind it changes nothing about that.
+    expect(detectColumn(['2. Aug. 26 04:44:34', '3. Aug. 26 09:15']).type).toBe(TEXT)
+    expect(detectColumn(['2. Aug. 26', '3. Aug. 26']).type).toBe(TEXT)
+  })
+
+  it('refuses a space in front of the zone offset, which is what the last-space split costs', () => {
+    // Named rather than discovered. The date part contains spaces, so the clock
+    // begins at the *last* one — and a space before the offset makes that last
+    // space the wrong one: the offset is taken for the clock and the whole
+    // timestamp for the date, so neither half reads. No candidate in this file
+    // allows a space there, so nothing that worked before is lost. Ledger entry.
+    expect(detectColumn(['2. Aug. 2026 04:44:34 +02:00', '3. Aug. 2026 09:15:00 +02:00']).type).toBe(
+      TEXT,
+    )
+    // …and the offset written the way every producer writes it is unaffected.
+    expect(detectColumn(['2. Aug. 2026 04:44:34+02:00', '3. Aug. 2026 09:15:00+02:00']).type).toBe(
+      DATETIME,
+    )
+
+    // The numeric candidates refuse the spaced offset too, and always did — from
+    // the *other* end of the value, because they split at the first space. That
+    // is what makes this a shape the product has never read rather than one the
+    // last-space rule took away.
+    expect(detectColumn(['31.12.2025 14:30 +02:00', '01.03.2026 08:00 +02:00']).type).toBe(TEXT)
+
+    // **And a measured caveat, so the rule is not read as observed.** Taking the
+    // last space for *every* non-ISO candidate passes this whole file: a numeric
+    // date part has no space, so a well-formed value has exactly one and both
+    // rules pick the same character, while a malformed one fails under both.
+    // `clockStart` is narrowed to space-separator candidates because that states
+    // why the split moves, not because a case here can tell the two apart — see
+    // its docblock, and the spaced-offset ledger entry, which is the shape that
+    // would make the difference visible as a wrong answer rather than a refusal.
+  })
+
+  it('scores the month-name datetime only where the column carries a clock separator', () => {
+    // It is not the ISO candidate, so it rides the existing `clocks` narrowing
+    // like the other three spelled candidates — checked rather than assumed,
+    // because a candidate that escaped the filter would be a fifth full walk
+    // over every column in the table.
+    const withoutClock = detectColumn(['2. Aug. 2026', '31. Juli 2026'])
+
+    expect([withoutClock.type, withoutClock.format.pattern]).toEqual([DATE, 'month name'])
+    expect(candidatesFor(DATETIME).find((c) => c.pattern === 'month name and clock').iso).toBe(
+      undefined,
+    )
   })
 
   it('lets `isRealDate` decide an impossible day, exactly as for every other pattern', () => {

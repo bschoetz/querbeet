@@ -359,21 +359,37 @@ test('a date written with a month name is a date, and says so in German', async 
   // vocabulary and the `,` day trailer unobserved in both engines. These four
   // values exercise de-DE short and long, en-US (month first, comma trailer) and
   // en-GB (month second, no trailer) in Chromium and Firefox.
+  //
+  // `Ereignis` is the column the owner's export actually ships, and it is here
+  // because it was the whole of what story 4b got wrong: a security export logs
+  // events and events carry timestamps, so the Source's form is a month name
+  // *behind a clock*. Until the owner overruled it, `02.08.2026 04:44:34` was a
+  // datetime and `2. Aug. 2026 04:44:34` was text — the same column, spelled two
+  // ways, typed two ways.
   await pick(
     page,
     csv(
       'freigaben.csv',
-      'Konto;Ablauf\n' +
-        'A-1;2. Aug. 2026\n' +
-        'B-2;31. Juli 2026\n' +
-        'C-3;Aug 2, 2026\n' +
-        'D-4;2 Sept 2026\n',
+      'Konto;Ablauf;Ereignis\n' +
+        'A-1;2. Aug. 2026;2. Aug. 2026 04:44:34\n' +
+        'B-2;31. Juli 2026;31. Juli 2026 09:15\n' +
+        'C-3;Aug 2, 2026;Aug 2, 2026 04:44:34\n' +
+        'D-4;2 Sept 2026;2 Sept 2026 23:59:59\n',
     ),
   )
 
   const card = cards(page)
   await expect(card.getByLabel('Typ: Ablauf')).toHaveValue('date')
   await expect(columnRow(page, 'Ablauf').getByTestId('typing-hitrate')).toHaveText(
+    '4 von 4 Werten lesbar',
+  )
+
+  await expect(card.getByLabel('Typ: Ereignis')).toHaveValue('datetime')
+  await expect(card.getByLabel('Lesart: Ereignis')).toHaveValue('month name and clock')
+  await expect(card.getByLabel('Lesart: Ereignis').locator('option:checked')).toHaveText(
+    'Monatsname mit Uhrzeit (2. Aug. 2026 04:44:34)',
+  )
+  await expect(columnRow(page, 'Ereignis').getByTestId('typing-hitrate')).toHaveText(
     '4 von 4 Werten lesbar',
   )
 
