@@ -2,7 +2,7 @@
 title: 'Story 4a — Typing reaches the types a report actually holds'
 type: 'feature'
 created: '2026-08-02'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 4
 baseline_commit: '7183651ab02fc630fe1f8e775a186a9c13c8bac8'
 context:
@@ -758,3 +758,114 @@ The project owner was away. None of these touches the Frozen block; each is reco
 - `npm run lint` — clean; `core/` stays DOM-free.
 - `npm test` — both Vitest projects; the new matrix green, story-3 suite untouched.
 - `npm run test:e2e` — builds `dist/`, both engines from `file://`.
+
+## Suggested Review Order
+
+**Start here — the competition the whole story is**
+
+- Five kinds scored independently; the highest hit rate at 0.9 proposes, declaration order breaks ties.
+  [`typing.js:1031`](../../core/types/typing.js#L1031)
+
+**The vocabulary — declared once, or not at all**
+
+- `time` and `duration` enter here; `datetime` and `boolean` flip settable. No second list anywhere.
+  [`catalog.js:45`](../../core/types/catalog.js#L45)
+
+- Every type owes a German word; the completeness test bites when one is missing.
+  [`type-labels.js:20`](../../ui/type-labels.js#L20)
+
+**Reading one value — where a wrong number could be born**
+
+- Sign and unit peeled from the outside in, order-independent, at most one sign mark.
+  [`typing.js:452`](../../core/types/typing.js#L452)
+
+- The accounting forms need column evidence: `4711-` is a part number, not minus 4711.
+  [`typing.js:507`](../../core/types/typing.js#L507)
+
+- Exported for story 6: digits, fraction and sign — enough to rebuild the value.
+  [`typing.js:539`](../../core/types/typing.js#L539)
+
+- Overflow compared as digits, never through a float round trip (C-10).
+  [`typing.js:587`](../../core/types/typing.js#L587)
+
+- One datetime clock, never narrower than the standalone one, wider by fraction, zone and `24:00`.
+  [`typing.js:680`](../../core/types/typing.js#L680)
+
+- Basic format is a representation of the whole value, so it is gated on the ISO candidate.
+  [`typing.js:693`](../../core/types/typing.js#L693)
+
+- The offset bound is a typo filter, not a zone table — and the comment now says so.
+  [`typing.js:723`](../../core/types/typing.js#L723)
+
+- The affix is scored as a candidate, so one stray `1.000,00 €` does not claim the column.
+  [`typing.js:822`](../../core/types/typing.js#L822)
+
+**Deciding a column — the questions this story chose to ask**
+
+- One place decides every verdict: settled, decisive, or unresolved with its alternatives.
+  [`typing.js:982`](../../core/types/typing.js#L982)
+
+- Three two-digit parts settle nothing; two kinds of evidence do, and `dmy` breaks the rest.
+  [`typing.js:1329`](../../core/types/typing.js#L1329)
+
+- The part order comes from the candidate, so moving `preferred` is one edit to the list.
+  [`typing.js:1274`](../../core/types/typing.js#L1274)
+
+- One closure carries both column-wide findings into every return, so no route can forget one.
+  [`typing.js:1186`](../../core/types/typing.js#L1186)
+
+**Answering back — a choice closes the question it answered, and no other**
+
+- `null` where the column names no reading: the user was never asked, so nothing is picked.
+  [`typing.js:1518`](../../core/types/typing.js#L1518)
+
+- Settled only where nothing else is open — the same ambiguity machinery detection uses.
+  [`typing.js:1550`](../../core/types/typing.js#L1550)
+
+- A reading no candidate offers is refused for every type, and `null` round-trips.
+  [`source-store.js:604`](../../core/exec/source-store.js#L604)
+
+- The shape written here is the shape replayed here — story 14 restores through this call.
+  [`source-store.js:633`](../../core/exec/source-store.js#L633)
+
+- Exported because story 14 will hand it a typing this file did not build.
+  [`source-store.js:41`](../../core/exec/source-store.js#L41)
+
+**What the person actually sees**
+
+- A kind question is answered in the type select, so the reading select is suppressed.
+  [`SourcesPane.vue:268`](../../ui/SourcesPane.vue#L268)
+
+- Renders nothing rather than a sentence with a hole where evidence is missing.
+  [`SourcesPane.vue:331`](../../ui/SourcesPane.vue#L331)
+
+- Names both pairs and does not claim the column is read as text.
+  [`SourcesPane.vue:197`](../../ui/SourcesPane.vue#L197)
+
+**The decisions, written where the next story will look**
+
+- AD-21 amended: nanoseconds as `BigInt`, one unit for all four temporal types.
+  [`ARCHITECTURE-SPINE.md:168`](../planning-artifacts/architecture/architecture-querbeet-2026-08-02/ARCHITECTURE-SPINE.md#L168)
+
+- Story 6 converts: the unit, and that `24:00` means the next calendar day.
+  [`stories.yaml:191`](../specs/spec-querbeet/stories.yaml#L191)
+
+- Story 14 serializes: six states an older Recipe will lack, not four.
+  [`stories.yaml:325`](../specs/spec-querbeet/stories.yaml#L325)
+
+- Eleven open story-4a entries — each an Ask First or a Source nobody has yet.
+  [`deferred-work.md:7`](./deferred-work.md#L7)
+
+**Tests last, but the mutations are the point**
+
+- Every matrix row, the story-3 regression block, and the two completeness invariants.
+  [`typing.test.js:1`](../../core/types/typing.test.js#L1)
+
+- Diagnostics, format resolution, and the choice that survives a re-score.
+  [`source-store.test.js:1`](../../core/exec/source-store.test.js#L1)
+
+- Wording, both placeholders, the suppressed select, and the empty-evidence record.
+  [`SourcesPane.test.js:1`](../../ui/SourcesPane.test.js#L1)
+
+- Four journeys, both engines, from `file://`.
+  [`typing.spec.js:1`](../../tests/e2e/typing.spec.js#L1)
