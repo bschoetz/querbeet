@@ -199,31 +199,37 @@
     list rather than offered and then turned down, and both connect paths end
     in one checkConnect. Deliberate pan and zoom by keyboard is still open and
     is filed in deferred-work.md; the focus-pull makes it non-urgent.
-- id: "6"
-  title: Execution walking skeleton — engine adapter, Filter and Columns Steps
+# Story 6 was split 2026-08-03 by the project owner, cut at the Table (option A).
+# Why, so nobody re-litigates it: by capability count story 6 matched story 5 —
+# 12 acceptance bullets against 11 — but its dispatch note ran 397 words against
+# story 5's 198, nine times the median of 44 across this file, and the whole
+# conversion had no acceptance criterion of its own: its one AC line sits under
+# CAP-9, which is story 3's capability. That is the shape story 5 was reverted
+# for — a surface named in prose and absent from the tasks. 6a takes the part
+# with no acceptance behind it, the four ledger entries and the one unresolved
+# architecture question; 6b then adds one new concept on a Table whose cost is
+# already measured. The price, stated: 6a executes nothing, so the skeleton
+# walks one story later than the old story 6 promised.
+- id: "6a"
+  title: The typed Table — engine adapter, conversion, and the values that did not read
   description: >-
-    CAP-15, CAP-16, CAP-19: first end-to-end execution of a linear pipeline —
-    the TableEngine port with the Arquero adapter, the Filter and
-    Select/Rename/Reorder Step kinds, and a per-Step preview carrying counts
-    and warnings.
+    The TableEngine port with the Arquero adapter, and the conversion story 3
+    deliberately left open: applying a confirmed type mapping on the way into a
+    Table. Carries the CAP-9 remainder — the unparsed values become inspectable
+    rows rather than a count.
   spec_checkpoint: true
   invoke_dev_with: >-
-    A Step is a pure sync function receiving the engine as a parameter (AD-4);
-    a Table handle crosses boundaries and rows() materializes only at real
+    A Table handle crosses boundaries and rows() materializes only at real
     edges (AD-5). Arquero 8.0.3 pinned and vendored; the adapter absorbs the
-    measured hazards, Step kinds never do (AD-19, AD-22). Filter comparison
-    values live in canonical machine form and type disagreement is refused
-    (CAP-15). This story also owns the conversion story 3 deliberately left
-    open: story 3 settles what a column *is* — type, locale, missing tokens,
-    confirmed per Source — and holds only the raw text, because the entry's
-    table is what the preview renders and what the damage report reads, so
-    converted values cannot replace it in place. Applying a confirmed mapping
-    therefore happens on the way into a Table here: unparsed values become
-    boxes carrying their original text (AD-22), dates normalize to
-    UTC-midnight epoch nanoseconds held as a BigInt — one unit for all four
-    temporal types (AD-21) — and where that converted copy lives — and
-    what it costs against R4/D2's 80.2 MB per 100k x 20 — is a Table question
-    answered here, not a typing question answered there. With the boxes come
+    measured hazards and nothing above it does (AD-19). This story owns the
+    conversion story 3 deliberately left open: story 3 settles what a column
+    *is* — type, locale, missing tokens, confirmed per Source — and holds only
+    the raw text, because the entry's table is what the preview renders and
+    what the damage report reads, so converted values cannot replace it in
+    place. Applying a confirmed mapping therefore happens on the way into a
+    Table here: unparsed values become boxes carrying their original text
+    (AD-22), and dates normalize to UTC-midnight epoch nanoseconds held as a
+    BigInt — one unit for all four temporal types (AD-21). With the boxes come
     the rows behind the number: story 3's panel says "842 von 900 Werten
     lesbar" and cannot show *which* 58 failed, because finding them again
     would be a second scan whose result this story immediately replaces. Once
@@ -240,7 +246,45 @@
     admits, and the values it admits are the ones nothing else in the column
     distinguishes, so the error is invisible in the counts. The hour `24` is
     accepted only where minutes, seconds and any fraction are all zero, so the
-    rollover is always to midnight and never to anything else.
+    rollover is always to midnight and never to anything else. **Where the
+    converted copy lives is an open architecture question this story must
+    close, not a detail.** AD-7 requires the registry to keep the raw parsed
+    table — the preview renders it and the damage report reads it — while
+    research D2's first rule says to drop the parsed row array once `aq.from()`
+    has run, because holding both costs 110.8 MB per Source against 80.2 MB,
+    and five simultaneous Sources were measured at 552.6 MB. Both cannot hold
+    as written; decide it against the measurement rather than around it. Three
+    ledger entries land here with the conversion: the fractional-overflow value
+    that reads as a number and loses digits at conversion, the 19-digit order
+    number past MAX_SAFE_INTEGER, and the ISO ordinal-date and leap-second
+    shapes — which are conversion questions wearing a reading question's
+    clothes. Do not implement leap seconds from the ledger entry alone; it is
+    filed because a completeness claim was false, not because the shape was
+    decided.
+- id: "6b"
+  title: Execution walking skeleton — Filter and Columns Steps, and the per-Step preview
+  description: >-
+    CAP-15, CAP-16, CAP-19: first end-to-end execution of a linear pipeline
+    over the Table 6a produces — the Filter and Select/Rename/Reorder Step
+    kinds, and a per-Step preview carrying counts and warnings.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    A Step is a pure sync function receiving the engine as a parameter (AD-4);
+    a Table handle crosses boundaries and rows() materializes only at real
+    edges (AD-5). The engine adapter and the conversion arrived with 6a and are
+    not reopened here — a Step kind never inspects a box (AD-22) and never
+    learns a temporal unit (AD-21), which is what keeps both from becoming
+    rules every Step must remember. Filter comparison values live in canonical
+    machine form and type disagreement is refused rather than coerced
+    (CAP-15) — a coerced comparison is how an established database produces a
+    silently empty result set, which is indistinguishable from an honest zero
+    rows. "Is empty" matching null, the empty string and whitespace alike is
+    the one operator where a user's intuition and a database's semantics
+    differ, so the interface says which one it means. One ledger entry waits
+    for this story to decide it: story 5 allows a Union to consume the same
+    Source in two slots, which duplicates every row of it once a pipeline
+    executes — refuse it in the graph guard, allow it with a warning, or leave
+    it silent as a legitimate operation. Decide it against a real Recipe.
 - id: "7"
   title: Execution full build — cache, cancellation, execution modes
   description: >-
