@@ -2,7 +2,7 @@
 title: 'Story 4b — Month names in dates, German and English'
 type: 'feature'
 created: '2026-08-03'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 1
 baseline_commit: 'b06282bce31a29d3336abcb44aff724914a9a713'
 context:
@@ -281,3 +281,71 @@ Declaring `separator: ' '` is not a trick: it is true of the shape, and it buys 
 - `npm run lint` — expected: clean, no dependency-direction violation from `core/`.
 - `npm run verify` — expected: lint + unit + e2e green.
 - `node _bmad-output/planning-artifacts/spikes/intl-month-names-2026-08-03/run-spike.mjs` — expected: still 0 disagreements; re-run it if the fixture assertion ever fails.
+
+## Suggested Review Order
+
+**The derivation — where the vocabulary comes from**
+
+- Entry point: one candidate, `separator: ' '`, no `order` — the whole design in one line.
+  [`typing.js:413`](../../core/types/typing.js#L413)
+
+- The locale list, declared beside `NUMBER_LOCALES` under the same stated rule.
+  [`typing.js:159`](../../core/types/typing.js#L159)
+
+- Format context, `timeZone: 'UTC'`, per-formatter fallback check — the table, derived.
+  [`typing.js:254`](../../core/types/typing.js#L254)
+
+- The one rule that carries `Okt.` and `Dez.` alone; exported so a test can observe it.
+  [`typing.js:241`](../../core/types/typing.js#L241)
+
+- Module-level derivation, frozen: the table is a rule, not mutable shared state.
+  [`typing.js:322`](../../core/types/typing.js#L322)
+
+**The reading — how a value becomes a date**
+
+- Three tokens, the month's position picks the ordering, year tested first.
+  [`typing.js:904`](../../core/types/typing.js#L904)
+
+- The day token: digits, the ordinal suffix nobody derived, the derived trailer.
+  [`typing.js:867`](../../core/types/typing.js#L867)
+
+- Why the ordinal suffix is here at all, and whose decision it was.
+  [`typing.js:359`](../../core/types/typing.js#L359)
+
+**The invariants — empty is the rule**
+
+- No spelling means two months; this is what makes one candidate sound.
+  [`typing.js:1247`](../../core/types/typing.js#L1247)
+
+- A locale the engine fell back on, reported rather than silently dropped.
+  [`typing.js:1265`](../../core/types/typing.js#L1265)
+
+**The frozen measurement**
+
+- The 2026-08-03 table, with the three engine stamps a failure names.
+  [`month-names.frozen.js:67`](../../core/types/month-names.frozen.js#L67)
+
+- The day trailers, and why the empty en-GB one is deliberately absent.
+  [`month-names.frozen.js:98`](../../core/types/month-names.frozen.js#L98)
+
+**The pane — a named reading needs a German word**
+
+- The completeness invariant, widened to every kind `candidatesFor` serves.
+  [`SourcesPane.vue:76`](../../ui/SourcesPane.vue#L76)
+
+- The map consulted before the letter transform, `Object.hasOwn`, null prototype.
+  [`SourcesPane.vue:327`](../../ui/SourcesPane.vue#L327)
+
+**Tests and ledger**
+
+- Every I/O matrix row, plus the mixed month-name/numeric column.
+  [`typing.test.js:1754`](../../core/types/typing.test.js#L1754)
+
+- Derived against frozen, axes included — the test that fails the day ICU moves.
+  [`typing.test.js:1961`](../../core/types/typing.test.js#L1961)
+
+- All three locale groups, in the two engines the product actually runs in.
+  [`typing.spec.js:348`](../../tests/e2e/typing.spec.js#L348)
+
+- Three new entries: no-break spaces, German standalone `Mär`, the doubled-letter sniff.
+  [`deferred-work.md:20`](deferred-work.md#L20)
