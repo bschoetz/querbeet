@@ -345,6 +345,40 @@ test('a column of version numbers is asked about, not silently dated', async ({ 
   await expect(card.getByTestId('typing')).toContainText('Typen bestätigt.')
 })
 
+test('a date written with a month name is a date, and says so in German', async ({ page }) => {
+  // Story 4b, as one journey. The Source that opened the gate is a Microsoft 365
+  // security export, and before this story every value below was `text` — a
+  // column that can never be filtered with `>`, never grouped by month.
+  await pick(
+    page,
+    csv(
+      'freigaben.csv',
+      'Konto;Ablauf\nA-1;2. Aug. 2026\nB-2;31. Juli 2026\nC-3;1. Sept. 2026\n',
+    ),
+  )
+
+  const card = cards(page)
+  await expect(card.getByLabel('Typ: Ablauf')).toHaveValue('date')
+  await expect(columnRow(page, 'Ablauf').getByTestId('typing-hitrate')).toHaveText(
+    '3 von 3 Werten lesbar',
+  )
+
+  // The numeric candidates read nothing here, so there is no contest and no
+  // question — and the reading is offered by its German word rather than by the
+  // core's own name for it, which is the one thing a string transform could not
+  // have produced for a candidate that spells no field letters.
+  await expect(columnRow(page, 'Ablauf').getByTestId('typing-verdict')).toHaveCount(0)
+  await expect(card.getByLabel('Lesart: Ablauf')).toHaveValue('month name')
+  await expect(card.getByLabel('Lesart: Ablauf').locator('option:checked')).toHaveText(
+    'Monatsname (2. Aug. 2026)',
+  )
+
+  await card.getByRole('button', { name: 'Typen bestätigen: freigaben' }).click()
+
+  await expect(card.getByTestId('typing')).toContainText('Typen bestätigt.')
+  await expect(card.getByTestId('typing-refusal')).toHaveCount(0)
+})
+
 test('an annotation is the user’s own text, and it survives a re-read', async ({ page }) => {
   await pick(page, csv('umsatz.csv', 'Kunde;Betrag\nAnna;1.234,56\n'))
 

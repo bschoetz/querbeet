@@ -45,7 +45,19 @@
 //      four, `/` from two to four, `-` from three to five**, and `-` again to
 //      **six** when `yy-MM-dd` joined. "Four where it scored three" was true of
 //      the dot alone and was written as if it were true of all three, which
-//      understated the slash by half. It is deliberately **not** optimised here: the project
+//      understated the slash by half.
+//
+//      Story 4b's month-name candidate cost **about +4.5 %** on top: measured on
+//      the same Mix A at the same shape, four paired runs in alternating order,
+//      best of three per run — **2.40/2.40/2.45/2.42 s before against
+//      2.52/2.52/2.54/2.54 s after**. It is one candidate on a separator no date
+//      pattern used before, so `MARKS` grew from eight marks to **nine** (`. / -
+//      ,` plus `: % € $` plus the space) and the space is present in almost every
+//      report column, which is why a single candidate costs nearly twice what the
+//      `yy-MM-dd` one did (+2.5 %) — that one rode a separator three patterns
+//      already narrowed on. The cost is per candidate per column it is *not*
+//      skipped on, and a space is the mark an ordinary column is least likely to
+//      lack. It is deliberately **not** optimised here: the project
 //      owner decided on 2026-08-02 that a committed measurement harness comes
 //      before any optimisation of detection, and the open ledger entries carry
 //      the candidate routes and the reason none may be chosen by feel.
@@ -123,6 +135,19 @@ const PROPOSAL_THRESHOLD = 0.9
  *  means bringing a Source that needs it, and checking it against that. */
 const NUMBER_LOCALES = ['de-DE', 'en-US']
 
+/** The languages a date written with a month name may be written in, under the
+ *  same rule `NUMBER_LOCALES` follows: **a locale enters with a Source that
+ *  needs it.** The Source that opened this gate is a Microsoft 365 security
+ *  export carrying `2. Aug. 2026` and `31. Juli 2026`, which is de-DE — and
+ *  English is here from the start because the same portals ship both, so an
+ *  English column would otherwise be text on the very next export.
+ *
+ *  `en-US` and `en-GB` are two locales rather than one because CLDR abbreviates
+ *  September differently in each: `Sep` against `Sept`. That single disagreement
+ *  is what forces a *set* of accepted spellings per month below, and it is
+ *  measured today rather than feared for tomorrow. */
+const MONTH_LOCALES = ['de-DE', 'en-US', 'en-GB']
+
 /**
  * A candidate list is a rule, and a rule is not a place to keep mutable state.
  *
@@ -143,15 +168,169 @@ function freezeDeep(value) {
   return Object.freeze(value)
 }
 
-/** All-numeric date shapes. Month names are deliberately absent: they need a
- *  calendar per language, and no Source seen so far carries them. A story that
- *  needs them adds them here with its own evidence.
+// ------------------------------------------------------------- month names
+//
+// The month table is DERIVED, never written down — the same discipline
+// `numberCandidates` applies to separators, for the same reason: a hand-written
+// calendar is the kind of thing that is wrong about a language nobody on the
+// team speaks. Three parts of the derivation are load-bearing and each was
+// measured rather than assumed (spike `intl-month-names-2026-08-03`).
+//
+//   1. FORMAT CONTEXT, NOT STANDALONE. The name is taken from `formatToParts`
+//      of a *whole date*, never from `Intl.DateTimeFormat(locale, { month })`
+//      on its own. Measured in German short, **eleven of twelve entries
+//      differ** — `Jan. Feb. März Apr. Mai Juni Juli Aug. Sept. Okt. Nov. Dez.`
+//      in a date against `Jan Feb Mär Apr Mai Jun Jul Aug Sep Okt Nov Dez`
+//      standalone; only `Mai` coincides. A table built the easy way is not
+//      slightly wrong, it is wrong nearly everywhere, and it misses both of the
+//      values the owner's Source actually carries.
+//
+//   2. `timeZone: 'UTC'` IS PART OF THE DERIVATION. Without it the formatter
+//      uses the machine's zone, a run in a negative offset shifts the day, and
+//      at a month edge the month with it — which would make this table a
+//      property of where the runner stood rather than of the engine's ICU.
+//
+//   3. A SET OF SPELLINGS PER MONTH, NOT ONE STRING. Forced by the locales
+//      already in scope and independently of any future ICU drift: en-US
+//      abbreviates September to `Sep`, en-GB to `Sept`, and German writes
+//      `Sept.` — three spellings of one month. Normalization is case-folding
+//      plus a dropped trailing point, so an exporter writing `AUG` where CLDR
+//      says `Aug.` is not a second vocabulary. Measured across all three
+//      locales and both widths: **34 distinct normalized spellings, 0
+//      collisions**, which is what makes ONE union candidate sound instead of a
+//      reading select nobody could answer.
+//
+// The runtime table follows the engine, which is right. `month-names.frozen.js`
+// is the 2026-08-03 measurement committed as a literal, and the test compares
+// the two — so an ICU change is a failing test naming the month and both
+// spellings, rather than a column that silently falls back to text.
+
+/** Both CLDR widths. `Sept.` has four letters, so "abbreviated" is not "three
+ *  letters" and the two widths are two vocabularies, not one plus a prefix. */
+const MONTH_WIDTHS = ['short', 'long']
+
+/** Case-fold, then drop one trailing point. CLDR abbreviates only the *long*
+ *  names, so `Jan. Feb. Apr. Aug. Sept. Okt. Nov. Dez.` carry a point while
+ *  `März Mai Juni Juli` stand in full without one — and an exporter that
+ *  upper-cases its headers or loses the point has not invented a new month. */
+const normalizeMonthToken = (token) => token.toLocaleLowerCase('de-DE').replace(/\.$/, '')
+
+/**
+ * Ask `Intl` for the month names, the day's trailing literal, and whether the
+ * engine actually had each locale.
+ *
+ * A locale the engine falls back on is the one failure worth being loud about:
+ * it hands back an English table under a German tag, and every value in it looks
+ * plausible and is wrong. `resolvedOptions().locale` is therefore checked per
+ * formatter and a mismatch is *collected* rather than thrown — the same
+ * empty-is-the-rule shape `canonicalTypeGaps` has, so it fails a test instead of
+ * a user's file read.
+ */
+function deriveMonthNames(locales = MONTH_LOCALES) {
+  const spellings = Array.from({ length: 12 }, () => [])
+  const byName = new Map()
+  const collisions = []
+  const fallbacks = []
+  const dayTrailers = new Set()
+
+  for (const locale of locales) {
+    for (const width of MONTH_WIDTHS) {
+      const format = new Intl.DateTimeFormat(locale, {
+        day: 'numeric',
+        month: width,
+        year: 'numeric',
+        timeZone: 'UTC',
+      })
+      if (format.resolvedOptions().locale !== locale) {
+        fallbacks.push(`${locale}/${width}`)
+        continue
+      }
+
+      // The literal that follows the day — `". "` for de-DE, `", "` for en-US,
+      // `" "` for en-GB. Derived for the same reason the names are: writing
+      // those two punctuation marks by hand would be the hand-written table one
+      // screen up, one field over.
+      const parts = format.formatToParts(new Date(Date.UTC(2026, 7, 2)))
+      const dayAt = parts.findIndex((part) => part.type === 'day')
+      const after = parts[dayAt + 1]
+      const trailer = after?.type === 'literal' ? after.value.trim() : ''
+      if (trailer !== '') dayTrailers.add(trailer)
+
+      for (let month = 0; month < 12; month += 1) {
+        // The 15th, so no zone or calendar edge can move the month even if the
+        // `timeZone` above were ever dropped by a careless edit.
+        const named = format
+          .formatToParts(new Date(Date.UTC(2026, month, 15)))
+          .find((part) => part.type === 'month')?.value
+        if (named === undefined) continue
+
+        if (!spellings[month].includes(named)) spellings[month].push(named)
+
+        const key = normalizeMonthToken(named)
+        const seen = byName.get(key)
+        if (seen === undefined) byName.set(key, month + 1)
+        else if (seen !== month + 1) collisions.push({ spelling: key, months: [seen, month + 1] })
+      }
+    }
+  }
+
+  return {
+    spellings: freezeDeep(spellings),
+    byName,
+    collisions: freezeDeep(collisions),
+    fallbacks: freezeDeep(fallbacks),
+    dayTrailers,
+  }
+}
+
+const MONTHS = deriveMonthNames()
+
+/** Every accepted spelling per month, in derivation order — locale by locale,
+ *  short before long, each raw CLDR string once. This is what the frozen fixture
+ *  is compared against, and exporting it is what makes that comparison possible
+ *  without a second derivation to disagree with the first. */
+export const monthNameSpellings = () => MONTHS.spellings
+
+/** All-numeric date shapes, and — since 2026-08-03 — one shape written with a
+ *  month name. Month names were "deliberately absent" here on the rule this file
+ *  states, that a calendar enters with the Source that needs it; that Source
+ *  arrived (a Microsoft 365 security export carrying `2. Aug. 2026` and
+ *  `31. Juli 2026`), so the gate opened rather than the rule breaking.
+ *
+ *  Its month table is **derived from `Intl` in format context** — `formatToParts`
+ *  of a whole date, never `{ month: 'short' }` standalone — and that is not a
+ *  refinement: measured in German short, eleven of twelve entries differ between
+ *  the two, and only `Mai` coincides. A table built the easy way misses both of
+ *  the values the Source above actually carries. The derivation and its two
+ *  other load-bearing details are one screen up.
+ *
+ *  It is **one** candidate over the union of both vocabularies and all three
+ *  orderings, not three and not a reading select: the month name's position
+ *  inside a value identifies that value's shape, and the union was measured to
+ *  hold 34 spellings with 0 collisions, so no value reads as two different
+ *  dates. An ambiguity between readings that mean the same thing is not an
+ *  ambiguity, and here there is not even that.
+ *
+ *  Its `separator` is `' '`, and that is true of the shape rather than a trick:
+ *  all three orderings are exactly three space-separated tokens. It also buys
+ *  the narrowing for free, because `MARKS` is derived from these separators and
+ *  a column with no space never scores the candidate at all.
+ *
+ *  **One rule in that candidate is hand-written, and it is the English ordinal
+ *  suffix** (`Aug 2nd, 2026`). `Intl` emits none — measured over 2,016 rendered
+ *  values per engine in three engines — so it cannot be derived from anything,
+ *  and it is here because the project owner decided on 2026-08-03 that exporters
+ *  write it. It is marked as such where it is read (`readsAsDayToken`); nothing
+ *  else in this table is written by hand.
  *
  *  Every dmy and mdy pattern has its two-digit mirror, and that symmetry is the
  *  rule rather than a convenience: six four-digit patterns against one two-digit
  *  one was the century rule reaching German dot dates and nothing else, which is
  *  a separator deciding whether a rule applies. `yyyy-MM-dd` has its mirror too,
- *  `yy-MM-dd`, and dash-only — see `expandTwoDigitYear`.
+ *  `yy-MM-dd`, and dash-only — see `expandTwoDigitYear`. **The month-name
+ *  candidate has none, deliberately:** `Intl` with `year: 'numeric'` produces no
+ *  two-digit year at all, so `2. Aug. 26` has no derivation behind it and would
+ *  reopen the century question where no Source has shown it. Ledger entry.
  *
  *  **`preferred` is the two-digit tie-break, and it lives on the list rather
  *  than in the code that reads it.** With both orders mirrored, `31.12.25` and
@@ -188,6 +367,14 @@ const DATE_PATTERNS = freezeDeep([
   { pattern: 'MM-dd-yy', separator: '-', order: 'mdy', shortYear: true },
   { pattern: 'yyyy-MM-dd', separator: '-', order: 'ymd' },
   { pattern: 'yy-MM-dd', separator: '-', order: 'ymd', shortYear: true },
+  // The one candidate that is not spelled in field letters, because it is not
+  // one ordering: `2. Aug. 2026`, `Aug 2, 2026` and `2 Aug 2026` all read here,
+  // and which of the three a value is comes from where its month name stands.
+  // It carries **no `order`** on purpose — an order is what a numeric pattern
+  // needs to say which digits are which, and this candidate reads that off the
+  // value itself. Two invariants over `DATE_PATTERNS` are scoped to candidates
+  // that carry one, each with its reason at the test.
+  { pattern: 'month name', separator: ' ', monthName: true },
 ])
 
 /** The date shapes on offer, for a caller that has to render a choice. */
@@ -342,7 +529,12 @@ export function numberCandidates() {
  * Every character any candidate uses to tell one reading from another.
  *
  * Derived rather than written down, so adding a date shape or a locale cannot
- * leave this list behind and silently disable the narrowing below.
+ * leave this list behind and silently disable the narrowing below. Story 4b is
+ * the proof that this is worth being derived: its month-name candidate declares
+ * `separator: ' '`, and the space joined this list and started narrowing the new
+ * candidate **with no edit here at all**. The space is also the one mark an
+ * ordinary report column is least likely to lack, which is why that one
+ * candidate cost more than the previous one did — see the module header.
  */
 const MARKS = Object.freeze(
   [
@@ -613,13 +805,97 @@ function isRealDate(year, month, day) {
   return day <= max
 }
 
+/** Exactly four digits — a year written beside a month name, and the only width
+ *  `Intl` produces there. */
+const FOUR_DIGITS = /^\d{4}$/
+
+/**
+ * The day token of a month-name date: one or two digits, then two optional
+ * things, then nothing else.
+ *
+ * The trailing character is the literal `formatToParts` puts after the day —
+ * `.` for de-DE, `,` for en-US, nothing for en-GB — and it is checked against
+ * the derived set rather than against a pair of punctuation marks written here.
+ *
+ * **`st|nd|rd|th` is the one hand-written rule in this whole table, and it is
+ * the project owner's decision of 2026-08-03.** `Intl` emits no ordinal suffix —
+ * measured, 2,016 rendered values per engine, three engines, none — so no
+ * derivation can produce it and it is here because exporters write `Aug 2nd,
+ * 2026`. It is stripped and deliberately **not** checked against the digits: it
+ * carries nothing the digits do not, so `2th` reads as the 2nd and no wrong date
+ * can come of it. Validating it would be a second spelling rule for an English
+ * suffix, which is a rule about English and not about dates.
+ */
+const DAY_TOKEN = /^(\d{1,2})(?:st|nd|rd|th)?(.)?$/i
+
+function readsAsDayToken(token) {
+  const match = DAY_TOKEN.exec(token)
+  if (match === null) return null
+  if (match[2] !== undefined && !MONTHS.dayTrailers.has(match[2])) return null
+  return Number(match[1])
+}
+
+/**
+ * Three space-separated tokens, exactly one of which is a month name.
+ *
+ * The month's position is what identifies the shape, and it is the whole reason
+ * this is one candidate rather than three: `Aug 2, 2026` puts it first and is
+ * month-day-year, `2. Aug. 2026` and `2 Aug 2026` put it second and are
+ * day-month-year. **Position 2 is refused** — no locale in scope writes
+ * `2 2026 Aug`, so admitting it would be inventing a shape rather than reading
+ * one. **Two month names in one value is refused too** (`Mai Juni 2026`).
+ *
+ * Both of those refusals were **measured to be redundant, and both are kept as
+ * statements rather than deleted to reach coverage.** With three tokens, a month
+ * name at position 2 leaves a month name where the four-digit year test looks,
+ * and a second month name always lands in the day slot or the year slot; either
+ * way the token tests below refuse the value a second time, so a mutation
+ * removing either line passes the whole suite. They stay because the rule they
+ * state is the candidate's *contract* — the year is the last token, the month is
+ * one of the first two — and the day the year test is widened (a two-digit year
+ * has a ledger entry) is the day that contract stops being implied and starts
+ * being load-bearing. This is the same treatment `readsAsDate`'s `ymd` +
+ * `shortYear` branch got through the rounds it was unreachable.
+ *
+ * Story 4a's width strictness does not bind here: it exists so two *numeric*
+ * patterns cannot agree on the values that distinguish them, and a month name
+ * has no competing pattern, so a one- or two-digit day is safe.
+ *
+ * What the permissiveness costs, named rather than discovered: `2nd. Aug. 2026`
+ * reads, and no exporter writes it. Refusing it would cost a rule and buy no
+ * correctness, because the date it yields is right either way.
+ */
+function readsAsMonthNameDate(parts) {
+  let monthAt = -1
+  let month = 0
+  for (let i = 0; i < 3; i += 1) {
+    const found = MONTHS.byName.get(normalizeMonthToken(parts[i]))
+    if (found === undefined) continue
+    if (monthAt !== -1) return false
+    monthAt = i
+    month = found
+  }
+  if (monthAt !== 0 && monthAt !== 1) return false
+
+  const dayAt = monthAt === 0 ? 1 : 0
+  if (!FOUR_DIGITS.test(parts[2])) return false
+  const day = readsAsDayToken(parts[dayAt])
+  if (day === null) return false
+
+  return isRealDate(Number(parts[2]), month, day)
+}
+
 /** Does `text` read as a date under this pattern? Deliberately strict about
  *  width: `3.4.2025` is not `dd.MM.yyyy`, because accepting a loose width would
  *  make two patterns agree on values that distinguish them. A two-digit year is
  *  its own pattern with its own width, never a loosening of the four-digit one. */
-function readsAsDate(text, { separator, order, shortYear = false }) {
+function readsAsDate(text, { separator, order, shortYear = false, monthName = false }) {
   const parts = text.split(separator)
   if (parts.length !== 3) return false
+
+  // The month-name candidate splits on a space and reads its own ordering off
+  // the value, so it never reaches the width table or the part order below.
+  if (monthName) return readsAsMonthNameDate(parts)
 
   const yearWidth = shortYear ? 2 : 4
   const widths = order === 'ymd' ? [yearWidth, 2, 2] : [2, 2, yearWidth]
@@ -914,6 +1190,39 @@ const CANONICAL = Object.freeze({
  */
 export const canonicalTypeGaps = () =>
   Object.freeze(TYPES.filter((type) => type.native && !CANONICAL[type.code]).map((t) => t.code))
+
+/**
+ * Every normalized month spelling that means two different months. Empty is the
+ * rule, and a test asserts it — the same shape as the two type gaps around it,
+ * for the same reason: an invariant nothing can observe is one a change can
+ * remove.
+ *
+ * This is what makes ONE union candidate sound. If a spelling ever meant both
+ * March and May, a value carrying it would read as two different dates and the
+ * single candidate would be silently picking one — the exact class of invisible
+ * wrong answer this file refuses. Measured 2026-08-03 across all three locales
+ * and both widths: 34 distinct spellings, none of them shared.
+ */
+export const monthNameCollisions = () => MONTHS.collisions
+
+/**
+ * Every locale of `MONTH_LOCALES` the engine did not actually have. Empty is the
+ * rule, and a test asserts it.
+ *
+ * A missing locale is not a missing feature — `Intl` falls back rather than
+ * failing, so it hands back a German table under a `xx-YY` tag, and every value
+ * in it looks plausible and is wrong. `resolvedOptions().locale` is checked per
+ * formatter and the mismatch collected here rather than thrown, so it fails a
+ * test instead of a user's file read.
+ *
+ * **`locales` exists so the check is falsifiable, and that is the whole reason
+ * for the parameter.** On an engine that has all three locales the gap is empty
+ * whether the check is there or not, so deleting it would pass every other case
+ * in the suite — the same hole `dayIndex`'s export closes, one file over. Handed
+ * a locale no engine has, this re-derives and must report it.
+ */
+export const monthLocaleGaps = (locales) =>
+  locales === undefined ? MONTHS.fallbacks : deriveMonthNames(locales).fallbacks
 
 /** How a candidate names itself when a sentence has to mention it. A date
  *  pattern names its shape; a number reading names its locale, because

@@ -1,3 +1,49 @@
+<script>
+// The one thing this component exports besides itself: the completeness
+// invariant over the reading labels below. It lives in a plain `<script>` block
+// because `<script setup>` compiles into a `setup()` body and can export
+// nothing, and an invariant nothing can import is an invariant no test can
+// observe — which is the state `typeLabelGaps` exists to keep out of a release,
+// one level up.
+
+import { DATE, DATETIME, candidatesFor as offeredCandidates } from '@core/types/typing.js'
+
+/**
+ * The German word for a reading that is not spelled in field letters.
+ *
+ * `patternLabel` below is a *string transform*: it turns `dd` into `TT` and `yy`
+ * into `JJ`, which works for exactly as long as a pattern is its own spelling. A
+ * candidate that is **named** rather than spelled — `ISO 8601`, and story 4b's
+ * `month name`, which is one candidate over three orderings and therefore cannot
+ * be spelled as one — has no field letters to transform, so the transform would
+ * hand its English name straight to a German interface.
+ *
+ * `ISO 8601` is in the map explicitly although its German word is the standard's
+ * own name, and that is what makes the map honest: without the entry, "it comes
+ * out right anyway" is an accident of the transform rather than a decision, and
+ * the gap function below could not tell the two apart.
+ */
+const NAMED_READING = Object.freeze({
+  'ISO 8601': 'ISO 8601',
+  'month name': 'Monatsname (2. Aug. 2026)',
+})
+
+/** A pattern that spells itself — one that contains a field letter pair the
+ *  transform can replace. Everything else needs a word. */
+const FIELD_LETTERS = /dd|yy|MM|HH|mm|ss/
+
+/** Every reading the core offers that spells no field letter and has no German
+ *  word here. Empty is the rule, and a test asserts it — the same shape
+ *  `typeLabelGaps()` has for the types. Without it, a candidate named rather
+ *  than spelled reaches a Source card in English, which is what `ISO 8601`
+ *  already did for one story before `month name` made it visible. */
+export const namedReadingGaps = () =>
+  [...offeredCandidates(DATE), ...offeredCandidates(DATETIME)]
+    .map((candidate) => candidate.pattern)
+    .filter((pattern) => pattern && !FIELD_LETTERS.test(pattern))
+    .filter((pattern) => NAMED_READING[pattern] === undefined)
+</script>
+
 <script setup>
 // The Sources pane (CAP-1..3, CAP-39). ui/ unwraps browser File objects and
 // issues commands carrying bytes and a name (AD-3) — a File never crosses into
@@ -234,8 +280,11 @@ const SETTABLE_TYPES = settableTypeLabels()
 
 /** A date pattern in German field letters — TT.MM.JJJJ, not dd.MM.yyyy. The
  *  four-digit year is replaced before the two-digit one, or `dd.MM.yyyy` would
- *  come out as `TT.MM.JJJJ` on its first half and nonsense on its second. */
+ *  come out as `TT.MM.JJJJ` on its first half and nonsense on its second. A
+ *  named reading is answered from the map above before the transform is asked at
+ *  all, because there is nothing in it for the transform to replace. */
 const patternLabel = (pattern) =>
+  NAMED_READING[pattern] ??
   pattern.replace(/dd/g, 'TT').replace(/yyyy/g, 'JJJJ').replace(/yy/g, 'JJ')
 
 const NUMBER_LABEL = {

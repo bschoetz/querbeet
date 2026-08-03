@@ -10,7 +10,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { TYPES } from '@core/types/catalog.js'
-import SourcesPane from './SourcesPane.vue'
+import SourcesPane, { namedReadingGaps } from './SourcesPane.vue'
 import { settableTypeLabels, typeLabel, typeLabelGaps } from './type-labels.js'
 
 const column = (name, over = {}) => ({
@@ -446,8 +446,20 @@ describe('the reading select', () => {
       'MM-TT-JJ',
       'JJJJ-MM-TT',
       'JJ-MM-TT',
+      // Story 4b. One candidate over `2. Aug. 2026`, `Aug 2, 2026` and
+      // `2 Aug 2026`, so it cannot be spelled in field letters at all — it gets
+      // a German word from a map, with an example so the word is not a riddle.
+      'Monatsname (2. Aug. 2026)',
     ])
     expect(options.filter((o) => /[dy]/.test(o))).toEqual([])
+  })
+
+  it('has a German word for every reading that spells no field letters', () => {
+    // Completeness rather than a sample, and the sibling of `typeLabelGaps()`
+    // one level down: `patternLabel` is a string transform, so a candidate the
+    // core names instead of spelling — `ISO 8601`, `month name` — passes through
+    // it untouched and reaches a Source card in English. Empty is the rule.
+    expect(namedReadingGaps()).toEqual([])
   })
 
   it('spells a datetime pattern in German field letters, two-digit year included', async () => {

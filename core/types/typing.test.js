@@ -8,6 +8,16 @@
 import { describe, expect, it } from 'vitest'
 import { TYPES } from './catalog.js'
 import {
+  MEASURED_COLLISIONS,
+  MEASURED_DAY_TRAILERS,
+  MEASURED_DISTINCT_SPELLINGS,
+  MEASURED_ENGINES,
+  MEASURED_LOCALES,
+  MEASURED_NORMALIZATION,
+  MEASURED_SPELLINGS,
+  MEASURED_WIDTHS,
+} from './month-names.frozen.js'
+import {
   BOOLEAN,
   DATE,
   DATETIME,
@@ -24,6 +34,9 @@ import {
   detectColumn,
   detectTable,
   expandTwoDigitYear,
+  monthLocaleGaps,
+  monthNameCollisions,
+  monthNameSpellings,
   numberParts,
   numberCandidates,
   scorableTypeGaps,
@@ -995,7 +1008,14 @@ describe('piece 2 — datetime, and the two-digit year', () => {
     //
     // The case walks the list rather than repeating it, so a candidate added
     // with a new part order fails here rather than reading a month as a day.
-    for (const candidate of dateCandidates()) {
+    //
+    // **Scoped to candidates carrying an `order`, and the reason is what the
+    // scope is for.** `dayIndex` answers "which of three fixed positions holds
+    // the day", which is a question only a candidate with a declared part order
+    // has. The month-name candidate has none: its ordering comes out of each
+    // value, from where the month name stands, so there is no position to walk
+    // and nothing here to assert about it.
+    for (const candidate of dateCandidates().filter((c) => c.order)) {
       const { separator, order, shortYear } = candidate
       const year = shortYear ? '25' : '2025'
       const parts = order === 'ymd' ? [year, '11', '30'] : order === 'dmy' ? ['30', '11', year] : ['11', '30', year]
@@ -1083,14 +1103,26 @@ describe('piece 2 — datetime, and the two-digit year', () => {
       'MM-dd-yy',
       'yyyy-MM-dd',
       'yy-MM-dd',
+      // Story 4b, appended: the union of both month-name vocabularies and all
+      // three orderings, as one candidate.
+      'month name',
     ])
 
     // Every four-digit pattern has a two-digit mirror on its own separator, and
     // the invariant is derived rather than listed, so a pattern added without
     // one fails here.
+    //
+    // **Scoped to candidates carrying an `order`, and the scope is the rule
+    // rather than an exemption.** A mirror is owed to a pattern with a *numeric
+    // year field* — that is what a two-digit year is a truncation of. The
+    // month-name candidate has no `order` and no year field to truncate:
+    // `Intl` with `year: 'numeric'` produces no two-digit year at all, so
+    // `2. Aug. 26` has no derivation behind it and would reopen the century
+    // question on a shape no Source has shown. It is refused, with a ledger
+    // entry, rather than mirrored.
     const mirrorOf = (pattern) => pattern.replace('yyyy', 'yy')
     const patterns = new Set(dateCandidates().map((c) => c.pattern))
-    for (const candidate of dateCandidates().filter((c) => !c.shortYear)) {
+    for (const candidate of dateCandidates().filter((c) => c.order && !c.shortYear)) {
       expect([candidate.pattern, patterns.has(mirrorOf(candidate.pattern))]).toEqual([
         candidate.pattern,
         true,
@@ -1704,6 +1736,280 @@ describe('pieces 5 and 6 — affixed numbers and accounting signs', () => {
     // number in parentheses, not minus one hundred and twenty-three.
     expect(detectColumn(['(0123)', '(0456)', '789']).type).toBe(TEXT)
     expect(detectColumn(['0123 €', '0456 €']).type).toBe(TEXT)
+  })
+})
+
+describe('piece 7 — month names', () => {
+  // The Source that opened this gate is a Microsoft 365 security export carrying
+  // `2. Aug. 2026` and `31. Juli 2026`. Everything below is one candidate: the
+  // union of two vocabularies and three orderings, admissible because a month
+  // name identifies its own shape and no spelling means two months.
+
+  it('reads the owner’s Source, in German short and long', () => {
+    const short = detectColumn(['2. Aug. 2026', '31. Juli 2026', '1. Sept. 2026'])
+
+    expect(short).toMatchObject({
+      type: DATE,
+      format: { pattern: 'month name' },
+      verdict: 'settled',
+      counts: { parsed: 3, unparsed: 0 },
+    })
+
+    expect(detectColumn(['2. August 2026', '31. Juli 2026'])).toMatchObject({
+      type: DATE,
+      format: { pattern: 'month name' },
+      verdict: 'settled',
+      counts: { parsed: 2, unparsed: 0 },
+    })
+  })
+
+  it('reads both English orderings under the same candidate', () => {
+    // en-US puts the month first, en-GB puts it second, and the *position* of
+    // the month name is what says which — inside every single value, so there
+    // is no column-wide question and no reading select to answer.
+    for (const cells of [
+      ['Aug 2, 2026', 'March 3, 2026'],
+      ['2 Aug 2026', '2 Sept 2026'],
+    ]) {
+      expect([cells[0], detectColumn(cells)]).toMatchObject([
+        cells[0],
+        { type: DATE, format: { pattern: 'month name' }, counts: { parsed: 2, unparsed: 0 } },
+      ])
+    }
+  })
+
+  it('knows `Sep` and `Sept` are the same month, because two locales in scope disagree', () => {
+    // This is the finding that forced a *set* of spellings per month rather than
+    // one string: en-US abbreviates September to `Sep`, en-GB to `Sept`, German
+    // writes `Sept.`. All three are present today in every engine measured, so
+    // the design does not rest on a guess about a future ICU release.
+    expect(
+      detectColumn(['2 Sep 2026', '2 Sept 2026', '2. Sept. 2026', 'September 2, 2026']),
+    ).toMatchObject({ type: DATE, format: { pattern: 'month name' }, counts: { parsed: 4 } })
+  })
+
+  it('reads an English ordinal suffix, and does not check it against the digits', () => {
+    // The project owner's decision of 2026-08-03, and the one rule in this story
+    // `Intl` will never justify: it emits no suffix at all. It is stripped and
+    // not validated, because it carries nothing the digits do not — so `2th`
+    // reads as the 2nd and no wrong date can come of it.
+    expect(detectColumn(['Aug 2nd, 2026', 'Jan 1st, 2026', 'May 3rd, 2026'])).toMatchObject({
+      type: DATE,
+      format: { pattern: 'month name' },
+      counts: { parsed: 3, unparsed: 0 },
+    })
+    expect(detectColumn(['Aug 2th, 2026', 'Aug 3st, 2026']).counts).toMatchObject({ parsed: 2 })
+
+    // …and the permissiveness that buys, named rather than discovered: nobody
+    // writes `2nd. Aug. 2026`, and refusing it would cost a rule and buy no
+    // correctness, because the date it yields is right either way.
+    expect(detectColumn(['2nd. Aug. 2026', '3. Aug. 2026']).counts).toMatchObject({ parsed: 2 })
+  })
+
+  it('normalizes case and a lost point, rather than growing a second vocabulary', () => {
+    expect(detectColumn(['AUG 2, 2026', '2 aug 2026', '2. Aug 2026'])).toMatchObject({
+      type: DATE,
+      counts: { parsed: 3, unparsed: 0 },
+    })
+  })
+
+  it('reads a column that mixes the locales, and calls it settled', () => {
+    // Not an ambiguity: both values are the same date under the one candidate,
+    // and an ambiguity between readings that mean the same thing is not one.
+    expect(detectColumn(['2. Aug. 2026', 'Aug 2, 2026'])).toMatchObject({
+      type: DATE,
+      format: { pattern: 'month name' },
+      verdict: 'settled',
+      counts: { parsed: 2, unparsed: 0 },
+    })
+  })
+
+  it('refuses everything that merely contains a month name', () => {
+    // Three tokens, one month name, a 1–2 digit day and exactly four year
+    // digits. `Rechnung Mai 2026` has the shape and not the parts.
+    expect(detectColumn(['Rechnung Mai 2026', 'Rechnung Juni 2026']).type).toBe(TEXT)
+    expect(detectColumn(['Mai', 'Juni', 'Juli']).type).toBe(TEXT)
+    expect(detectColumn(['2 Aug', '3 Aug']).type).toBe(TEXT)
+    expect(detectColumn(['2 Aug 26', '3 Aug 26']).type).toBe(TEXT)
+    expect(detectColumn(['123 Aug 2026', '124 Aug 2026']).type).toBe(TEXT)
+    // The day's trailing mark is the one `formatToParts` puts there — `.` or
+    // `,` — and nothing else, so a stray character is not a lost point.
+    expect(detectColumn(['2x Aug 2026', '3x Aug 2026']).type).toBe(TEXT)
+    expect(detectColumn(['2- Aug 2026', '3- Aug 2026']).type).toBe(TEXT)
+    // Two month names is no date either, and the month may not stand last: no
+    // locale in scope writes `2 2026 Aug`. **Both of these are refused twice
+    // over** — with three tokens a second month name always lands where the day
+    // test or the four-digit year test looks — so deleting either rule from
+    // `readsAsMonthNameDate` leaves this case green, which was measured rather
+    // than assumed. The rules stay as the candidate's stated contract and the
+    // cases stay as its behaviour; neither is evidence for the other.
+    expect(detectColumn(['Mai Juni 2026', 'Mai Juli 2026']).type).toBe(TEXT)
+    expect(detectColumn(['2 2026 Aug', '3 2026 Aug']).type).toBe(TEXT)
+    // A column of three-word names is the common case this must not touch.
+    expect(detectColumn(['Anna Meier Schmidt', 'Bernd Otto Klein']).type).toBe(TEXT)
+  })
+
+  it('leaves a two-digit year with a month name as text, and that is the ledger entry', () => {
+    // `Intl` with `year: 'numeric'` produces no two-digit year beside a month
+    // name, so the shape has no derivation behind it and would reopen the
+    // century question where no Source has shown it. Text, not a silent read.
+    expect(detectColumn(['2. Aug. 26', '31. Juli 26', '1. Sept. 26']).type).toBe(TEXT)
+  })
+
+  it('leaves a month name inside a datetime as text, and that is the other one', () => {
+    // `DATETIME_PATTERNS` is untouched this story. The value has four tokens, so
+    // it is not the date candidate either.
+    expect(detectColumn(['2. Aug. 2026 14:30', '3. Aug. 2026 09:15']).type).toBe(TEXT)
+  })
+
+  it('lets `isRealDate` decide an impossible day, exactly as for every other pattern', () => {
+    expect(detectColumn(['31. Feb. 2026', '32 Aug 2026']).type).toBe(TEXT)
+    expect(detectColumn(['31. Apr. 2026', '31. Juni 2026']).type).toBe(TEXT)
+    // …and the leap day that does exist.
+    expect(detectColumn(['29. Feb. 2024', '29 Feb 2024']).counts).toMatchObject({ parsed: 2 })
+    expect(detectColumn(['29. Feb. 2026', '29. Feb. 2025']).type).toBe(TEXT)
+  })
+
+  it('has no contest with the numeric patterns, so the column settles', () => {
+    // `2. Aug. 2026` split on `.` is three parts of the wrong widths, so every
+    // dot candidate reads zero — a runner-up that reads nothing is no contest,
+    // and the verdict is `settled` rather than a spurious ambiguity.
+    const r = detectColumn(['2. Aug. 2026', '3. Aug. 2026', '4. Aug. 2026'])
+
+    expect(r.verdict).toBe('settled')
+    expect(r.evidence).toBeNull()
+  })
+
+  it('stays below the threshold where the column is mostly text', () => {
+    const cells = [
+      ...Array.from({ length: 5 }, (_, i) => `${i + 1}. Aug. 2026`),
+      ...Array.from({ length: 95 }, (_, i) => `Position ${i} offen`),
+    ]
+    const r = detectColumn(cells)
+
+    expect(r.type).toBe(TEXT)
+    expect(r.counts).toMatchObject({ total: 100, parsed: 100, unparsed: 0 })
+  })
+
+  it('cannot reach the two-digit-year machinery, and the space is why', () => {
+    // `shortYearVerdict` and `dayIndex` are reached only by a `shortYear`
+    // candidate, and `isTwoDigitTriple` splits on the candidate's separator. The
+    // month-name candidate carries neither flag and splits on a space, so a
+    // value like `01. Feb. 2003` can never be mistaken for a version number.
+    expect(dateCandidates().find((c) => c.pattern === 'month name')).toMatchObject({
+      separator: ' ',
+      monthName: true,
+    })
+    expect(dateCandidates().find((c) => c.pattern === 'month name').shortYear).toBeUndefined()
+    expect(dateCandidates().find((c) => c.pattern === 'month name').order).toBeUndefined()
+
+    expect(detectColumn(['01. Feb. 2003', '04. Mai 2006'])).toMatchObject({
+      type: DATE,
+      verdict: 'settled',
+    })
+  })
+
+  it('is offered by the reading select and survives a re-score under it', () => {
+    // `candidatesFor(DATE)` returns the whole list, so the pane and the re-score
+    // path pick the new candidate up with no edit — and a user who chooses it
+    // gets it scored rather than silently handed the best-fitting one.
+    const format = candidatesFor(DATE).find((c) => c.pattern === 'month name')
+    expect(format).toBeDefined()
+
+    expect(scoreColumn(['2. Aug. 2026', 'nicht datiert'], { type: DATE, format })).toMatchObject({
+      verdict: 'settled',
+      format: { pattern: 'month name' },
+      counts: { parsed: 1, unparsed: 1 },
+    })
+    expect(bestFormat(['Aug 2, 2026', 'Sep 3, 2026'], DATE).pattern).toBe('month name')
+  })
+})
+
+describe('the month table, derived and frozen', () => {
+  // The runtime table follows the engine, which is right. The fixture is what
+  // turns a future ICU change into a decision to be taken rather than a column
+  // that silently falls back to text.
+
+  it('matches the 2026-08-03 measurement spelling for spelling', () => {
+    const derived = monthNameSpellings()
+
+    expect(derived).toHaveLength(MEASURED_SPELLINGS.length)
+    for (let month = 0; month < MEASURED_SPELLINGS.length; month += 1) {
+      // Per month rather than in one lump, so a failure names the month and both
+      // spellings instead of printing two twelve-element arrays side by side.
+      expect([month + 1, derived[month]]).toEqual([month + 1, [...MEASURED_SPELLINGS[month]]])
+    }
+  })
+
+  it('counts the same distinct spellings, under the same normalization', () => {
+    const normalize = (name) => name.toLocaleLowerCase('de-DE').replace(/\.$/, '')
+    const distinct = new Set(monthNameSpellings().flat().map(normalize))
+
+    expect(distinct.size).toBe(MEASURED_DISTINCT_SPELLINGS)
+    expect(MEASURED_NORMALIZATION).toBe('toLocaleLowerCase("de-DE"), trailing "." dropped')
+    expect(MEASURED_ENGINES.map((e) => e.name)).toEqual(['node', 'chromium', 'firefox'])
+  })
+
+  it('has no spelling that means two months, which is what makes one candidate sound', () => {
+    // Empty is the rule, the same shape `canonicalTypeGaps` and
+    // `scorableTypeGaps` have. If a spelling ever meant both March and May, a
+    // value carrying it would read as two different dates and the single
+    // candidate would be silently picking one.
+    expect(monthNameCollisions()).toEqual([])
+    expect(MEASURED_COLLISIONS).toBe(0)
+  })
+
+  it('refuses a locale the engine fell back on, loudly', () => {
+    // A missing locale hands back an English table under a German tag, and every
+    // value in it looks plausible and is wrong. `resolvedOptions().locale` is
+    // checked per formatter; empty is the rule and this is the test.
+    expect(monthLocaleGaps()).toEqual([])
+
+    // …and the check is real rather than vacuous, which is why it takes a
+    // parameter at all. On an engine that has all three locales the gap is empty
+    // whether the check exists or not, so this hands it one no engine has:
+    // `Intl` resolves `xx-YY` to the default locale and would otherwise hand
+    // back that locale's month names under the `xx-YY` tag.
+    expect(monthLocaleGaps(['xx-YY'])).toEqual(['xx-YY/short', 'xx-YY/long'])
+    expect(monthLocaleGaps([...MEASURED_LOCALES])).toEqual([])
+  })
+
+  it('takes the day’s trailing literal from Intl too, not from two punctuation marks', () => {
+    // `". "` for de-DE, `", "` for en-US, `" "` for en-GB — trimmed. Writing
+    // those by hand would be the hand-written separator table one screen up.
+    const trailers = new Set()
+    for (const locale of MEASURED_LOCALES) {
+      for (const width of MEASURED_WIDTHS) {
+        const parts = new Intl.DateTimeFormat(locale, {
+          day: 'numeric',
+          month: width,
+          year: 'numeric',
+          timeZone: 'UTC',
+        }).formatToParts(new Date(Date.UTC(2026, 7, 2)))
+        const at = parts.findIndex((p) => p.type === 'day')
+        const literal = parts[at + 1]?.type === 'literal' ? parts[at + 1].value.trim() : ''
+        if (literal !== '') trailers.add(literal)
+      }
+    }
+
+    expect([...trailers].sort()).toEqual([...MEASURED_DAY_TRAILERS].sort())
+  })
+
+  it('is derived in format context, which is not a refinement but the feature', () => {
+    // Eleven of twelve German short entries differ between format context and
+    // standalone; only `Mai` coincides. A table built the easy way misses both
+    // of the values the owner's Source carries — so this asserts the *product's*
+    // table is the format-context one, by the one entry that gives it away.
+    const standalone = new Intl.DateTimeFormat('de-DE', {
+      month: 'short',
+      timeZone: 'UTC',
+    }).format(new Date(Date.UTC(2026, 7, 15)))
+
+    expect(standalone).toBe('Aug')
+    expect(monthNameSpellings()[7][0]).toBe('Aug.')
+
+    // And the consequence, which is the only thing a user would ever see.
+    expect(detectColumn(['2. Aug. 2026', '31. Juli 2026']).type).toBe(DATE)
   })
 })
 
