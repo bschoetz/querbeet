@@ -186,8 +186,19 @@
     All mutation goes through named commands; the cycle guard runs in the
     command path before the editor library sees the edge — Vue Flow ships no
     cycle detection (AD-10). The graph model holds ids, never data (AD-6).
-    Connect-by-keyboard is an open UX question in SPEC.md — leave the gap
-    named rather than inventing a scheme silently.
+    Connect-by-keyboard was an open UX question in SPEC.md; it is CLOSED, by
+    the project owner on 2026-08-03, on a measurement rather than a
+    preference. The connect control is the INPUT-SLOT ROW: at the spike's
+    six-Step graph that is 5 controls (one per input — Union 2, Filter 1,
+    Join 2) where handles-as-tab-stops would be 11 (6 outputs + 5 inputs; the
+    spike rendered exactly 11 handles, 0 of them with a tabindex). It is the
+    only candidate whose control count is bounded by something a Step
+    declares, it disappears on a Source, which has no inputs, and it turns
+    connecting into choosing a value in a form — the same affordance C-9 asks
+    of everything else in the MVP. The refused candidates are ABSENT from the
+    list rather than offered and then turned down, and both connect paths end
+    in one checkConnect. Deliberate pan and zoom by keyboard is still open and
+    is filed in deferred-work.md; the focus-pull makes it non-urgent.
 - id: "6"
   title: Execution walking skeleton — engine adapter, Filter and Columns Steps
   description: >-

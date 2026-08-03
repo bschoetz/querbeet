@@ -120,9 +120,53 @@
 
 /**
  * @typedef {object} GraphView
- * The Editor canvas (CAP-11, CAP-12). The app's model owns the truth; this is a
- * projection pushed from one watcher. The cycle guard sits in front of the
- * library's mutation API, which contains no cycle detection at all.
+ * The Editor canvas (CAP-11, CAP-12). **The app's model owns the truth and this
+ * is a view over it** — design B, decided by the Editor spike and measured: under
+ * the adapter's `applyDefault: false` the library's own mutation API stops being
+ * able to mutate, so every edge on screen exists because our model produced it.
+ * The cycle guard is therefore not merely in front of the library's mutation API;
+ * that API cannot mutate. The library ships no cycle detection at all.
+ *
+ * **What the host pushes.** Two projections, and nothing else:
+ *
+ *   nodes  [{ id, kind, x, y, slots, dimmed }]  — `slots` is how many input slots
+ *          the Step has, which is what decides how many anchors the frame renders;
+ *          `dimmed` marks a Step on no path to the Result Step.
+ *   edges  [{ id, source, target, slot, dimmed }] — `slot` is the *target's*
+ *          input position, and `id` is minted by `core/graph`'s `edgeId`.
+ *
+ * Neither carries a table, a row or a `Table` handle (AD-6), and neither carries
+ * a German word: the view renders a per-node body from a scoped slot the host
+ * supplies, so no prose reaches the adapter (AD-13).
+ *
+ * **What the host receives.** Three change reports, each already interpreted:
+ *
+ *   move        (id, x, y)          a Step was dragged or arrow-keyed
+ *   remove      (id)                a Step was deleted
+ *   disconnect  (target, slot)      an edge was deleted *by the user*
+ *
+ * **A removal reports its own target and slot.** No host parses an edge id to
+ * find out which slot was emptied — the library's remove change already carries
+ * `target` and `targetHandle`, and where it does not, the adapter resolves it
+ * through `core/graph`'s `parseEdgeId`, the single owner of that grammar.
+ *
+ * **A node removal is not a set of disconnects, and the adapter is what knows
+ * that.** The library reports the edges a deleted node drags with it *before* it
+ * reports the node, and both arrive as `remove`; read naively they are
+ * indistinguishable from a user emptying those slots one by one. The adapter
+ * absorbs the ordering (AD-19) and reports only the disconnects a user actually
+ * asked for, so a Step that lost an upstream comes out **broken and naming what
+ * it lost** rather than merely short of an input.
+ *
+ * **What the host supplies.** The connection guard —
+ * `guard(source, target, slot) => boolean` — which the adapter wires on the
+ * handles at **both** ends of a drag, never as a component-level prop: the
+ * store-level prop is also applied to every existing edge on every projection,
+ * where a cycle guard evaluates edges that already exist and silently drops the
+ * whole graph. And the per-node body, as a scoped slot receiving the node.
+ *
+ * Selection is view state and stays the library's; it is the one thing the host
+ * hands back, and only that.
  */
 
 /**

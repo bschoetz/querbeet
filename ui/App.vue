@@ -7,16 +7,41 @@
 // German is rendered here and only here. core/ emits codes and structured values;
 // this layer turns them into the sentences a user reads (AD-13, C-6).
 //
-// The scaffold's demo section is gone: its role — proving the core→ui
-// diagnostics chain — is carried by the Sources pane now, which renders real
-// diagnostics from real files.
+// **The view switch is deliberate, and the two panes are switched differently on
+// purpose.** The Editor is `v-if`, so it is genuinely unmounted while the Sources
+// pane shows: CAP-11's "leaving and re-entering loses no Step configuration" is
+// only proven if there is nothing left in memory to lose it from, and a `v-show`
+// would pass that test without proving anything. The Sources pane is `v-show`,
+// because its load errors and its typing refusals are its own state and are not
+// held anywhere else — trading one kind of lost state for another would be no
+// improvement.
 
+import { shallowRef } from 'vue'
 import SourcesPane from '@ui/SourcesPane.vue'
+import EditorPane from '@ui/EditorPane.vue'
 
 const props = defineProps({
   buildVersion: { type: String, required: true },
   store: { type: Object, required: true },
+  graph: { type: Object, required: true },
+  /** The `GraphView` implementation. `app/` is the only place that names one. */
+  canvas: { type: [Object, Function], required: true },
 })
+
+const view = shallowRef('sources')
+
+// The Editor reconciles its Source nodes from this list, so it has to change when
+// the Source store does — including while the Editor is the pane on screen, which
+// is what a file still parsing when the user switches over does.
+const sources = shallowRef(props.store.list())
+const onSourcesChanged = () => {
+  sources.value = props.store.list()
+}
+
+const TABS = [
+  ['sources', 'Quellen'],
+  ['editor', 'Editor'],
+]
 </script>
 
 <template>
@@ -29,9 +54,36 @@ const props = defineProps({
       <span data-testid="build-version">Build {{ props.buildVersion }}</span>
     </p>
 
+    <nav
+      class="mt-6 flex gap-2"
+      aria-label="Ansicht"
+    >
+      <button
+        v-for="[id, label] in TABS"
+        :key="id"
+        type="button"
+        :aria-pressed="view === id"
+        class="rounded border px-3 py-1 text-sm"
+        :class="view === id ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-300 text-slate-700 hover:bg-slate-50'"
+        @click="view = id"
+      >
+        {{ label }}
+      </button>
+    </nav>
+
     <SourcesPane
+      v-show="view === 'sources'"
       :store="props.store"
+      :on-changed="onSourcesChanged"
       class="mt-8"
+    />
+
+    <EditorPane
+      v-if="view === 'editor'"
+      :graph="props.graph"
+      :sources="sources"
+      :canvas="props.canvas"
+      class="mt-8 h-[70vh]"
     />
   </main>
 </template>

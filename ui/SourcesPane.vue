@@ -104,7 +104,14 @@ import { unresolvedColumns } from '@core/types/typing.js'
 import RowWindow from '@ui/RowWindow.vue'
 import { settableTypeLabels, typeLabel } from '@ui/type-labels.js'
 
-const props = defineProps({ store: { type: Object, required: true } })
+const props = defineProps({
+  store: { type: Object, required: true },
+  /** Called after every command this pane issues, so a second reader of the same
+   *  store can follow. The Editor reconciles its Source nodes from that list and
+   *  has to hear about a file that finishes parsing while it is the pane on
+   *  screen — this pane keeps running its own `addFiles` loop either way. */
+  onChanged: { type: Function, default: null },
+})
 
 // shallowRef, never ref/reactive/computed: the entries hold parsed tables, and
 // a table must never enter deep reactivity (AD-6).
@@ -113,6 +120,7 @@ const loadErrors = shallowRef([])
 
 const refresh = () => {
   sources.value = props.store.list()
+  props.onChanged?.()
 }
 
 const nf = (n) => n.toLocaleString('de-DE')
