@@ -47,9 +47,10 @@ const toEditor = async (page) => {
   // other than where it was asked for. Scrolling the pane in first is what makes
   // every gesture below mean what it says.
   await canvas(page).scrollIntoViewIfNeeded()
-  // The initial fit runs two frames after mount; waiting for it keeps every
-  // geometry assertion below off a viewport that is still moving.
-  await page.waitForTimeout(250)
+  // The initial fit runs two frames after mount, and the adapter says when it is
+  // done. Waiting on the condition rather than on a duration is what keeps the
+  // geometry cases from being the first to flake on a loaded machine.
+  await expect(canvas(page)).toHaveAttribute('data-fitted', 'true')
 }
 
 const toSources = (page) => page.getByRole('button', { name: 'Quellen' }).click()
@@ -75,16 +76,28 @@ async function viewportTransform(page) {
   return style
 }
 
-/** A real mouse gesture between two elements, with intermediate moves so the
- *  library's drag and connection handlers actually see it. */
-async function dragBetween(page, from, to, steps = 12) {
+/** A real mouse gesture from one element to another, **held** over the target so
+ *  the view's own answer can be read before the drop. Returns the release. */
+async function dragOnto(page, from, to, steps = 12) {
   const a = await from.boundingBox()
   const b = await to.boundingBox()
   await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2)
   await page.mouse.down()
   await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps })
-  await page.mouse.up()
+  return () => page.mouse.up()
 }
+
+/** The zoom in force, read off the same transform the pan is. */
+async function viewportScale(page) {
+  const style = await viewportTransform(page)
+  return Number(/scale\((-?[\d.]+)\)/.exec(style)[1])
+}
+
+const isInside = (box, pane) =>
+  box.x >= pane.x - 1 &&
+  box.y >= pane.y - 1 &&
+  box.x + box.width <= pane.x + pane.width + 1 &&
+  box.y + box.height <= pane.y + pane.height + 1
 
 const outHandle = (page, id) => wrapper(page, id).locator('.vue-flow__handle-right')
 const inHandle = (page, id, slot) => wrapper(page, id).locator(`.vue-flow__handle[data-slot="${slot}"]`)
@@ -227,7 +240,18 @@ test('a cyclic drag is refused by the view and by the model, and the graph is un
   const union = await idOf(page, 'Union: Halbjahr')
   const filter = await idOf(page, 'Filter: Nur Bestand')
 
-  await dragBetween(page, outHandle(page, filter), inHandle(page, union, 0))
+  const release = await dragOnto(page, outHandle(page, filter), inHandle(page, union, 0))
+
+  // The view's own answer, before the drop. `connecting` proves the library
+  // consulted the handle at all; the absence of `valid` is the guard saying no.
+  // Without this the case passes with `:is-valid-connection` taken off the
+  // handles entirely — the model refuses either way, and the handle lights up
+  // green on the way.
+  const target = inHandle(page, union, 0)
+  await expect(target).toHaveClass(/vue-flow__handle-connecting/)
+  await expect(target).not.toHaveClass(/vue-flow__handle-valid/)
+
+  await release()
 
   await expect(refusal(page)).toContainText('würde einen Kreis schließen')
   await expect(edges(page)).toHaveCount(3)
@@ -246,7 +270,9 @@ test('a drag the guard accepts creates the edge through the same command', async
   await card(page, 'Filter: Nur Bestand').getByLabel('Eingang 1', { exact: true }).selectOption('')
   await expect(edges(page)).toHaveCount(2)
 
-  await dragBetween(page, outHandle(page, union), inHandle(page, filter, 0))
+  const release = await dragOnto(page, outHandle(page, union), inHandle(page, filter, 0))
+  await expect(inHandle(page, filter, 0)).toHaveClass(/vue-flow__handle-valid/)
+  await release()
 
   await expect(edges(page)).toHaveCount(3)
   await expect(
@@ -287,6 +313,115 @@ test('Delete on a selected edge is the disconnect it is, and says so differently
     '„Nur Bestand“ braucht 1 Eingang, hat aber 0.',
   )
   await expect(card(page, 'Filter: Nur Bestand')).not.toContainText('verloren')
+})
+
+test('Delete pressed outside the canvas leaves the selected Step alone', async ({ page }) => {
+  // The library's own key handler listens on the *document* and its guard covers
+  // INPUT, SELECT, TEXTAREA and contenteditable — not BUTTON. With a Step
+  // selected, Delete on the toolbar, on a view tab, or anywhere in the Sources
+  // pane this app keeps mounted would otherwise destroy it.
+  await buildPipeline(page)
+  const union = await idOf(page, 'Union: Halbjahr')
+
+  await wrapper(page, union).click({ position: { x: 4, y: 4 } })
+  await expect(wrapper(page, union)).toHaveClass(/selected/)
+
+  for (const outside of [
+    page.getByRole('button', { name: '+ Join' }),
+    page.getByRole('button', { name: 'Editor' }),
+  ]) {
+    await outside.focus()
+    await page.keyboard.press('Delete')
+  }
+
+  await expect(nodes(page)).toHaveCount(4)
+  await expect(card(page, 'Union: Halbjahr')).toBeVisible()
+})
+
+test('Delete on a selected Source is refused, and says where a Source is removed', async ({
+  page,
+}) => {
+  // Removing it here would take the node out, break its consumers, and let the
+  // next reconciliation put both the node and its edges straight back.
+  await buildPipeline(page)
+  const source = await idOf(page, 'Quelle: Umsatz Q1')
+
+  await wrapper(page, source).click({ position: { x: 4, y: 4 } })
+  await page.keyboard.press('Delete')
+
+  await expect(refusal(page)).toContainText('ist eine Quelle — Quellen werden unter „Quellen“ entfernt')
+  await expect(nodes(page)).toHaveCount(4)
+  await expect(edges(page)).toHaveCount(3)
+})
+
+test('two Steps selected together are both deleted — the selection is handed back', async ({
+  page,
+}) => {
+  // `addSelectedNodes` takes a branch under `multiSelectionActive` that emits
+  // changes and mutates nothing, so without the one line that applies `select`
+  // changes back, the second selection is silently dropped — and single
+  // selection keeps working, so nothing else notices.
+  await buildPipeline(page)
+  const union = await idOf(page, 'Union: Halbjahr')
+  const filter = await idOf(page, 'Filter: Nur Bestand')
+
+  await wrapper(page, union).click({ position: { x: 4, y: 4 } })
+  await wrapper(page, filter).click({ position: { x: 4, y: 4 }, modifiers: ['Control'] })
+
+  await expect(canvas(page).locator('.vue-flow__node.selected')).toHaveCount(2)
+
+  await page.keyboard.press('Delete')
+
+  await expect(nodes(page)).toHaveCount(2)
+  await expect(card(page, 'Union: Halbjahr')).toHaveCount(0)
+  await expect(card(page, 'Filter: Nur Bestand')).toHaveCount(0)
+})
+
+test('a Step deleted together with its own edge still comes out named, not merely short', async ({
+  page,
+}) => {
+  // The one gesture that puts both halves of the ordering hazard in one batch:
+  // an edge removal whose source is also being removed. Read as a user
+  // disconnect it empties the consumer's slot first, and the consumer comes out
+  // `graph.inputs_missing` — the inversion of CAP-12's promise.
+  await buildPipeline(page)
+  const union = await idOf(page, 'Union: Halbjahr')
+
+  await wrapper(page, union).click({ position: { x: 4, y: 4 } })
+  await canvas(page)
+    .locator('.vue-flow__edge-interaction')
+    .last()
+    .click({ force: true, modifiers: ['Control'] })
+  await expect(canvas(page).locator('.vue-flow__edge.selected')).toHaveCount(1)
+
+  await page.keyboard.press('Delete')
+
+  await expect(nodes(page)).toHaveCount(3)
+  await expect(card(page, 'Filter: Nur Bestand')).toContainText(
+    '„Nur Bestand“ hat an Eingang 1 „Halbjahr“ verloren.',
+  )
+  await expect(card(page, 'Filter: Nur Bestand')).not.toContainText('braucht 1 Eingang')
+})
+
+test('a Step added while the view is panned away is brought into it, at the same zoom', async ({
+  page,
+}) => {
+  // This story ships no deliberate pan, so a Step that lands outside the pane is
+  // a Step nobody can go and find.
+  await buildPipeline(page)
+  await panLeft(page, 2)
+
+  const scaleBefore = await viewportScale(page)
+  await page.getByRole('button', { name: '+ Join' }).click()
+
+  const paneBox = await canvas(page).boundingBox()
+  const join = await idOf(page, 'Join: Join')
+  await expect
+    .poll(async () => isInside(await wrapper(page, join).boundingBox(), paneBox))
+    .toBe(true)
+  // Brought in by the shortfall pan, so the zoom the user chose survives —
+  // fitting the view instead would take it away on every added Step.
+  expect(await viewportScale(page)).toBe(scaleBefore)
 })
 
 test('an arrow key moves a Step — measured before and after the press', async ({ page }) => {
@@ -422,6 +557,37 @@ test('removing a Source in the Sources pane marks its consumer broken, by the na
   await expect(card(page, 'Union: Halbjahr').getByLabel('Eingang 1', { exact: true })).toHaveValue(
     await idOf(page, 'Quelle: Umsatz Q1'),
   )
+  // …and the slot still pointing at what is gone names it in German too. The
+  // projection holds only the id; the model remembers the name, which is the one
+  // thing `graph.input_lost` carries and the reason it carries it.
+  await expect(
+    card(page, 'Union: Halbjahr')
+      .getByLabel('Eingang 2', { exact: true })
+      .locator('option:checked'),
+  ).toHaveText('Umsatz Q2')
+})
+
+test('the Sources pane keeps its own errors across a switch to the Editor and back', async ({
+  page,
+}) => {
+  // The `v-show`/`v-if` asymmetry is deliberate and load-bearing: the Editor is
+  // unmounted so "loses no Step configuration" is provable, and the Sources pane
+  // is not, because its load errors and typing refusals live nowhere else.
+  await pick(page, [
+    {
+      name: 'bericht.ods',
+      mimeType: 'application/vnd.oasis.opendocument.spreadsheet',
+      buffer: Buffer.from([0x50, 0x4b, 0x03, 0x04]),
+    },
+    ...TWO_SOURCES,
+  ])
+  const failure = page.getByText('„bericht.ods“ hat ein nicht unterstütztes Format')
+  await expect(failure).toBeVisible()
+
+  await toEditor(page)
+  await toSources(page)
+
+  await expect(failure).toBeVisible()
 })
 
 test('the arity limits are named by the command, not hidden by the control', async ({ page }) => {
@@ -497,4 +663,11 @@ test('no raw core vocabulary reaches the screen while the Editor is marking Step
   expect(shown, 'a diagnostic code reached the screen instead of a sentence').not.toMatch(
     /\bgraph\.[a-z_]+\b/,
   )
+  // A Source id is core vocabulary too, and the one place it leaks is a slot
+  // still pointing at a Step that is gone: the projection has only the id there.
+  await toSources(page)
+  await page.getByRole('button', { name: 'Entfernen: Umsatz Q2' }).click()
+  await toEditor(page)
+  const after = await canvas(page).innerText()
+  expect(after, 'a raw core id reached the screen instead of a name').not.toMatch(/\bsrc:/)
 })

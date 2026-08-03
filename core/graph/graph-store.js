@@ -15,9 +15,12 @@
 // caller's bug. **An unknown id is therefore a refusal on every command.** A
 // wrong *type* still throws.
 
+import { error } from '../diagnostics/diagnostic.js'
 import {
+  CODE,
   addInputSlot,
   addNode,
+  checkConnect,
   connect,
   connectableInto,
   disconnect,
@@ -76,6 +79,12 @@ export function createGraphStore() {
       edges: Object.freeze(edgesOf(graph).map((e) => Object.freeze(e))),
       resultId: graph.resultId,
       diagnostics: Object.freeze(graphDiagnostics(graph)),
+      // The names of the Steps that are gone. `graph.input_lost` carries one,
+      // because the node has nowhere else to keep it — and a slot still pointing
+      // at a removed Step has to render *something* beside the sentence that just
+      // named it correctly. Without this the projection has only the id, and a
+      // raw `src:umsatz-q2` appears in a German select.
+      lost: Object.freeze({ ...graph.lost }),
     })
     return snapshot
   }
@@ -115,7 +124,21 @@ export function createGraphStore() {
 
   const moveStep = (id, x, y) => apply(moveNode(graph, id, x, y))
 
-  const removeStep = (id) => apply(removeNode(graph, id))
+  /**
+   * AD-10 command. **A Source is refused**, and the refusal is what keeps the two
+   * stores from disagreeing: the Sources pane owns the Source list, so deleting a
+   * Source node here removes it, marks its consumers broken, and then the next
+   * `syncSources` puts the node straight back — with the dangling slot references
+   * still in place, so the edges return too. Half a removal that undoes itself is
+   * worse than a named no.
+   */
+  function removeStep(id) {
+    const node = findNode(graph, id)
+    if (node?.kind === 'source') {
+      return apply({ ok: false, diagnostics: Object.freeze([error(CODE.sourceNotRemovable, { id })]) })
+    }
+    return apply(removeNode(graph, id))
+  }
 
   const setResultCmd = (id) => apply(setResult(graph, id))
 
@@ -154,19 +177,30 @@ export function createGraphStore() {
     const wanted = new Map(sources.map((s) => [s.id, s.name]))
     const present = graph.nodes.filter((n) => n.kind === 'source').map((n) => n.id)
 
+    // Every refusal the reconciliation collected, rather than a result derived
+    // from nothing. A Source whose name arrives empty is refused by `renameNode`
+    // and the command has to say so — it is the only command here that issues
+    // more than one mutation, which is exactly why it was the one that could
+    // report success over a refusal.
+    const diagnostics = []
+    const collect = (result) => {
+      if (!result.ok) diagnostics.push(...result.diagnostics)
+      return result
+    }
+
     for (const id of present) {
-      if (!wanted.has(id)) removeNode(graph, id)
+      if (!wanted.has(id)) collect(removeNode(graph, id))
     }
     for (const [id, name] of wanted) {
       const node = findNode(graph, id)
       if (!node) {
         mintedIds.add(id)
-        addNode(graph, makeNode('source', { id, name, ...freePosition(graph, 'source') }))
+        collect(addNode(graph, makeNode('source', { id, name, ...freePosition(graph, 'source') })))
       } else if (node.name !== name) {
-        renameNode(graph, id, name)
+        collect(renameNode(graph, id, name))
       }
     }
-    return apply({ ok: true, diagnostics: Object.freeze([]) })
+    return apply({ ok: diagnostics.length === 0, diagnostics: Object.freeze(diagnostics) })
   }
 
   return {
@@ -189,6 +223,26 @@ export function createGraphStore() {
     edges: () => snapshot.edges,
     resultId: () => snapshot.resultId,
     diagnostics: () => snapshot.diagnostics,
+
+    /** The name a removed Step had, or `null`. A slot still pointing at one has
+     *  to render something beside the sentence that already named it. */
+    lostName: (id) => snapshot.lost[id] ?? null,
+
+    /**
+     * The guard, asked without changing anything.
+     *
+     * This is the reason `checkConnect` is separated from the mutation at all:
+     * the pointer gesture asks it per handle it hovers, and the refusal region
+     * asks it again to name what was refused. Both would otherwise have to call
+     * `connect` and rely on a refusal not mutating, which is a promise rather
+     * than a shape.
+     */
+    check: (sourceId, targetId, slot) => {
+      const result = checkConnect(graph, sourceId, targetId, slot)
+      return result.ok
+        ? { ok: true, diagnostics: Object.freeze([]) }
+        : { ok: false, diagnostics: Object.freeze([result.diagnostic]) }
+    },
 
     /** The Steps a slot would accept, from the same guard the connect commands
      *  use. This is what the keyboard path lists, and it is why a candidate it

@@ -130,6 +130,12 @@ describe('edges', () => {
       expect(parseEdgeId(id), String(id)).toBeNull()
     }
   })
+
+  it('read the source unambiguously — two greedy groups would not', () => {
+    // Nothing mints an id like this today, and this file declares itself the one
+    // owner of the grammar; story 14's loader reads ids out of a file.
+    expect(parseEdgeId('a->b->c#0')).toEqual({ source: 'a', target: 'b->c', slot: 0 })
+  })
 })
 
 describe('the connect guard', () => {
@@ -419,10 +425,27 @@ describe('what the graph says about itself', () => {
     expect(none.stepId).toBeUndefined()
   })
 
-  it('says nothing about a Result while only Sources exist', () => {
+  it('says nothing at all about a graph of Sources alone', () => {
+    // Not merely no `graph.no_result`: no orphan marks either. With nothing
+    // designated, "contributes to the Result" is not yet a question, so nothing
+    // can be failing it — and a card saying so on the first entry into the Editor
+    // reports a state the user cannot act on.
     const g = emptyGraph()
     addNode(g, makeNode('source', { id: 'src:a', name: 'A' }))
-    expect(graphDiagnostics(g).map((d) => d.code)).not.toContain(CODE.noResult)
+    addNode(g, makeNode('source', { id: 'src:b', name: 'B' }))
+
+    expect(orphans(g)).toEqual([])
+    expect(graphDiagnostics(g)).toEqual([])
+  })
+
+  it('names the whole graph once when Steps exist and none is designated', () => {
+    const g = seeded()
+    removeNode(g, 'j1')
+
+    // The state is named — and named once, over the Steps, rather than as a mark
+    // on every node including the Sources.
+    expect(graphDiagnostics(g).map((d) => d.code)).toEqual([CODE.noResult])
+    expect(orphans(g)).toEqual([])
   })
 
   it('freezes what it emits, values and all', () => {

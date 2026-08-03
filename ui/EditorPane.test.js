@@ -145,7 +145,7 @@ describe('the state the graph reports about itself', () => {
     expect(w.find('[data-testid="editor-status"]').text()).toContain('Ungeklärt')
   })
 
-  it('renders a Step s own marks on its own card', async () => {
+  it("renders a Step's own marks on its own card", async () => {
     const graph = createGraphStore()
     graph.syncSources([
       { id: 'src:a', name: 'Umsatz Q1' },
@@ -171,7 +171,21 @@ describe('the Sources', () => {
     const w = render(graph, [{ id: 'src:a', name: 'Umsatz Q1' }])
 
     expect(graph.list().map((s) => s.id)).toEqual(['src:a'])
-    expect(cardFor(w, 'src:a').text()).toContain('Umsatz Q1')
+    expect(cardFor(w, 'src:a').get('input[aria-label="Name"]').element.value).toBe('Umsatz Q1')
+  })
+
+  it('are not marked as contributing to nothing before there is anything to contribute to', () => {
+    // Two freshly loaded CSVs and no Step yet: „…trägt nicht zum Ergebnis bei."
+    // on every card is a state the user cannot act on, because there is no Step
+    // to designate. `graph.no_result` is what names that state, once.
+    const graph = createGraphStore()
+    const w = render(graph, [
+      { id: 'src:a', name: 'Umsatz Q1' },
+      { id: 'src:b', name: 'Umsatz Q2' },
+    ])
+
+    expect(w.findAll('[data-testid="step-mark"]')).toHaveLength(0)
+    expect(w.find('[data-testid="editor-status"]').exists()).toBe(false)
   })
 
   it('are reconciled again whenever the list changes, not only on mount', async () => {
@@ -190,7 +204,7 @@ describe('the Sources', () => {
     expect(cardFor(w, 'src:b').exists()).toBe(true)
     await w.setProps({ sources: [{ id: 'src:a', name: 'Neuer Name' }] })
     expect(cardFor(w, 'src:b').exists()).toBe(false)
-    expect(cardFor(w, 'src:a').text()).toContain('Neuer Name')
+    expect(cardFor(w, 'src:a').attributes('aria-label')).toBe('Quelle: Neuer Name')
   })
 })
 

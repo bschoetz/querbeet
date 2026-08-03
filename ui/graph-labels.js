@@ -45,6 +45,12 @@ export const kindLabelGaps = () => kindCodes().filter((code) => !Object.hasOwn(K
 /** `[code, label]` for the kinds the toolbar may offer, in catalogue order. */
 export const addableKindLabels = () => addableKinds().map((code) => [code, kindLabel(code)])
 
+/** What a card calls itself: its kind and the name its author gave it. Two Steps
+ *  of one kind open with the same name, so a caller that needs the label to be
+ *  unique — `ui/EditorPane.vue`, because this is the card's accessible name —
+ *  qualifies it further. */
+export const stepLabel = (kind, name) => `${kindLabel(kind)}: ${name}`
+
 /**
  * What an input slot is called on a card.
  *
@@ -93,6 +99,10 @@ const GERMAN = Object.freeze(
     'graph.unknown_kind': (v, nameOf) =>
       `${step(nameOf, v.id)} hat die unbekannte Step-Art ${q(v.kind)}.`,
     'graph.duplicate_id': (v) => `Die Kennung ${q(v.id)} ist bereits vergeben.`,
+    // Named rather than merely forbidden: the control that removes a Source is in
+    // the other pane, and a refusal that does not say where is a dead end.
+    'graph.source_not_removable': (v, nameOf) =>
+      `${step(nameOf, v.id)} ist eine Quelle — Quellen werden unter „Quellen“ entfernt, nicht im Editor.`,
 
     // The one code whose values carry a name: the node is gone, so there is
     // nothing left to resolve the id against.

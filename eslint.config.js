@@ -22,6 +22,18 @@ import pluginVue from 'eslint-plugin-vue'
 const outward = (...layers) =>
   layers.flatMap((layer) => [`@${layer}`, `@${layer}/*`, `**/${layer}/**`])
 
+// The editor library, which the Editor spike measured and story 5 wired: it is a
+// view over a model that owns the truth, and `adapters/vueflow/` is its one
+// importer. Written once and reused by every block below, because the same ban
+// has to be restated wherever a block declares `no-restricted-imports` — flat
+// config replaces a rule's options rather than merging them, so a later block
+// that forgot this pattern would quietly lift the ban for its own files.
+const vueFlowBan = {
+  group: ['@vue-flow/*'],
+  message:
+    'AD-1: @vue-flow/core is imported in adapters/vueflow/ and nowhere else. It is the GraphView port’s one implementation; everything else receives the canvas as a prop.',
+}
+
 const browserBanned = [
   'window',
   'document',
@@ -81,6 +93,22 @@ export default [
     languageOptions: { globals: { __BUILD_VERSION__: 'readonly' } },
   },
 
+  // ------------------------------------------------- the editor library, anywhere
+  //
+  // Story 5's acceptance says "no `@vue-flow/core` import exists outside
+  // `adapters/vueflow/`", and until this block existed that held by accident of
+  // the code rather than by a rule: `core/` banned the package, `ui/` banned
+  // adapters, and `app/`, `tests/` and every other adapter were unrestricted.
+  // Measured before adding it — a file under `ui/` importing `@vue-flow/core`
+  // linted clean, exit 0.
+  {
+    files: ['**/*.{js,mjs,vue}'],
+    ignores: ['adapters/vueflow/**'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [vueFlowBan] }],
+    },
+  },
+
   // ------------------------------------------------------------------ core/
   {
     files: ['core/**/*.js'],
@@ -103,10 +131,11 @@ export default [
                 'AD-1: no import points from core/ outward. Call through a port in ports/ instead.',
             },
             {
-              group: ['vue', 'vue/*', '@vue/*', '@vue-flow/*', 'echarts', 'echarts/*'],
+              group: ['vue', 'vue/*', '@vue/*', 'echarts', 'echarts/*'],
               message:
                 'AD-2: core/ is framework-free. A framework swap must not become an architectural rewrite.',
             },
+            vueFlowBan,
           ],
         },
       ],
@@ -133,6 +162,7 @@ export default [
               message:
                 'AD-1: ui/ never imports a concrete adapter. Only app/ names one; ui/ receives it through a port.',
             },
+            vueFlowBan,
           ],
         },
       ],

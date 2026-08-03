@@ -51,6 +51,7 @@ export const CODE = Object.freeze({
   unknownStep: 'graph.unknown_step',
   unknownKind: 'graph.unknown_kind',
   duplicateId: 'graph.duplicate_id',
+  sourceNotRemovable: 'graph.source_not_removable',
 
   // reports — what the graph says about itself after a change
   inputLost: 'graph.input_lost',
@@ -104,9 +105,16 @@ export function makeNode(kind, { id, name, x = 0, y = 0, inputs } = {}) {
  */
 export const edgeId = (sourceId, targetId, slot) => `${sourceId}->${targetId}#${slot}`
 
-/** The inverse of `edgeId`, or `null` for an id nothing here minted. */
+/**
+ * The inverse of `edgeId`, or `null` for an id nothing here minted.
+ *
+ * The source group excludes `>` rather than being a second greedy `.*`. Two
+ * greedy groups make `a->b->c#0` ambiguous — it parses as source `a->b` — and
+ * while nothing mints such an id today, this file declares itself the one owner
+ * of the grammar and story 14's loader reads ids out of a file.
+ */
 export function parseEdgeId(id) {
-  const m = /^(.*)->(.*)#(\d+)$/.exec(String(id ?? ''))
+  const m = /^([^>]*)->(.*)#(\d+)$/.exec(String(id ?? ''))
   return m ? { source: m[1], target: m[2], slot: Number(m[3]) } : null
 }
 
@@ -337,8 +345,19 @@ export function contributingTo(graph, resultId = graph.resultId) {
   return seen
 }
 
-/** Steps on no path to the Result Step. Marked, never removed. */
+/**
+ * Steps on no path to the Result Step. Marked, never removed.
+ *
+ * **With no Result Step designated there are no orphans**, and that is a
+ * statement about the question rather than an exemption: "contributes to the
+ * Result" is not yet a question, so nothing can be failing it. Without this, two
+ * freshly loaded Sources each carry „…trägt nicht zum Ergebnis bei." on the first
+ * entry into the Editor, over a state the user cannot act on because there is no
+ * Step to designate yet. `graph.no_result` is what names that state, and it says
+ * so once instead of once per node.
+ */
 export function orphans(graph) {
+  if (!graph.resultId || !findNode(graph, graph.resultId)) return []
   const contributing = contributingTo(graph)
   return graph.nodes.filter((n) => !contributing.has(n.id)).map((n) => n.id)
 }

@@ -16,12 +16,15 @@
 // then turned down: the guard already knows the answer, and a list that offers a
 // cycle only to refuse it is a worse version of the same information.
 
-import { computed } from 'vue'
-import { kindLabel, graphText, SEVERITY, slotLabel } from '@ui/graph-labels.js'
+import { computed, nextTick } from 'vue'
+import { kindLabel, graphText, SEVERITY, slotLabel, stepLabel } from '@ui/graph-labels.js'
 
 const props = defineProps({
   /** A frozen Step out of the graph store's projection: ids and a position. */
   node: { type: Object, required: true },
+  /** The card's accessible name. The pane supplies it because only the pane can
+   *  see whether two Steps would otherwise share one. */
+  label: { type: String, default: null },
   result: { type: Boolean, default: false },
   /** The diagnostics `core/graph` attached to this Step. */
   diagnostics: { type: Array, default: () => [] },
@@ -44,6 +47,28 @@ const emit = defineEmits([
 
 const canBeResult = computed(() => props.node.kind !== 'source')
 const takesInputs = computed(() => props.node.kind !== 'source')
+const cardLabel = computed(() => props.label ?? stepLabel(props.node.kind, props.node.name))
+
+/**
+ * Rename, and put the field back to what the model holds afterwards.
+ *
+ * The write-back is the point. `renameStep` refuses an empty name and keeps the
+ * old one, so the model's `name` is unchanged, so Vue sees an unchanged prop and
+ * never patches the DOM — and the field goes on showing the empty text while the
+ * refusal beside it says „der alte bleibt stehen". That is the exact state the
+ * refusal exists to prevent, one layer out. It also puts a trimmed name back
+ * where the user typed spaces.
+ *
+ * On the next tick, because the command runs synchronously in the parent's
+ * handler and the projection it produces reaches this component one render later.
+ */
+const onRename = (event) => {
+  const field = event.target
+  emit('rename', field.value)
+  nextTick(() => {
+    field.value = props.node.name
+  })
+}
 
 const marks = computed(() =>
   props.diagnostics.map((d) => ({
@@ -83,7 +108,7 @@ const onSlot = (slot, value) => {
        every control inside repeats the names of the Steps around it. -->
   <div
     role="group"
-    :aria-label="`${kindLabel(node.kind)}: ${node.name}`"
+    :aria-label="cardLabel"
     data-testid="step-card"
     :data-node="node.id"
     class="w-64 rounded border bg-white px-3 py-2 text-sm shadow-sm"
@@ -97,7 +122,7 @@ const onSlot = (slot, value) => {
         :value="node.name"
         aria-label="Name"
         class="w-full min-w-0 rounded border border-transparent px-1 py-0.5 font-semibold hover:border-slate-300 focus:border-slate-400"
-        @change="emit('rename', $event.target.value)"
+        @change="onRename"
       >
       <button
         v-if="canBeResult"

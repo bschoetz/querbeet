@@ -176,6 +176,51 @@ describe('refusals leave the graph byte-identical', () => {
   })
 })
 
+describe('removing', () => {
+  it('refuses a Source, because the Sources pane owns that list', () => {
+    // Without the refusal the node goes, its consumers go broken, and the next
+    // syncSources puts the node *and* — through the dangling slot references
+    // left in place — its edges straight back. Half a removal that undoes itself.
+    const { store, union } = seeded()
+    const result = store.removeStep('src:q2')
+
+    expect(result.ok).toBe(false)
+    expect(codesOf(result)).toEqual([CODE.sourceNotRemovable])
+    expect(store.get('src:q2')).not.toBeNull()
+    expect(store.get(union).inputs).toEqual(['src:q1', 'src:q2'])
+    expect(marks(store)).toEqual([])
+  })
+
+  it('takes a Step, and remembers the name for the slot still pointing at it', () => {
+    const { store, union, filter } = seeded()
+    store.removeStep(union)
+
+    expect(store.get(union)).toBeNull()
+    // The default name is the id; `ui/` passes a German one on `addStep`.
+    expect(store.lostName(union)).toBe(union)
+    expect(store.get(filter).inputs).toEqual([union])
+  })
+
+  it('has no name for an id nothing ever removed', () => {
+    const { store } = seeded()
+    expect(store.lostName('src:q1')).toBeNull()
+    expect(store.lostName('nope')).toBeNull()
+  })
+})
+
+describe('the guard, asked without changing anything', () => {
+  it('answers the same as the command, and mutates nothing', () => {
+    const { store, union, filter } = seeded()
+    const before = state(store)
+
+    const refusedResult = store.check(filter, union, 0)
+    expect(refusedResult.ok).toBe(false)
+    expect(codesOf(refusedResult)).toEqual([CODE.cycle])
+    expect(store.check('src:q2', union, 0)).toMatchObject({ ok: true })
+    expect(state(store)).toBe(before)
+  })
+})
+
 describe('connecting through the store', () => {
   it('reports the replacement when the slot was occupied', () => {
     const { store, union } = seeded()
@@ -282,6 +327,30 @@ describe('syncSources', () => {
     expect(() => store.syncSources('nope')).toThrow(TypeError)
     expect(() => store.syncSources([{ id: '', name: 'x' }])).toThrow(TypeError)
     expect(state(store)).toBe(before)
+  })
+
+  it('returns the refusals it collected rather than a result derived from nothing', () => {
+    // It is the one command that issues more than one mutation, which is why it
+    // was the one that could report success over a refusal.
+    const { store } = seeded()
+    const result = store.syncSources([
+      { id: 'src:q1', name: '' },
+      { id: 'src:q2', name: 'Umsatz Q2' },
+    ])
+
+    expect(result.ok).toBe(false)
+    expect(codesOf(result)).toEqual([CODE.emptyName])
+    expect(store.get('src:q1').name).toBe('Umsatz Q1')
+  })
+
+  it('reports nothing when nothing was refused', () => {
+    const { store } = seeded()
+    const result = store.syncSources([
+      { id: 'src:q1', name: 'Umsatz Januar' },
+      { id: 'src:q2', name: 'Umsatz Q2' },
+    ])
+    expect(result).toMatchObject({ ok: true })
+    expect(codesOf(result)).toEqual([])
   })
 
   it('is idempotent — running it twice changes nothing', () => {

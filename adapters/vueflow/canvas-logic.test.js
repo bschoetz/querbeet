@@ -12,6 +12,7 @@ import {
   createRemovalRouter,
   edgeRemovalAt,
   handleOfSlot,
+  isTypingTarget,
   panShortfall,
   positionChanges,
   removalPlan,
@@ -234,7 +235,7 @@ describe('the shortfall pan', () => {
 
 describe('the focus gate', () => {
   it('lets a keyboard focus pull the canvas', () => {
-    expect(createFocusGate().claim()).toBe(true)
+    expect(createFocusGate().allows()).toBe(true)
   })
 
   it('refuses the focus a pointer gesture caused', () => {
@@ -242,23 +243,43 @@ describe('the focus gate', () => {
     // cursor between mousedown and mouseup, so the click landed on the pane.
     const gate = createFocusGate()
     gate.pointerDown()
-    expect(gate.claim()).toBe(false)
+    expect(gate.allows()).toBe(false)
   })
 
-  it('spends the veto, so a pointerup the canvas never sees cannot wedge it shut', () => {
-    // The library drags the pane from a listener this element never sees the
-    // release of. A veto that only a matching pointerup could lift would kill
-    // the focus pull for the rest of the session, for keyboard users only.
-    const gate = createFocusGate()
-    gate.pointerDown()
-    gate.claim()
-    expect(gate.claim()).toBe(true)
-  })
-
-  it('lifts the veto on a release it does see', () => {
+  it('survives a pointer gesture that produced no focus event at all', () => {
+    // The path an earlier version got wrong by spending the veto on read: a drag
+    // on the pane background focuses nothing, so nothing spends it, and the next
+    // *keyboard* focus was silently not pulled into view. The host listens for
+    // `pointerup` on the window instead, so the release always arrives.
     const gate = createFocusGate()
     gate.pointerDown()
     gate.pointerUp()
-    expect(gate.claim()).toBe(true)
+    expect(gate.allows()).toBe(true)
+  })
+
+  it('does not spend the veto on being read, so one gesture cannot veto two', () => {
+    const gate = createFocusGate()
+    gate.pointerDown()
+    expect(gate.allows()).toBe(false)
+    expect(gate.allows()).toBe(false)
+    gate.pointerUp()
+    expect(gate.allows()).toBe(true)
+  })
+})
+
+describe('what the Delete key belongs to', () => {
+  it('leaves the key to whatever the user is typing in', () => {
+    for (const tagName of ['INPUT', 'SELECT', 'TEXTAREA']) {
+      expect(isTypingTarget({ tagName }), tagName).toBe(true)
+    }
+    expect(isTypingTarget({ tagName: 'DIV', isContentEditable: true })).toBe(true)
+  })
+
+  it('claims it everywhere else on the canvas — a button is not a text field', () => {
+    // The library's own guard covers INPUT, SELECT, TEXTAREA, contenteditable and
+    // `.nokey` — not BUTTON — which is why the key is owned by the pane here.
+    expect(isTypingTarget({ tagName: 'BUTTON' })).toBe(false)
+    expect(isTypingTarget({ tagName: 'DIV', isContentEditable: false })).toBe(false)
+    expect(isTypingTarget(null)).toBe(false)
   })
 })

@@ -98,4 +98,13 @@ const isValid = (connection) => {
   stroke-dasharray: 4 3;
   opacity: 0.55;
 }
+
+/* A Step on no path to the Result Step, marked as such on the canvas and not
+ * only in its own sentence — CAP-12 asks for it to be *visibly* marked. Styled
+ * here rather than from a utility class because Vue Flow's stylesheet is
+ * unlayered and outranks every layered rule Tailwind emits. */
+.vue-flow__node.qb-node-orphan .qb-step > * {
+  opacity: 0.72;
+  border-style: dashed;
+}
 </style>

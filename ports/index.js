@@ -139,11 +139,22 @@
  * a German word: the view renders a per-node body from a scoped slot the host
  * supplies, so no prose reaches the adapter (AD-13).
  *
- * **What the host receives.** Three change reports, each already interpreted:
+ * **What the host receives.** Five reports, each already interpreted — three
+ * about what changed and two about the pointer gesture that connects:
  *
- *   move        (id, x, y)          a Step was dragged or arrow-keyed
- *   remove      (id)                a Step was deleted
- *   disconnect  (target, slot)      an edge was deleted *by the user*
+ *   move        (id, x, y)                 a Step was dragged or arrow-keyed
+ *   remove      (id)                       a Step was deleted
+ *   disconnect  (target, slot)             an edge was deleted *by the user*
+ *   connect     (source, target, slot)     a drop the guard accepted
+ *   refused     (source, target, slot)     a drop the guard turned down
+ *
+ * `refused` exists because a refused drop never reaches `connect`, and the
+ * gesture is where the user finds out. It carries the connection that was
+ * attempted and no reason: the host owns the refusal text, asks its own guard
+ * again to get it, and there is therefore one refusal from one place rather than
+ * two sentences that could differ. It is reported only where the gesture actually
+ * ended on a handle — the guard is asked of every handle the pointer passes over,
+ * so a drag abandoned over empty canvas is not a refusal anybody made.
  *
  * **A removal reports its own target and slot.** No host parses an edge id to
  * find out which slot was emptied — the library's remove change already carries

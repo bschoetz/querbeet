@@ -5,6 +5,7 @@
 // happy-dom, `--project ui` (AD-27). Nothing here needs geometry.
 
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { createGraphStore } from '@core/graph/graph-store.js'
 import { graphLabelGaps, kindLabelGaps } from '@ui/graph-labels.js'
@@ -50,6 +51,41 @@ describe('the card', () => {
     expect(w.find('input[aria-label="Name"]').element.value).toBe('Halbjahr')
   })
 
+  it('puts the field back to what the model holds when a rename is refused', async () => {
+    // The state the refusal exists to prevent, one layer out: the model keeps the
+    // old name, so Vue sees an unchanged prop and never patches the DOM, and the
+    // field goes on showing text the model does not hold while the refusal beside
+    // it says „der alte bleibt stehen".
+    const w = render()
+    const field = w.find('input[aria-label="Name"]')
+
+    await field.setValue('')
+    expect(w.emitted('rename')).toEqual([['']])
+    await nextTick()
+
+    expect(field.element.value).toBe('Halbjahr')
+  })
+
+  it('puts the trimmed name back where the user typed spaces', async () => {
+    const w = render({ node: step({ name: 'Halbjahr' }) })
+    const field = w.find('input[aria-label="Name"]')
+
+    await field.setValue('  Halbjahr  ')
+    await nextTick()
+
+    // The prop did not change, so this is the same write-back doing the work.
+    expect(field.element.value).toBe('Halbjahr')
+  })
+
+  it('takes its accessible name from the pane, which is the only place that can see a clash', async () => {
+    const w = render({ label: 'Filter: Filter (s7)' })
+    expect(w.get('[data-testid="step-card"]').attributes('aria-label')).toBe('Filter: Filter (s7)')
+
+    // …and falls back to kind and name where nothing supplied one.
+    const bare = render()
+    expect(bare.get('[data-testid="step-card"]').attributes('aria-label')).toBe('Union: Halbjahr')
+  })
+
   it('offers the Result badge to a Step and never to a Source', () => {
     expect(render().find('[aria-label="Als Ergebnis-Step setzen"]').exists()).toBe(true)
     const source = render({ node: step({ id: 'src:a', kind: 'source', inputs: [] }) })
@@ -63,7 +99,7 @@ describe('the card', () => {
     expect(w.text()).not.toContain('Eingang hinzufügen')
   })
 
-  it('names a Join s two inputs rather than numbering them', () => {
+  it("names a Join's two inputs rather than numbering them", () => {
     const w = render({ node: step({ id: 'j1', kind: 'join', inputs: [null, null] }) })
     expect(slotSelects(w).map((s) => s.attributes('aria-label'))).toEqual(['Links', 'Rechts'])
   })
@@ -169,7 +205,7 @@ describe('the slot controls', () => {
     expect(join.emitted('remove-slot')).toEqual([[0]])
   })
 
-  it('reach the store s real refusals, which is what those buttons are for', () => {
+  it("reach the store's real refusals, which is what those buttons are for", () => {
     // Driven against the actual commands rather than against a stub, so the two
     // matrix rows are pinned to what a user pressing the button would get.
     const store = createGraphStore()

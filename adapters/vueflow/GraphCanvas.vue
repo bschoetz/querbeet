@@ -26,7 +26,7 @@
 // No German word appears in this file. The per-node body arrives as a scoped slot
 // from `ui/`.
 
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import '@vue-flow/core/dist/style.css'
 
@@ -36,6 +36,7 @@ import {
   createFocusGate,
   createRemovalRouter,
   handleOfSlot,
+  isTypingTarget,
   panShortfall,
   positionChanges,
   slotOfHandle,
@@ -67,6 +68,8 @@ const {
   applyEdgeChanges,
   fitView,
   panBy,
+  getSelectedNodes,
+  getSelectedEdges,
 } = vf
 
 // ---------------------------------------------------------------- projection
@@ -76,6 +79,7 @@ const flowNodes = computed(() =>
     id: node.id,
     type: 'step',
     position: { x: node.x, y: node.y },
+    class: node.dimmed ? 'qb-node-orphan' : '',
     data: { node },
   })),
 )
@@ -155,10 +159,67 @@ onConnect((connection) => {
   emit('connect', connection.source, connection.target, slot)
 })
 
-onConnectEnd(() => {
-  if (!connected && refusedAt) emit('refused', refusedAt.source, refusedAt.target, refusedAt.slot)
+// A refusal is reported only where the gesture actually ended on a handle. The
+// guard is asked of every handle the pointer passes over, so surfacing the last
+// refused one on any release would put „…würde einen Kreis schließen" on screen
+// for a drag the user abandoned over empty canvas.
+onConnectEnd((event) => {
+  const onHandle = !!event?.target?.closest?.('.vue-flow__handle')
+  if (!connected && refusedAt && onHandle) {
+    emit('refused', refusedAt.source, refusedAt.target, refusedAt.slot)
+  }
   refusedAt = null
 })
+
+// ---------------------------------------------------------------- the Delete key
+//
+// The library's own `delete-key-code` is disabled and the key is owned here, and
+// the reason is scope rather than taste. `useKeyPress` listens on the **document**
+// and the watcher calls `removeNodes(getSelectedNodes.value)` unconditionally,
+// while its guard (`isInputDOMNode`) covers INPUT, SELECT, TEXTAREA,
+// contenteditable and `.nokey` — **not BUTTON**. So with a Step selected, Delete
+// pressed on the toolbar's `+ Filter`, on the Ergebnis badge, on a view tab, or
+// anywhere in the Sources pane this app keeps mounted would destroy the Step.
+//
+// The library's escape hatch is a `.nokey` class on everything outside, which
+// puts the rule on every future control in the app and fails silently when one
+// forgets it. Owning the key here puts it on the element the key belongs to: a
+// selected Step is only ever selected from inside this pane, and focus is inside
+// it when the key is pressed.
+/** Anything that takes focus by itself when the pointer lands on it. */
+const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex]'
+
+/**
+ * Keep focus inside the pane, because the key is scoped to it.
+ *
+ * Measured: clicking an edge *selects* it and focuses nothing — the interaction
+ * path is an SVG element and the edge group carries no `tabindex` — so
+ * `document.activeElement` stays `BODY` and a pane-scoped Delete would never see
+ * the key. A node wrapper and every control in a card focus themselves, so this
+ * only ever claims focus where nothing else would.
+ */
+function onPointerDown(event) {
+  focusGate.pointerDown()
+  if (!event.target?.closest?.(FOCUSABLE)) pane.value?.focus({ preventScroll: true })
+}
+
+function onKeyDown(event) {
+  if (event.key !== 'Delete' || isTypingTarget(event.target)) return
+  const removedNodes = getSelectedNodes.value.map((node) => ({ id: node.id, type: 'remove' }))
+  const removedEdges = getSelectedEdges.value.map((edge) => ({
+    id: edge.id,
+    source: edge.source,
+    target: edge.target,
+    targetHandle: edge.targetHandle,
+    type: 'remove',
+  }))
+  if (removedNodes.length === 0 && removedEdges.length === 0) return
+  event.preventDefault()
+  // Through the same router, in the same order the library reports them, so the
+  // dragged-along edges of a removed node are absorbed exactly as before.
+  router.edgeRemovals(removedEdges)
+  router.nodeRemovals(removedNodes)
+}
 
 // ------------------------------------------------------- focus follows view
 
@@ -175,10 +236,15 @@ function bringIntoView(element) {
 }
 
 function onFocusIn(event) {
-  if (!focusGate.claim()) return
+  if (!focusGate.allows()) return
   const element = event.target?.closest?.('.vue-flow__node')
   if (element) bringIntoView(element)
 }
+
+// On the window, not on the pane: a gesture that begins here can end anywhere,
+// and a veto that only a release over this element could lift would leave the
+// next *keyboard* focus silently unpulled.
+const releasePointer = () => focusGate.pointerUp()
 
 const elementFor = (id) => pane.value?.querySelector(`.vue-flow__node[data-id="${id}"]`) ?? null
 
@@ -200,7 +266,14 @@ watch(
   { immediate: true },
 )
 
+/** Whether the initial fit has run. Reflected into the DOM so a test can wait on
+ *  the condition rather than on a duration — every geometry assertion is
+ *  meaningless against a viewport that is still moving. */
+const settled = ref(false)
+
 onMounted(async () => {
+  window.addEventListener('pointerup', releasePointer)
+  window.addEventListener('pointercancel', releasePointer)
   await nextTick()
   // Two frames: the projection is pushed on `flush: 'post'` and the nodes are
   // measured by a ResizeObserver after that, so a fit before both has nothing to
@@ -211,6 +284,12 @@ onMounted(async () => {
   // the pane — the fit would have optimised for the emptiest the graph ever is.
   fitView({ padding: 0.2, maxZoom: 1 })
   fitted = true
+  settled.value = true
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('pointerup', releasePointer)
+  window.removeEventListener('pointercancel', releasePointer)
 })
 </script>
 
@@ -219,16 +298,19 @@ onMounted(async () => {
     ref="pane"
     class="qb-canvas"
     data-testid="editor-canvas"
+    :data-fitted="settled ? 'true' : 'false'"
+    tabindex="-1"
     @focusin="onFocusIn"
-    @pointerdown="focusGate.pointerDown()"
-    @pointerup="focusGate.pointerUp()"
-    @pointercancel="focusGate.pointerUp()"
+    @pointerdown="onPointerDown"
+    @keydown="onKeyDown"
   >
-    <!-- Delete rather than Backspace: `useKeyPress` ignores presses inside
-         inputs, but Backspace in a name field is far too easy to mean. -->
+    <!-- `:delete-key-code="null"` disables the library's document-level handler;
+         the key is owned by `onKeyDown` above, scoped to this pane. Delete rather
+         than Backspace, because Backspace in a name field is far too easy to
+         mean. -->
     <VueFlow
       :apply-default="false"
-      delete-key-code="Delete"
+      :delete-key-code="null"
       :min-zoom="0.2"
       :max-zoom="2"
     >

@@ -190,13 +190,14 @@ export function panShortfall(node, pane, margin = VIEW_MARGIN) {
  * and the browser dispatched the click on the pane instead of on the button — so
  * the controls furthest from the centre silently did nothing.
  *
- * `claim()` **spends** the veto, and the side effect is the point rather than an
- * accident. A gesture that begins on the canvas can end anywhere — the library
- * drags the pane from a listener the canvas element never sees the `pointerup`
- * of — so a veto that only a matching `pointerup` could lift would wedge the
- * focus pull shut for the rest of the session, silently and for keyboard users
- * only. One pointer gesture produces exactly one focus event, so one veto is
- * exactly what it is owed.
+ * **Reading the veto does not spend it, and the release is what lifts it.** An
+ * earlier version consumed the veto on read, so that a `pointerup` the canvas
+ * element never saw could not wedge the pull shut — but a pointer gesture that
+ * produces *no* focus event at all (a drag on the pane background, a click that
+ * lands on nothing) then left the veto standing, and the next **keyboard** focus
+ * was silently not pulled into view. That is the same failure one gesture later,
+ * and on the users it was meant to protect. The host listens for `pointerup` on
+ * the window instead, so the release is seen wherever it lands.
  */
 export function createFocusGate() {
   let pointer = false
@@ -207,10 +208,18 @@ export function createFocusGate() {
     pointerUp() {
       pointer = false
     },
-    claim() {
-      const allowed = !pointer
-      pointer = false
-      return allowed
+    allows() {
+      return !pointer
     },
   }
 }
+
+/** Tags whose own keyboard handling owns the key. */
+const TYPING_TAGS = new Set(['INPUT', 'SELECT', 'TEXTAREA'])
+
+/**
+ * Whether a key press belongs to what the user is typing in rather than to the
+ * canvas. Delete inside a name field means a character, never a Step.
+ */
+export const isTypingTarget = (element) =>
+  !!element && (TYPING_TAGS.has(element.tagName) || element.isContentEditable === true)
