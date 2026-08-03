@@ -212,10 +212,14 @@ const TIME_SEPARATOR = ':'
  * ISO 8601**: lowercase `t` and `z`, a comma decimal, a two-digit offset,
  * end-of-day `24:00` and the basic format `20251231T1430` are all in the
  * standard. Naming a strict subset after it puts the same lie in the reading
- * select that spelling it `yyyy-MM-dd'T'HH:mm:ss` would. Week dates
- * (`2025-W01-1`) and ordinal dates (`2025-001`) are the residue and stay out
- * with an entry: both need a calendar conversion, and this story converts
- * nothing.
+ * select that spelling it `yyyy-MM-dd'T'HH:mm:ss` would. **Week dates
+ * (`2025-W01-1`) are not residue — they were cut before this story**, with the
+ * reason that a week is a period label rather than an instant, so it belongs to
+ * whatever story first groups by period. That decision stands and is not
+ * reopened by the sentence above; the standard is wide, the scope is not.
+ * Ordinal dates (`2025-001`) were never weighed either way and are the one real
+ * residue, with an entry: they are a day count into a year, which this file
+ * already knows how to bound, but nothing here converts one.
  */
 const DATETIME_PATTERNS = Object.freeze([
   { pattern: 'ISO 8601', date: { separator: '-', order: 'ymd' }, iso: true },
