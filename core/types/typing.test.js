@@ -18,6 +18,7 @@ import {
   bestFormat,
   candidatesFor,
   canonicalTypeGaps,
+  dateCandidates,
   detectColumn,
   detectTable,
   expandTwoDigitYear,
@@ -520,12 +521,17 @@ describe('piece 2 — datetime, and the two-digit year', () => {
   it('refuses an impossible instant as firmly as an impossible day', () => {
     for (const cell of [
       '2025-02-30T12:00:00Z',
-      '2025-12-31T24:00:00Z',
+      '2025-12-31T24:01:00Z', // hour 24 is the end of the day and nothing else
+      '2025-12-31T24:00:01Z',
+      '2025-12-31T24:00:00.001Z',
       '2025-12-31T12:60:00Z',
       '2025-12-31T12:00:60Z',
       '2025-12-31T12:00:00+25:00',
       '2025-12-31T12:00:00+02:99', // an offset minute is bounded too, not only the hour
       '2025-12-31T12:00:00+0299',
+      '2025-12-31T12:00:00+14:01', // and the offset itself is bounded at ±14:00
+      '2025-12-31T12:00:00-14:01',
+      '2025-12-31T12:00:00+23:59',
       '2025-12-31T12:00:00.1234567890Z',
       '2025-12-31 T12:00',
     ]) {
@@ -639,7 +645,60 @@ describe('piece 2 — datetime, and the two-digit year', () => {
     }
   })
 
-  it('is never narrower behind a date than standing alone, and wider by exactly two things', () => {
+  it('accepts the end of the day, and only where the clock is all zeros', () => {
+    // `24:00` is legal ISO 8601 and means the next day's midnight. It is the
+    // *datetime* clock alone that takes it: see the case below for `24:00`
+    // standing alone, which is duration evidence exactly as before.
+    const r = detectColumn(['2025-12-31T24:00:00Z', '2025-06-30T24:00Z'])
+
+    expect(r).toMatchObject({ type: DATETIME, verdict: 'settled' })
+    expect(r.counts.parsed).toBe(2)
+
+    // A zero fraction is still a zero clock; anything else is not the end of a
+    // day and is not readable.
+    expect(detectColumn(['2025-12-31T24:00:00.000Z', '2025-06-30T24:00:00Z']).counts.parsed).toBe(2)
+    expect(detectColumn(['2025-12-31 24:00', '01.03.2026 24:00']).counts.unparsed).toBe(0)
+  })
+
+  it('bounds the zone offset at ±14:00, where the widest zone actually is', () => {
+    // +14:00 is the Line Islands and −12:00 is Baker Island, so everything past
+    // ±14:00 is a typo — and read unbounded it is a confident instant. The edge
+    // itself reads, in both directions.
+    for (const offset of ['+14:00', '-14:00', '+1400', '+14', 'Z']) {
+      expect([offset, detectColumn([`2025-12-31T14:30:00${offset}`]).type]).toEqual([
+        offset,
+        DATETIME,
+      ])
+    }
+    for (const offset of ['+14:01', '-14:01', '+1401', '+23:59', '+15']) {
+      expect([offset, detectColumn([`2025-12-31T14:30:00${offset}`]).type]).toEqual([offset, TEXT])
+    }
+  })
+
+  it('reads ISO 8601 basic format, and leaves eight bare digits a number', () => {
+    // `20251231T1430` is the same standard with the separators left out. It is
+    // scoped to the form carrying `T`: a bare `20251231` is an order number's
+    // shape, and turning those into dates is this story's own defect one
+    // direction over.
+    const r = detectColumn(['20251231T1430', '20251230T0915'])
+
+    expect(r).toMatchObject({ type: DATETIME, verdict: 'settled' })
+    expect(r.format.pattern).toBe('ISO 8601')
+    expect(r.counts.parsed).toBe(2)
+
+    // Seconds, fraction and offset are optional exactly as in the extended form.
+    expect(detectColumn(['20251231T143000', '20251230T091500']).type).toBe(DATETIME)
+    expect(detectColumn(['20251231T143000.461Z', '20251230T091500,1+0200']).type).toBe(DATETIME)
+
+    // Eight digits with nothing behind them are a number, and stay one.
+    expect(detectColumn(['20251231', '20251230']).type).toBe(NUMBER)
+
+    // The standard does not mix basic and extended in one representation.
+    expect(detectColumn(['20251231T14:30', '20251230T09:15']).type).toBe(TEXT)
+    expect(detectColumn(['2025-12-31T1430', '2025-12-30T0915']).type).toBe(TEXT)
+  })
+
+  it('is never narrower behind a date than standing alone, and wider by exactly three things', () => {
     // The invariant, in both directions — the previous version of this case
     // pinned only the direction in which it held, which is coverage-shaped and
     // false. The Boundaries say "never narrower", and deliberately *wider*: a
@@ -655,17 +714,26 @@ describe('piece 2 — datetime, and the two-digit year', () => {
     for (const clock of ['08:15', '8:15', '23:59', '00:00', '08:15:30', '9:05:00']) {
       expect([clock, standingAlone(clock), behindADate(clock)]).toEqual([clock, true, true])
     }
-    for (const clock of ['12:60', '24:00', '1:5', '08:15:60', '8', '25:00']) {
+    for (const clock of ['12:60', '1:5', '08:15:60', '8', '25:00']) {
       expect([clock, standingAlone(clock), behindADate(clock)]).toEqual([clock, false, false])
     }
 
-    // Wider by exactly two things, and no more. A fraction and a zone read
-    // behind a date and are text standing alone; a tenth fractional digit and an
-    // impossible offset are refused in both places.
-    for (const clock of ['08:15:30.123', '08:15:30,123456789', '08:15Z', '08:15:30+02:00']) {
+    // Wider by exactly three things, and no more: a fraction, a zone, and
+    // end-of-day `24:00`. All three read behind a date and are text standing
+    // alone. `24:00` is the one this amendment added, and it is why the count in
+    // this case's name went from two to three — the invariant follows the
+    // change or the change is wrong.
+    for (const clock of [
+      '08:15:30.123',
+      '08:15:30,123456789',
+      '08:15Z',
+      '08:15:30+02:00',
+      '24:00',
+      '24:00:00',
+    ]) {
       expect([clock, standingAlone(clock), behindADate(clock)]).toEqual([clock, false, true])
     }
-    for (const clock of ['08:15:30.1234567890', '08:15:30+02:99']) {
+    for (const clock of ['08:15:30.1234567890', '08:15:30+02:99', '24:01', '24:00:01']) {
       expect([clock, standingAlone(clock), behindADate(clock)]).toEqual([clock, false, false])
     }
   })
@@ -688,9 +756,207 @@ describe('piece 2 — datetime, and the two-digit year', () => {
 
     expect(r.type).toBe(DATE)
     expect(r.format.pattern).toBe('dd.MM.yy')
-    expect(r.verdict).toBe('settled')
+    // Decisive rather than settled since the mdy mirror joined the list: `31`
+    // and `15` are no months, and that is a count worth naming — exactly what
+    // the four-digit twin has always reported.
+    expect(r.verdict).toBe('decisive')
+    expect(r.evidence).toEqual({
+      alternatives: ['dd.MM.yy', 'MM.dd.yy'],
+      decidedBy: 2,
+      contested: 0,
+    })
     // Strict widths still: the two patterns cannot blur into each other.
     expect(detectColumn(['31.12.25', '31.12.2025']).type).toBe(TEXT)
+  })
+
+  it('applies the century rule on every separator and in both part orders', () => {
+    // Six four-digit patterns against one two-digit one was the century rule
+    // reaching German dot dates and nothing else — a separator deciding whether
+    // a rule applies. The symmetry is the rule.
+    const cases = [
+      [['31.12.25', '01.03.26'], 'dd.MM.yy'],
+      [['31/12/25', '01/03/26'], 'dd/MM/yy'],
+      [['31-12-25', '01-03-26'], 'dd-MM-yy'],
+      [['12.31.25', '03.04.25'], 'MM.dd.yy'],
+      [['12/31/25', '03/04/25'], 'MM/dd/yy'],
+      [['12-31-25', '03-04-25'], 'MM-dd-yy'],
+    ]
+
+    // Type, reading and counts only — the *verdict* differs between the two
+    // orders, because `dmy` is the declared preference and the mdy mirrors ask
+    // the kind question instead of settling. That is the next test's, not this
+    // one's: what this one pins is that the century rule reaches all six.
+    for (const [cells, pattern] of cases) {
+      const r = detectColumn(cells)
+      expect([cells[0], r.type, r.format.pattern, r.counts.parsed]).toEqual([
+        cells[0],
+        DATE,
+        pattern,
+        2,
+      ])
+    }
+
+    // The century pivot itself is the same rule wherever it applies.
+    expect(detectColumn(['29.02.28', '01.01.28']).type).toBe(DATE) // 2028 is a leap year
+    expect(detectColumn(['29/02/30', '01/01/30', '02/02/30']).type).toBe(TEXT) // 1930 is not
+  })
+
+  it('prefers `dmy` for a two-digit year, and asks about the order it did not prefer', () => {
+    // `31.12.25` and `01.13.03` are the same shape once both orders are on the
+    // list: each a date under exactly one of them and nonsense under the other.
+    // Nothing in the values tells a German date from a padded part number, so
+    // the tie-break is a declared preference — `dmy` — exactly as the
+    // cross-kind rule is the declaration order. The dmy mirrors settle their
+    // columns; a column whose only date reading is an mdy mirror is the kind
+    // question, and the person answers it.
+    for (const cells of [
+      ['31.12.25', '01.03.26'],
+      ['31/12/25', '01/03/26'],
+      ['31-12-25', '01-03-26'],
+    ]) {
+      expect([cells[0], detectColumn(cells).verdict]).toEqual([cells[0], 'decisive'])
+    }
+
+    for (const [cells, pattern] of [
+      [['12.31.25', '03.04.25'], 'MM.dd.yy'],
+      [['12/31/25', '03/04/25'], 'MM/dd/yy'],
+      [['12-31-25', '03-04-25'], 'MM-dd-yy'],
+    ]) {
+      const r = detectColumn(cells)
+      // The same kind question the version-number column raises, down to the
+      // evidence: the reading is still named and still counted, because it is
+      // what the column *would* be read as, and `over: 'kind'` is what keeps
+      // the reading select suppressed while the type question is open.
+      expect([cells[0], r.type, r.format.pattern, r.verdict, r.counts.parsed]).toEqual([
+        cells[0],
+        DATE,
+        pattern,
+        'unresolved',
+        2,
+      ])
+      expect(r.evidence).toEqual({ over: 'kind', alternatives: [DATE, TEXT] })
+      const table = detectTable({ columns: [column('Datum', cells)] })
+      expect(unresolvedColumns(table)).toEqual(['Datum'])
+    }
+
+    // The gate opens on the dmy side, and only there.
+    expect(unresolvedColumns(detectTable({ columns: [column('Datum', ['31.12.25', '01.03.26'])] })))
+      .toEqual([])
+  })
+
+  it('declares the preference on the candidate list, where a reader of it can see it', () => {
+    // Not a string comparison inside `shortYearVerdict`: the preference is a
+    // property of the same list that already encodes declaration order as a
+    // rule, so moving it is one edit to `DATE_PATTERNS` and none to the
+    // function that reads it. This test follows the list rather than repeating
+    // it, which is what makes it fail if the flag moves without the rule.
+    const shortYear = dateCandidates().filter((c) => c.shortYear)
+
+    expect(shortYear.filter((c) => c.preferred).map((c) => c.pattern)).toEqual([
+      'dd.MM.yy',
+      'dd/MM/yy',
+      'dd-MM-yy',
+    ])
+    expect(shortYear.filter((c) => c.preferred).every((c) => c.order === 'dmy')).toBe(true)
+    expect(dateCandidates().filter((c) => c.preferred && !c.shortYear)).toEqual([])
+
+    // And the flag is the rule, candidate for candidate: a column whose one
+    // day-past-twelve value reads only under this pattern settles iff the
+    // pattern is the preferred one.
+    for (const candidate of shortYear) {
+      const { separator, order } = candidate
+      const s = (a, b, c) => `${a}${separator}${b}${separator}${c}`
+      const cells =
+        order === 'dmy'
+          ? [s('31', '12', '25'), s('01', '03', '26')]
+          : [s('12', '31', '25'), s('03', '04', '25')]
+
+      expect([candidate.pattern, detectColumn(cells).format.pattern]).toEqual([
+        candidate.pattern,
+        candidate.pattern,
+      ])
+      expect([candidate.pattern, detectColumn(cells).verdict]).toEqual([
+        candidate.pattern,
+        candidate.preferred ? 'decisive' : 'unresolved',
+      ])
+    }
+  })
+
+  it('settles a two-digit column on one click once the kind question is answered', () => {
+    // The preference makes the column ask *one* question, not two. `12/31/25`
+    // reads 2 of 2 under `MM/dd/yy` and 1 of 2 under `dd/MM/yy`, so the
+    // ordering question the four-digit twin asks answers itself here — and a
+    // user who chose `Datum` must not be handed a reading select afterwards for
+    // a question the column has already settled.
+    for (const [cells, pattern] of [
+      [['12/31/25', '03/04/25'], 'MM/dd/yy'],
+      [['12.31.25', '03.04.25'], 'MM.dd.yy'],
+      [['12-31-25', '03-04-25'], 'MM-dd-yy'],
+      [['01.13.03', '02.14.04', '03.15.05'], 'MM.dd.yy'],
+    ]) {
+      const format = bestFormat(cells, DATE)
+      expect([cells[0], format?.pattern ?? null]).toEqual([cells[0], pattern])
+
+      const chosen = scoreColumn(cells, { type: DATE, format })
+      expect([cells[0], chosen.verdict, chosen.counts.parsed]).toEqual([
+        cells[0],
+        'settled',
+        cells.length,
+      ])
+    }
+
+    // The genuine tie is untouched and still costs two answers: nothing in
+    // `03.04.25` beside `05.06.25` reads under one order and not the other.
+    const tie = ['03.04.25', '05.06.25']
+    expect(bestFormat(tie, DATE)).toBeNull()
+    expect(scoreColumn(tie, { type: DATE, format: bestFormat(tie, DATE) })).toMatchObject({
+      verdict: 'unresolved',
+      evidence: { alternatives: ['dd.MM.yy', 'MM.dd.yy'] },
+    })
+  })
+
+  it('settles a column as text before the preference is consulted at all', () => {
+    // The precedence is explicit and is the one thing that must not be
+    // reordered: a triple that reads as a date under *no* candidate is a
+    // version number whichever order was declared preferred, so it settles the
+    // column as text rather than raising the question the preference raises.
+    expect(detectColumn(['01.02.03', '01.32.03', '04.05.06'])).toMatchObject({
+      type: TEXT,
+      verdict: 'settled',
+    })
+
+    // …including where the winning candidate is the *non*-preferred one, which
+    // is the case the ordering of the three tests decides. Nineteen values that
+    // only `MM.dd.yy` reads, and one `01.32.03` that nothing reads: text.
+    const mdy = [...Array.from({ length: 19 }, () => '01.13.03'), '01.32.03']
+    expect(detectColumn(mdy)).toMatchObject({ type: TEXT, verdict: 'settled' })
+
+    expect(detectColumn(['1.2.3', '1.13.3', '2.0.1'])).toMatchObject({
+      type: TEXT,
+      verdict: 'settled',
+    })
+  })
+
+  it('gives `yyyy-MM-dd` no two-digit mirror, and says why', () => {
+    // `yy-MM-dd` and `dd-MM-yy` are the same six characters in the same three
+    // groups, so adding it would make a dash column ambiguous three ways over a
+    // shape no exporter writes. `25-12-31` is therefore read as the dmy mirror
+    // it is spelled like, and nothing offers a `yy-MM-dd` reading.
+    expect(dateCandidates().map((c) => c.pattern)).toEqual([
+      'dd.MM.yyyy',
+      'MM.dd.yyyy',
+      'dd.MM.yy',
+      'MM.dd.yy',
+      'dd/MM/yyyy',
+      'MM/dd/yyyy',
+      'dd/MM/yy',
+      'MM/dd/yy',
+      'dd-MM-yyyy',
+      'MM-dd-yyyy',
+      'dd-MM-yy',
+      'MM-dd-yy',
+      'yyyy-MM-dd',
+    ])
   })
 
   it('asks about a column of three two-digit parts instead of calling it a date', () => {
@@ -716,20 +982,39 @@ describe('piece 2 — datetime, and the two-digit year', () => {
   it('is settled by a day past twelve, which is the shape the owner asked for', () => {
     // `31` is no month, so `31.12.25` cannot be a triple of month-sized
     // components and the column decides for itself. The two-digit year the story
-    // was written for is untouched by the rule that guards version numbers.
+    // was written for is untouched by the rule that guards version numbers — the
+    // question it raises now is the ordering one, and `31` answers that too.
     const r = detectColumn(['31.12.25', '01.03.26'])
 
-    expect(r).toMatchObject({ type: DATE, verdict: 'settled', evidence: null })
+    expect(r).toMatchObject({ type: DATE, verdict: 'decisive' })
     expect(r.format.pattern).toBe('dd.MM.yy')
+    expect(r.evidence).toMatchObject({ decidedBy: 1, contested: 0 })
+    expect(unresolvedColumns(detectTable({ columns: [column('Datum', ['31.12.25', '01.03.26'])] })))
+      .toEqual([])
   })
 
   it('is settled the other way by a triple that cannot be a date', () => {
-    // 13 is no month, so `01.13.03` reads only as a version — exclusive evidence
-    // pointing at text, the mirror of the day past twelve. The column is text
-    // and confirmable, rather than a date with a question mark on it.
-    expect(detectColumn(['01.02.03', '01.13.03', '04.05.06'])).toMatchObject({
+    // A triple no part order can read is a version number and nothing else —
+    // exclusive evidence pointing at text, the mirror of the day past twelve.
+    // The column is text and confirmable, rather than a date with a question
+    // mark on it.
+    expect(detectColumn(['01.02.03', '01.32.03', '04.05.06'])).toMatchObject({
       type: TEXT,
       verdict: 'settled',
+    })
+
+    // `01.13.03` used to be that value and is not one any more: with the mdy
+    // mirror in the list, 13 January 2003 is a reading it genuinely has, so it
+    // is nonsense under one order rather than under both. That does not make it
+    // a date either — `dmy` is the declared preference, and a triple readable
+    // only the other way is the kind question. The narrower rule survives; the
+    // example the Boundaries were written with does not, and `01.32.03`
+    // replaced it.
+    expect(detectColumn(['01.02.03', '01.13.03', '04.05.06'])).toMatchObject({
+      type: DATE,
+      verdict: 'unresolved',
+      evidence: { over: 'kind', alternatives: [DATE, TEXT] },
+      format: { pattern: 'MM.dd.yy' },
     })
     expect(detectColumn([...Array.from({ length: 20 }, () => '01.02.03'), '99.99.99']).type).toBe(
       TEXT,
@@ -1274,6 +1559,73 @@ describe('re-scoring under what the user chose', () => {
     expect(chosen.counts.parsed).toBe(3)
   })
 
+  it('does not settle a question the user was never asked', () => {
+    // Two questions on one column. The kind question — `date` or `text`,
+    // because three two-digit parts settle nothing — is asked first, and the
+    // reading select is suppressed while it is open. Answering it with `Datum`
+    // closes that one and leaves the ordering question its four-digit twin
+    // already asks, so the column comes back `unresolved` over the *reading*.
+    const cells = ['03.04.25', '05.06.25']
+
+    expect(detectColumn(cells)).toMatchObject({
+      type: DATE,
+      verdict: 'unresolved',
+      evidence: { over: 'kind', alternatives: [DATE, TEXT] },
+    })
+
+    // The reading the store hands `scoreColumn` for a chosen type: none, because
+    // the column names none.
+    expect(bestFormat(cells, DATE)).toBeNull()
+
+    const chosen = scoreColumn(cells, { type: DATE, format: bestFormat(cells, DATE) })
+    expect(chosen.verdict).toBe('unresolved')
+    expect(chosen.evidence).toEqual({ alternatives: ['dd.MM.yy', 'MM.dd.yy'] })
+    expect(chosen.counts).toMatchObject({ parsed: 2, unparsed: 0 })
+
+    // …and the gate stays shut on it, because the column is still asking.
+    const answered = { ...chosen, name: 'Version', chosen: { type: DATE, format: null } }
+    expect(unresolvedColumns({ columns: [answered], confirmed: false })).toEqual(['Version'])
+
+    // Answering the reading closes it, and only then.
+    const settled = scoreColumn(cells, {
+      type: DATE,
+      format: { pattern: 'MM.dd.yy', separator: '.', order: 'mdy', shortYear: true },
+    })
+    expect(settled).toMatchObject({ verdict: 'settled', evidence: null })
+    expect(settled.counts.parsed).toBe(2)
+
+    // The four-digit twin is untouched — it never carried the kind question, and
+    // its reading question reads exactly as it did.
+    expect(detectColumn(['03.04.2025', '05.06.2025'])).toMatchObject({
+      type: DATE,
+      verdict: 'unresolved',
+      evidence: { alternatives: ['dd.MM.yyyy', 'MM.dd.yyyy'] },
+      counts: { parsed: 2, unparsed: 0 },
+    })
+  })
+
+  it('settles what the column itself decides, without asking twice', () => {
+    // The other half of the same rule: a chosen type settles the column
+    // wherever nothing else in it is open. `31` is no month, so the ordering
+    // question answers itself and the choice is enough.
+    const chosen = scoreColumn(['31.12.25', '01.03.26'], {
+      type: DATE,
+      format: bestFormat(['31.12.25', '01.03.26'], DATE),
+    })
+
+    expect(chosen).toMatchObject({ verdict: 'settled', evidence: null })
+    expect(chosen.format.pattern).toBe('dd.MM.yy')
+    expect(chosen.counts.parsed).toBe(2)
+
+    // And a column of names retyped to `Datum` still reports what it costs
+    // rather than a question: nothing reads, so nothing is contested.
+    const none = scoreColumn(['Anna', 'Bernd'], {
+      type: DATE,
+      format: bestFormat(['Anna', 'Bernd'], DATE),
+    })
+    expect(none).toMatchObject({ verdict: 'settled', counts: { parsed: 0, unparsed: 2 } })
+  })
+
   it('reports what a wrong choice costs instead of hiding it', () => {
     const chosen = scoreColumn(['31.12.2025', '01.01.2026'], {
       type: DATE,
@@ -1353,11 +1705,17 @@ describe('a whole table', () => {
   })
 
   it('stops naming a column once the user has answered for it', () => {
+    // The answer is re-scored rather than pasted on: `chosen` is not an
+    // exemption from the verdict, it is what produces the new one. A named
+    // reading closes the question, so the column stops blocking.
     const typing = detectTable(table)
+    const answer = { type: DATE, format: { pattern: 'MM.dd.yyyy', separator: '.', order: 'mdy' } }
     const answered = {
       ...typing,
       columns: typing.columns.map((c) =>
-        c.name === 'Datum' ? { ...c, chosen: { type: DATE, format: c.format } } : c,
+        c.name === 'Datum'
+          ? { ...c, ...scoreColumn(table.columns[1].cells, answer), chosen: answer }
+          : c,
       ),
     }
 

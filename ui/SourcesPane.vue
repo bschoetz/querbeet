@@ -924,9 +924,16 @@ const unconfirm = (id) => {
                        never answer with the reading detection happens to rank
                        first; and a verdict whose whole content is "nothing names
                        a winner" must not name one in the control beside it. -->
+                  <!-- The verdict alone decides, not the verdict beside an
+                       unanswered choice: a user who answered "Datum" on a
+                       two-digit-year column has closed the *kind* question and
+                       has never been asked the ordering one, so the reading is
+                       still open and this control is where it is answered. It
+                       must show the placeholder there too, or the reading the
+                       core ranked first could never be chosen. -->
                   <select
                     :value="
-                      col.verdict === 'unresolved' && col.chosen === null
+                      col.verdict === 'unresolved'
                         ? ''
                         : (col.format?.pattern ?? col.format?.locale ?? '')
                     "
@@ -935,7 +942,7 @@ const unconfirm = (id) => {
                     @change="setFormat(s.id, col, at, $event.target.value)"
                   >
                     <option
-                      v-if="col.verdict === 'unresolved' && col.chosen === null"
+                      v-if="col.verdict === 'unresolved'"
                       value=""
                       disabled
                     >

@@ -916,6 +916,42 @@ describe('the questions story 4a added, as diagnostics and as a gate', () => {
     expect(store.confirmTyping(source.id).source.typing.confirmed).toBe(true)
   })
 
+  it('does not settle the reading a chosen type was never asked about', async () => {
+    // Two questions on one column: the kind question first, and behind it the
+    // ordering question its four-digit twin already asks. Answering `Datum`
+    // closes the first and cannot close the second, so the column comes back
+    // `unresolved` over the reading — with its own code, its own alternatives,
+    // and the gate still shut.
+    const { store, source } = await withColumns([
+      { name: 'Version', cells: ['03.04.25', '05.06.25'] },
+    ])
+    expect(source.typing.columns[0].verdict).toBe('unresolved')
+
+    const chosen = store.setColumnTyping(source.id, 0, { type: 'date' })
+    const column = chosen.typing.columns[0]
+
+    expect(column).toMatchObject({
+      type: 'date',
+      verdict: 'unresolved',
+      evidence: { alternatives: ['dd.MM.yy', 'MM.dd.yy'] },
+      counts: { parsed: 2, unparsed: 0 },
+    })
+    expect(column.chosen).toEqual({ type: 'date', format: null })
+    expect(codes(chosen)).toEqual([
+      ['unresolved', 'typing.ambiguous_locale'],
+      ['unresolved', 'typing.unconfirmed'],
+    ])
+    expect(store.confirmTyping(source.id).unresolved).toEqual(['Version'])
+
+    // Answering the second question is what opens the gate.
+    const settled = store.setColumnTyping(source.id, 0, {
+      type: 'date',
+      format: { pattern: 'MM.dd.yy' },
+    })
+    expect(settled.typing.columns[0]).toMatchObject({ verdict: 'settled', evidence: null })
+    expect(store.confirmTyping(source.id).source.typing.confirmed).toBe(true)
+  })
+
   it('drops the mixed-affix warning once the user has chosen a type', async () => {
     // The warning is a reason a column is *not* a number, and its German
     // sentence says the column is read as text. Carried through a re-score it

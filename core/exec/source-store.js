@@ -41,7 +41,10 @@ import {
 export const typingDiagnostics = (typing) => {
   const out = []
   for (const column of typing.columns) {
-    if (column.verdict === 'unresolved' && column.chosen === null) {
+    // The verdict alone, as in `unresolvedColumns`: a chosen type is no longer
+    // an exemption, because a choice can close the kind question and leave the
+    // reading question open, and the column then still has something to ask.
+    if (column.verdict === 'unresolved') {
       // Two questions, two codes. A locale ambiguity asks which *reading* of the
       // digits is meant; the time-against-duration ambiguity asks what the
       // column *is*, and it is answered with the type select rather than the

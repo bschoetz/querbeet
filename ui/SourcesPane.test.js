@@ -375,6 +375,39 @@ describe('the reading select', () => {
     expect(select.text()).toContain('Bitte wählen')
   })
 
+  it('keeps the placeholder where a chosen type left the reading open', async () => {
+    // A user who answered "Datum" on a two-digit-year column has closed the
+    // *kind* question and was never asked the ordering one, so the column is
+    // still `unresolved` — with a choice standing. The select must be rendered
+    // (the kind question is closed) and must still show the placeholder, or the
+    // reading the core ranked first could never be chosen and the gate would
+    // stay shut for good. Third control, same trap.
+    const w = await render(
+      stubStore(
+        source([
+          column('Version', {
+            type: 'date',
+            format: { pattern: 'dd.MM.yy' },
+            chosen: { type: 'date', format: null },
+            verdict: 'unresolved',
+            evidence: { alternatives: ['dd.MM.yy', 'MM.dd.yy'] },
+          }),
+        ]),
+        { unresolved: ['Version'] },
+      ),
+    )
+    const select = w.get('select[aria-label="Lesart: Version"]')
+
+    expect(select.element.value).toBe('')
+    expect(select.text()).toContain('Bitte wählen')
+    expect(w.get('[data-testid="typing-verdict"]').text()).toContain(
+      'Nichts in dieser Spalte entscheidet zwischen TT.MM.JJ und MM.TT.JJ — bitte wählen.',
+    )
+    // The type select shows the answer that was given, not a placeholder: that
+    // question is closed.
+    expect(w.get('select[aria-label="Typ: Version"]').element.value).toBe('date')
+  })
+
   it('takes the reading the panel was already showing as a real answer', async () => {
     const store = stubStore(source([undecided()]))
     const w = await render(store)
@@ -384,6 +417,36 @@ describe('the reading select', () => {
     const [, id, at, patch] = store.calls.find((c) => c[0] === 'setColumnTyping')
     expect([id, at]).toEqual(['src:daten', 0])
     expect(patch.format.pattern).toBe('dd.MM.yyyy')
+  })
+
+  it('spells every date reading in German field letters, on all three separators', async () => {
+    // Completeness rather than a sample: a pattern added to the core without a
+    // German rendering would reach a Source card as `dd/MM/yy`, and `d` and `y`
+    // are the letters that give that away. `M` stays — it is Monat.
+    const w = await render(
+      stubStore(source([column('Datum', { type: 'date', format: { pattern: 'dd.MM.yyyy' } })])),
+    )
+    const options = w
+      .get('select[aria-label="Lesart: Datum"]')
+      .findAll('option')
+      .map((o) => o.text())
+
+    expect(options).toEqual([
+      'TT.MM.JJJJ',
+      'MM.TT.JJJJ',
+      'TT.MM.JJ',
+      'MM.TT.JJ',
+      'TT/MM/JJJJ',
+      'MM/TT/JJJJ',
+      'TT/MM/JJ',
+      'MM/TT/JJ',
+      'TT-MM-JJJJ',
+      'MM-TT-JJJJ',
+      'TT-MM-JJ',
+      'MM-TT-JJ',
+      'JJJJ-MM-TT',
+    ])
+    expect(options.filter((o) => /[dy]/.test(o))).toEqual([])
   })
 
   it('spells a datetime pattern in German field letters, two-digit year included', async () => {
