@@ -2,7 +2,7 @@
 title: 'Story 5 — Step graph model and Editor'
 type: 'feature'
 created: '2026-08-03'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 1
 baseline_commit: '93a6ffbdbda4be81df5dc9d644eb45377da0897b'
 context:
@@ -127,23 +127,23 @@ context:
 
 **Execution:**
 
-- [ ] `package.json` — add `@vue-flow/core` at exactly `1.48.2`; run `npm install`, then `npm run build && npm run assert` before writing any component, so the single-file gate is confirmed against *this* bundle rather than against the spike's.
-- [ ] `core/graph/kinds.js` — the frozen kind catalogue with `minInputs`/`maxInputs` per kind and a `kindCodes()` accessor, mirroring `core/types/catalog.js`. No labels, no configuration. `kindSpec()` returns `null` for a kind it does not know, so **every caller that dereferences it guards first** — story 14's loader builds nodes out of a file and a `TypeError` from the model is not a Diagnostic.
-- [ ] `core/graph/graph.js` — port the spike model, replacing every German `reason` with a `Diagnostic` carrying a code and structured `values`. Keep `checkConnect` separate from `connect`, keep edges derived rather than stored, keep `findCycle` naming the cycle. **`renameNode` must refuse an empty name as a refusal** — round 1 returned `{ ok: true }` after declining to apply it, which cleared the refusal region and left the input showing text the model does not hold. **`removeInputSlot` must refuse a slot that holds a connection**, or the `−` button beside a connected select destroys the edge with no diagnostic. **`connect` into an occupied slot must report the replacement** rather than dropping `replaced` on the floor. **`graph.no_result` counts non-Source Steps**, or its sentence calls Sources Steps.
-- [ ] `core/graph/graph-store.js` — `createGraphStore()` returning the named commands `addStep`, `connect`, `disconnect`, `renameStep`, `moveStep`, `removeStep`, `setResult`, `addInputSlot`, `removeInputSlot`, `syncSources`, plus `get`/`list`/`diagnostics`. Mint ids and freeze on commit exactly as `source-store.js` does. **`syncSources` validates its whole argument before it mutates anything** — round 1 could throw on a later entry with earlier ones already added and `commit()` skipped, leaving readers on a stale snapshot — **renames through `renameNode`** rather than assigning `node.name` behind the guard, and **places a new Source node where no node already sits**, since counting existing Sources collides the moment one has been removed.
-- [ ] `core/graph/graph.test.js`, `core/graph/graph-store.test.js` — cover every row of the I/O matrix, plus: an id is never reissued after a deletion; the graph is byte-identical after a refused connect; `syncSources` marks a consumer broken when a Source disappears; a refused rename **returns a refusal**; removing a filled slot is refused; replacing an occupied slot is reported.
-- [ ] `adapters/vueflow/canvas-logic.js` — **plain JavaScript, no Vue import**, holding everything about the canvas that is arithmetic rather than rendering: the shortfall pan, the handle→slot parse, the change-partitioning that absorbs the `removeNodes` ordering hazard, and the view-state filter. This exists because the `core` Vitest project can reach `adapters/**/*.test.js` but cannot compile an SFC — logic left inside a `.vue` file is untestable in every envelope this project has.
-- [ ] `adapters/vueflow/canvas-logic.test.js` — `--project core`. The handle→slot parse must refuse a `null` or non-`in-<n>` handle rather than yielding `NaN`; a node-removal batch must be partitioned so the edges it drags along are **not** reported as user disconnects; the shortfall pan must be zero when the node is already inside the pane and must align the start edge when the node is larger than it.
-- [ ] `ports/index.js` — replace the `GraphView` stub with the contract: the host pushes a node and edge projection and receives position, removal and selection changes; the host supplies the connection guard and the per-node body. **State that a removal reports its own `target` and slot**, so no host has to parse an id to find them.
-- [ ] `adapters/vueflow/GraphCanvas.vue`, `StepFrame.vue`, `FlowBackground.vue` — the six spike rules, enforced here. No German, no `core/` business logic, no second store write, and **no logic that `canvas-logic.js` could hold**. `patternUnits` is spelled as SVG spells it — round 1 wrote `pattern-units`, which is not an attribute, so the pattern fell back to `objectBoundingBox` and the dot grid did not render; the built artefact carried `pattern-units` once and `patternUnits` zero times. The background's `<pattern>` id must be unique per instance rather than a document-global literal.
-- [ ] `ui/graph-labels.js` — the code→German map for every `graph.*` code and every kind, with `graphLabelGaps()` and `kindLabelGaps()` exported so a test can assert both are empty. **Null-prototype maps read with `Object.hasOwn`**, the convention `ui/type-labels.js` set — a plain object literal answers `kindLabel('constructor')` with a function and renders `[object Object]` instead of the fallback the file exists to guarantee. **Every code in the map is rendered from the map**: round 1 kept a sentence for `graph.orphan` that the pane filtered out before it could reach a card while `StepCard.vue` hard-coded a different one, which inverts the gap check into something that passes on a dead entry.
-- [ ] `ui/StepCard.vue` — kind label, name field, Result badge, broken and orphan sentences, and the **input-slot rows as the keyboard connect control**: each row names its slot, shows what is attached, and opens a list of the Steps that would be accepted — the refused ones are absent rather than listed and rejected. **The add-slot and remove-slot controls are always present**, disabled or not, and the command's refusal is what names the limit; hiding them makes the two matrix rows for `graph.max_inputs` and `graph.min_inputs` unreachable outside a unit test.
-- [ ] `ui/EditorPane.vue` — the toolbar (add a Step per kind), the refusal region as `role="status"`, and the canvas received as a prop; issues commands and re-projects with `shallowRef` + `refresh()`. **Placement of a new Step is derived from the Steps already in the graph**, never from a counter in component state: this story unmounts the Editor on every view switch, so a component-held counter restarts at zero and the next Step lands exactly on the first one — the overlap the file's own comment calls an affordance that "is simply gone". **Sources are reconciled whenever the Source list changes**, not only on mount, or a file that finishes parsing while the Editor is open stays invisible until the pane is left and re-entered.
-- [ ] `ui/App.vue` — the deliberate view switch between Sources and Editor, with the Editor **unmounted** while it is not shown, so "loses no configuration" is proven rather than assumed. The Sources pane's own load errors and refusals must survive a switch away and back, or the change trades one kind of lost state for another.
-- [ ] `app/main.js` — construct the graph store, import `GraphCanvas`, pass both down.
-- [ ] `ui/EditorPane.test.js`, `ui/StepCard.test.js` — happy-dom; the German map has no gaps, a slot-row selection issues `connect` with the right slot index, a refused command renders its sentence, and **re-mounting the pane and adding a Step does not place it on an existing one**.
-- [ ] `tests/e2e/step-graph.spec.js` — Chromium and Firefox from `file://`: load two CSVs, enter the Editor, build Union → Filter, designate the Result, refuse a cycle, delete an upstream Step and read the broken sentence, do the whole connect with the keyboard alone, leave and re-enter. **Three paths round 1 left undriven are not optional here:** the **Delete key** on a selected Step (the consumer must come out named-broken, not under-filled) and on a selected edge; a Step's position asserted **before and after** an arrow-key press and a drag, not only across a remount; and the **focus-pull asserted positively** — an off-screen Step, tabbed to, changes the viewport transform and ends up inside the pane.
-- [ ] `_bmad-output/implementation-artifacts/deferred-work.md` — file the three entries named under Verification, plus the four this round names: `graph.lost` is never pruned and grows monotonically with editing; `cloneGraph` has no production caller; a Union may consume the same Source in two slots, which duplicates rows once story 6 executes it; and `fitView` on every mount discards the pan and zoom the user arranged, invisibly to the CAP-11 test.
+- [x] `package.json` — add `@vue-flow/core` at exactly `1.48.2`; run `npm install`, then `npm run build && npm run assert` before writing any component, so the single-file gate is confirmed against *this* bundle rather than against the spike's.
+- [x] `core/graph/kinds.js` — the frozen kind catalogue with `minInputs`/`maxInputs` per kind and a `kindCodes()` accessor, mirroring `core/types/catalog.js`. No labels, no configuration. `kindSpec()` returns `null` for a kind it does not know, so **every caller that dereferences it guards first** — story 14's loader builds nodes out of a file and a `TypeError` from the model is not a Diagnostic.
+- [x] `core/graph/graph.js` — port the spike model, replacing every German `reason` with a `Diagnostic` carrying a code and structured `values`. Keep `checkConnect` separate from `connect`, keep edges derived rather than stored, keep `findCycle` naming the cycle. **`renameNode` must refuse an empty name as a refusal** — round 1 returned `{ ok: true }` after declining to apply it, which cleared the refusal region and left the input showing text the model does not hold. **`removeInputSlot` must refuse a slot that holds a connection**, or the `−` button beside a connected select destroys the edge with no diagnostic. **`connect` into an occupied slot must report the replacement** rather than dropping `replaced` on the floor. **`graph.no_result` counts non-Source Steps**, or its sentence calls Sources Steps.
+- [x] `core/graph/graph-store.js` — `createGraphStore()` returning the named commands `addStep`, `connect`, `disconnect`, `renameStep`, `moveStep`, `removeStep`, `setResult`, `addInputSlot`, `removeInputSlot`, `syncSources`, plus `get`/`list`/`diagnostics`. Mint ids and freeze on commit exactly as `source-store.js` does. **`syncSources` validates its whole argument before it mutates anything** — round 1 could throw on a later entry with earlier ones already added and `commit()` skipped, leaving readers on a stale snapshot — **renames through `renameNode`** rather than assigning `node.name` behind the guard, and **places a new Source node where no node already sits**, since counting existing Sources collides the moment one has been removed.
+- [x] `core/graph/graph.test.js`, `core/graph/graph-store.test.js` — cover every row of the I/O matrix, plus: an id is never reissued after a deletion; the graph is byte-identical after a refused connect; `syncSources` marks a consumer broken when a Source disappears; a refused rename **returns a refusal**; removing a filled slot is refused; replacing an occupied slot is reported.
+- [x] `adapters/vueflow/canvas-logic.js` — **plain JavaScript, no Vue import**, holding everything about the canvas that is arithmetic rather than rendering: the shortfall pan, the handle→slot parse, the change-partitioning that absorbs the `removeNodes` ordering hazard, and the view-state filter. This exists because the `core` Vitest project can reach `adapters/**/*.test.js` but cannot compile an SFC — logic left inside a `.vue` file is untestable in every envelope this project has.
+- [x] `adapters/vueflow/canvas-logic.test.js` — `--project core`. The handle→slot parse must refuse a `null` or non-`in-<n>` handle rather than yielding `NaN`; a node-removal batch must be partitioned so the edges it drags along are **not** reported as user disconnects; the shortfall pan must be zero when the node is already inside the pane and must align the start edge when the node is larger than it.
+- [x] `ports/index.js` — replace the `GraphView` stub with the contract: the host pushes a node and edge projection and receives position, removal and selection changes; the host supplies the connection guard and the per-node body. **State that a removal reports its own `target` and slot**, so no host has to parse an id to find them.
+- [x] `adapters/vueflow/GraphCanvas.vue`, `StepFrame.vue`, `FlowBackground.vue` — the six spike rules, enforced here. No German, no `core/` business logic, no second store write, and **no logic that `canvas-logic.js` could hold**. `patternUnits` is spelled as SVG spells it — round 1 wrote `pattern-units`, which is not an attribute, so the pattern fell back to `objectBoundingBox` and the dot grid did not render; the built artefact carried `pattern-units` once and `patternUnits` zero times. The background's `<pattern>` id must be unique per instance rather than a document-global literal.
+- [x] `ui/graph-labels.js` — the code→German map for every `graph.*` code and every kind, with `graphLabelGaps()` and `kindLabelGaps()` exported so a test can assert both are empty. **Null-prototype maps read with `Object.hasOwn`**, the convention `ui/type-labels.js` set — a plain object literal answers `kindLabel('constructor')` with a function and renders `[object Object]` instead of the fallback the file exists to guarantee. **Every code in the map is rendered from the map**: round 1 kept a sentence for `graph.orphan` that the pane filtered out before it could reach a card while `StepCard.vue` hard-coded a different one, which inverts the gap check into something that passes on a dead entry.
+- [x] `ui/StepCard.vue` — kind label, name field, Result badge, broken and orphan sentences, and the **input-slot rows as the keyboard connect control**: each row names its slot, shows what is attached, and opens a list of the Steps that would be accepted — the refused ones are absent rather than listed and rejected. **The add-slot and remove-slot controls are always present**, disabled or not, and the command's refusal is what names the limit; hiding them makes the two matrix rows for `graph.max_inputs` and `graph.min_inputs` unreachable outside a unit test.
+- [x] `ui/EditorPane.vue` — the toolbar (add a Step per kind), the refusal region as `role="status"`, and the canvas received as a prop; issues commands and re-projects with `shallowRef` + `refresh()`. **Placement of a new Step is derived from the Steps already in the graph**, never from a counter in component state: this story unmounts the Editor on every view switch, so a component-held counter restarts at zero and the next Step lands exactly on the first one — the overlap the file's own comment calls an affordance that "is simply gone". **Sources are reconciled whenever the Source list changes**, not only on mount, or a file that finishes parsing while the Editor is open stays invisible until the pane is left and re-entered.
+- [x] `ui/App.vue` — the deliberate view switch between Sources and Editor, with the Editor **unmounted** while it is not shown, so "loses no configuration" is proven rather than assumed. The Sources pane's own load errors and refusals must survive a switch away and back, or the change trades one kind of lost state for another.
+- [x] `app/main.js` — construct the graph store, import `GraphCanvas`, pass both down.
+- [x] `ui/EditorPane.test.js`, `ui/StepCard.test.js` — happy-dom; the German map has no gaps, a slot-row selection issues `connect` with the right slot index, a refused command renders its sentence, and **re-mounting the pane and adding a Step does not place it on an existing one**.
+- [x] `tests/e2e/step-graph.spec.js` — Chromium and Firefox from `file://`: load two CSVs, enter the Editor, build Union → Filter, designate the Result, refuse a cycle, delete an upstream Step and read the broken sentence, do the whole connect with the keyboard alone, leave and re-enter. **Three paths round 1 left undriven are not optional here:** the **Delete key** on a selected Step (the consumer must come out named-broken, not under-filled) and on a selected edge; a Step's position asserted **before and after** an arrow-key press and a drag, not only across a remount; and the **focus-pull asserted positively** — an off-screen Step, tabbed to, changes the viewport transform and ends up inside the pane.
+- [x] `_bmad-output/implementation-artifacts/deferred-work.md` — file the three entries named under Verification, plus the four this round names: `graph.lost` is never pruned and grows monotonically with editing; `cloneGraph` has no production caller; a Union may consume the same Source in two slots, which duplicates rows once story 6 executes it; and `fitView` on every mount discards the pan and zoom the user arranged, invisibly to the CAP-11 test.
 
 **Acceptance Criteria:**
 
@@ -261,3 +261,80 @@ The one with the widest blast radius: **the Delete key was a document-level door
 - Deliberate pan and zoom by keyboard has no path. The focus-pull makes it non-urgent — a Step parked at 3400,2200 was measured off-screen before focus and fully visible after, with the zoom unchanged, in both engines — so this is filed as a named gap rather than built.
 - Nothing measures what a fifty-Step graph costs to render or re-project. The spike carried six to seven Steps.
 - CAP-11's "loading a Recipe does not open the Editor" is unreachable until story 14 owns the Recipe, and is carried into that story rather than approximated here.
+
+## Suggested Review Order
+
+**The guard, and why every path ends at it**
+
+- Start here: one guard, answering in codes, separated from the mutation so a caller can ask without changing anything.
+  [`graph.js:161`](../../core/graph/graph.js#L161)
+
+- "Contributes to the Result" is not a question until a Result exists — the fix that stopped marking every Source a orphan on first entry.
+  [`graph.js:359`](../../core/graph/graph.js#L359)
+
+- The marks are derived on every commit, never stored, so no command can forget to update them.
+  [`graph.js:397`](../../core/graph/graph.js#L397)
+
+- Arity as a property of the data: positional slots, `minInputs`/`maxInputs` per kind, no configuration.
+  [`kinds.js:35`](../../core/graph/kinds.js#L35)
+
+**The commands, and the one seam to the Sources pane**
+
+- Ten named doors over the model; ids minted here, never reissued, frozen snapshot per commit.
+  [`graph-store.js:168`](../../core/graph/graph-store.js#L168)
+
+- Reconciliation runs one way and validates before it mutates; a vanished Source takes the deleted-Step path.
+  [`graph-store.js:131`](../../core/graph/graph-store.js#L131)
+
+- The Editor refuses to remove a Source, because the Sources pane owns that list.
+  [`graph-store.js:135`](../../core/graph/graph-store.js#L135)
+
+**The measured library hazard the adapter absorbs**
+
+- The heart of round 1's defect: edge removals arrive before the node, so both halves are held and read once.
+  [`canvas-logic.js:101`](../../adapters/vueflow/canvas-logic.js#L101)
+
+- A removal reports its own target and slot; the id grammar is a fallback, not the mechanism.
+  [`canvas-logic.js:57`](../../adapters/vueflow/canvas-logic.js#L57)
+
+- The focus pull is vetoed for pointer focus only, and the veto is lifted wherever the release lands.
+  [`canvas-logic.js:202`](../../adapters/vueflow/canvas-logic.js#L202)
+
+- One watcher in, two handlers out, `applyDefault: false`, and `select` changes the only thing handed back.
+  [`GraphCanvas.vue:118`](../../adapters/vueflow/GraphCanvas.vue#L118)
+
+- The guard on both ends of a drag — the library consults the handle the pointer went down on.
+  [`StepFrame.vue:67`](../../adapters/vueflow/StepFrame.vue#L67)
+
+**The keyboard path to connecting**
+
+- The slot row as a form control: refused Steps are absent from the list rather than offered and turned down.
+  [`StepCard.vue:89`](../../ui/StepCard.vue#L89)
+
+- A lost Step is named from the model's memory, so no raw `src:` id reaches a German select.
+  [`EditorPane.vue:69`](../../ui/EditorPane.vue#L69)
+
+- Deliberate entry: the Editor is unmounted, the Sources pane retained, and the asymmetry is the point.
+  [`App.vue:75`](../../ui/App.vue#L75)
+
+**Contracts and gates**
+
+- The port states all five reports the host receives, including the refusal contract.
+  [`index.js:142`](../../ports/index.js#L142)
+
+- The lint gate that actually enforces acceptance criterion 5 — it did not exist until review round 2.
+  [`eslint.config.js:32`](../../eslint.config.js#L32)
+
+- German completeness as an importable invariant: empty is the rule and a test asserts it.
+  [`graph-labels.js:43`](../../ui/graph-labels.js#L43)
+
+**Tests worth reading rather than counting**
+
+- The invariant this story exists for: broken and naming what it lost, never merely short of an input.
+  [`step-graph.spec.js:283`](../../tests/e2e/step-graph.spec.js#L283)
+
+- The arity limits are named by the command rather than hidden by the control.
+  [`step-graph.spec.js:593`](../../tests/e2e/step-graph.spec.js#L593)
+
+- The adapter's arithmetic, unit-tested because it lives beside the component rather than inside it.
+  [`canvas-logic.test.js:25`](../../adapters/vueflow/canvas-logic.test.js#L25)
