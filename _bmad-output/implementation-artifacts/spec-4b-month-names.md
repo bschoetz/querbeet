@@ -24,6 +24,7 @@ context:
 **Always:**
 
 - **The month table is derived, never written down.** From `Intl.DateTimeFormat(locale, { day, month, year, timeZone: 'UTC' })` via `formatToParts`, taking the `month` part of a whole date. Measured 2026-08-03: in German short **eleven of twelve** entries differ between format context and standalone, only `Mai` coincides — a table built the easy way misses both of the owner's values. `timeZone: 'UTC'` is part of the derivation, not a detail: without it the table becomes a property of where the runner stood.
+  **Amended 2026-08-03 by the project owner, after the story was marked done: the derivation runs over a second axis, `{ month, timeZone: 'UTC' }` standalone, and both contexts feed the accepted-spelling map.** Format context stays the **source of truth for the shape a locale writes** and is the only context that can answer the day's trailing literal, because a standalone formatter has no `day` part at all — so that half of the derivation is unreachable from the new axis by construction rather than by memory. Standalone is a second *accepted vocabulary*: what an exporter may write, which is a different question from what a locale formats. It is admissible on the same kind of measurement as everything else here — over all three locales and both widths it contributes **exactly one spelling, `Mär`, and zero collisions**, taking the union from 34 to 35 and superseding the count in the bullet below. Every other German standalone name already arrived, through the dropped trailing point (`Okt` ≡ `Okt.`) or through English (`Jun`, `Jul`, `Sep`, `Mar`). This closes the German-standalone ledger entry **by derivation rather than by a hand-written spelling**, and it does not reopen the eleven-of-twelve finding above: standalone alone would still be wrong nearly everywhere.
 - **A set of accepted spellings per month, not one exact string.** Forced by the locales already in scope, independently of drift: en-US abbreviates September to `Sep`, en-GB to `Sept`, and German writes `Sept.` — three spellings of one month. Normalization is case-folding plus a dropped trailing `.`, so an exporter writing `AUG` where CLDR says `Aug.` is not a second vocabulary. Measured: **34 distinct spellings, 0 collisions**, so one candidate is sound.
 - **The locale list is `de-DE`, `en-US`, `en-GB`,** declared beside `NUMBER_LOCALES` and under the same rule: a locale enters with a Source that needs it.
 - **A locale the engine falls back on is refused, loudly.** A missing locale hands back an English table under a German tag and every value in it looks plausible and is wrong. `resolvedOptions().locale` is checked per formatter; the failure is an empty-is-the-rule gap function with a test, the shape `canonicalTypeGaps` and `scorableTypeGaps` already have.
@@ -119,6 +120,71 @@ context:
 - Given `npm run verify`, when it runs on the finished story, then lint, unit and e2e all pass.
 
 ## Spec Change Log
+
+### 2026-08-03 — owner decision after done: the standalone gap closed by a second axis, not by a spelling
+
+**The decision.** Review round 1 left a ledger entry saying German standalone
+abbreviations were outside the union and that it cost exactly one month —
+`Mär` — and referred the fix to the project owner, because both routes out
+looked like Ask Firsts: widen the derivation, or write one spelling down. The
+owner took the first and named the reason: **close it by deriving a second axis
+rather than by writing anything down.**
+
+**What was amended in the frozen block, and it is one bullet.** The derivation
+bullet gains the standalone axis and the measurement that makes it admissible —
+over all three locales and both widths it contributes **exactly one spelling and
+zero collisions, 34 → 35**. The amendment says explicitly that it supersedes the
+`34` in the bullet below, rather than editing a second frozen sentence: the count
+moved, the sentence it sits in did not. Nothing else in the block was touched.
+
+**Format-context primacy is unchanged, and the code is built so that it cannot
+quietly stop being true.** The eleven-of-twelve finding stands: a table built
+from standalone *alone* is wrong nearly everywhere and misses both of the
+owner's values. What changed is that standalone is an additional **accepted
+vocabulary** — what an exporter may write — which is the same move as "a set of
+spellings per month, not one exact string", one axis further out. The line that
+proves the two are not peers is the day trailer: `dayTrailerOf` looks for the
+`day` part and answers `null` when there is none, so a standalone formatter
+contributes no trailer **structurally** rather than because a caller remembered
+which context it was in. A test asserts the fact it rests on, and asserts the
+stronger half too: a standalone formatter under these options emits exactly one
+part, the month, so it has no `literal` anywhere for a trailer to be read out of.
+That is also, honestly, why striking `dayTrailerOf`'s explicit `dayAt === -1`
+line leaves the suite green — measured. The guard is a stated contract like the
+two redundant branches round 1 found in `readsAsMonthNameDate`, kept for the day
+these options gain a field and "the part after index 0" stops being "the part
+after the day", and both the code and the test now say so rather than letting it
+read as observed.
+
+**Measured after, and the numbers reproduce the ones the decision was taken on:**
+35 distinct normalized spellings, 0 collisions, `Mär` on March, 43 raw strings
+(three joined — `Mär`, `Okt`, `Dez` — of which two normalize onto keys that were
+already there). `['2. Mär. 2026', '3. Mär. 2026']` is `date` / `month name`, 2 of
+2; `['2. März 2026']` and the owner's own `['2. Aug. 2026', '31. Juli 2026']` are
+unchanged. The axis was added and nothing was traded for it.
+
+**One thing the axis moved that a stale docblock would have hidden.** Review
+round 1's fix exported `normalizeMonthToken` on the finding that `Okt.` and
+`Dez.` were the only months the dropped trailing point carried alone. That is no
+longer true — `Okt` and `Dez` are derived spellings now — so the docblock says
+what the rule carries *today* instead: the other direction, an exporter writing a
+point on a spelling CLDR gives without one, which is exactly `2. Mär. 2026`. The
+mutation was re-run: deleting the dropped point still fails three cases.
+
+**Detection cost was not re-measured, deliberately.** The derivation runs once at
+module load and the union gained one map entry; the per-value work in
+`readsAsMonthNameDate` is one lookup against that map either way, so nothing on
+the hot path changed. The `+4.9 %` in the ledger and the module header is round
+1's figure and is left labelled as such rather than re-quoted as if it had been
+taken again.
+
+**Ledger:** the German-standalone entry moves to `## Closed`, dated 2026-08-03,
+recording that it was closed by derivation with the +1 / 0-collisions numbers.
+Excel's `Mrz` is carved out as its own `## Open` entry so it is not lost inside a
+closed one — it is in **no** CLDR context, width or locale, so no derivation
+reaches it and it would be the second hand-written spelling of this story after
+the ordinal suffix. `['2. Mrz 2026']` reads as text today, and a unit case pins
+it beside the `Mär` case so the two findings cannot be mistaken for one.
 
 ### 2026-08-03 — review round 1: ten patches, three ledger entries, no Boundary moved
 

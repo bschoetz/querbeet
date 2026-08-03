@@ -186,14 +186,30 @@ function freezeDeep(value) {
 // team speaks. Three parts of the derivation are load-bearing and each was
 // measured rather than assumed (spike `intl-month-names-2026-08-03`).
 //
-//   1. FORMAT CONTEXT, NOT STANDALONE. The name is taken from `formatToParts`
-//      of a *whole date*, never from `Intl.DateTimeFormat(locale, { month })`
-//      on its own. Measured in German short, **eleven of twelve entries
-//      differ** — `Jan. Feb. März Apr. Mai Juni Juli Aug. Sept. Okt. Nov. Dez.`
-//      in a date against `Jan Feb Mär Apr Mai Jun Jul Aug Sep Okt Nov Dez`
-//      standalone; only `Mai` coincides. A table built the easy way is not
-//      slightly wrong, it is wrong nearly everywhere, and it misses both of the
-//      values the owner's Source actually carries.
+//   1. FORMAT CONTEXT IS THE SOURCE OF TRUTH; STANDALONE IS A SECOND ACCEPTED
+//      VOCABULARY. The shape a locale actually *writes* comes from
+//      `formatToParts` of a whole date, never from
+//      `Intl.DateTimeFormat(locale, { month })` on its own. Measured in German
+//      short, **eleven of twelve entries differ** — `Jan. Feb. März Apr. Mai
+//      Juni Juli Aug. Sept. Okt. Nov. Dez.` in a date against `Jan Feb Mär Apr
+//      Mai Jun Jul Aug Sep Okt Nov Dez` standalone; only `Mai` coincides. A
+//      table built from standalone ALONE is not slightly wrong, it is wrong
+//      nearly everywhere, and it misses both of the values the owner's Source
+//      actually carries. **That finding is unchanged and this paragraph is not
+//      its reversal.**
+//
+//      What the standalone axis adds is what an *exporter* may write, which is
+//      a different question from what a locale formats. Measured 2026-08-03
+//      over all three locales × both widths: adding it contributes **exactly
+//      one** spelling — `Mär` — and **zero** collisions, taking the union from
+//      34 to 35. Every other German standalone name already arrived, either
+//      through the dropped trailing point (`Okt` ≡ `Okt.`) or through the
+//      English vocabulary (`Jun`, `Jul`, `Sep`, `Mar`). So this is the same move
+//      as rule 3 below — a *set* of accepted spellings rather than one exact
+//      string — one axis further out, and it is emphatically not the easy table
+//      being let back in as the source of truth. The day trailer is the line
+//      that proves it: it stays format-context only, because a standalone
+//      formatter has no day part to trail (see `dayTrailerOf`).
 //
 //   2. `timeZone: 'UTC'` IS PART OF THE DERIVATION. Without it the formatter
 //      uses the machine's zone, a run in a negative offset shifts the day, and
@@ -206,9 +222,9 @@ function freezeDeep(value) {
 //      `Sept.` — three spellings of one month. Normalization is case-folding
 //      plus a dropped trailing point, so an exporter writing `AUG` where CLDR
 //      says `Aug.` is not a second vocabulary. Measured across all three
-//      locales and both widths: **34 distinct normalized spellings, 0
-//      collisions**, which is what makes ONE union candidate sound instead of a
-//      reading select nobody could answer.
+//      locales, both widths and both contexts: **35 distinct normalized
+//      spellings, 0 collisions**, which is what makes ONE union candidate sound
+//      instead of a reading select nobody could answer.
 //
 // The runtime table follows the engine, which is right. `month-names.frozen.js`
 // is the 2026-08-03 measurement committed as a literal, and the test compares
@@ -224,32 +240,110 @@ function freezeDeep(value) {
  *  comparison against a fixture that named the axis only in a comment. */
 export const MONTH_WIDTHS = Object.freeze(['short', 'long'])
 
+/**
+ * The two contexts a month name is asked for in, and they are not equals.
+ *
+ * `format` is the name inside a whole date and is what a locale actually
+ * *writes* — it is the source of truth for the shape, and for the day's trailing
+ * literal, which only it can answer. `standalone` is the name on its own, and it
+ * is here as a second **accepted** vocabulary: an exporter may write `2. Mär.
+ * 2026` although no German formatter produces `Mär` in a date.
+ *
+ * Measured before it was added: over all three locales and both widths the
+ * standalone context contributes exactly one spelling (`Mär`) and no collision,
+ * 34 → 35. Everything else it could contribute already arrives through the
+ * dropped trailing point or through English.
+ *
+ * The third exported axis, for the reason the other two are exported: the frozen
+ * fixture claims to pin the shape of the derivation, and an axis it names only
+ * in a comment is an axis the derivation can drop in silence.
+ */
+export const MONTH_CONTEXTS = Object.freeze(['format', 'standalone'])
+
+/** The formatter options one context asks for. `format` carries `day` and
+ *  `year` because the name it wants is the one that stands in a whole date;
+ *  `standalone` carries neither, which is exactly what makes it standalone —
+ *  and is why `dayTrailerOf` can find nothing in it. */
+const monthFormatOptions = (context, width) =>
+  context === 'format'
+    ? { day: 'numeric', month: width, year: 'numeric', timeZone: 'UTC' }
+    : { month: width, timeZone: 'UTC' }
+
 /** Case-fold, then drop one trailing point. CLDR abbreviates only the *long*
  *  names, so `Jan. Feb. Apr. Aug. Sept. Okt. Nov. Dez.` carry a point while
  *  `März Mai Juni Juli` stand in full without one — and an exporter that
  *  upper-cases its headers or loses the point has not invented a new month.
  *
  *  **Exported because the dropped point was measured to be unobservable.**
- *  Deleting `.replace(/\.$/, '')` left the whole suite green: every case that
- *  exercised the normalization used a month with an undotted English twin
+ *  Deleting `.replace(/\.$/, '')` once left the whole suite green: every case
+ *  that exercised the normalization used a month with an undotted English twin
  *  (`Aug.` beside `Aug`), so the rule was never load-bearing where it was
- *  tested. `Okt.` and `Dez.` are the only two months it carries alone — German
- *  abbreviations with no English spelling behind them — and a test now walks
- *  every derived spelling through this function rather than re-implementing it,
- *  because a local copy in the test is a second rule that agrees with the first
- *  until someone edits one of them. */
+ *  tested, while `2. Okt 2026` and `2. Dez 2026` had quietly stopped reading. A
+ *  test now walks every derived spelling through this function rather than
+ *  re-implementing it, because a local copy in a test is a second rule that
+ *  agrees with the first until someone edits one of them.
+ *
+ *  **What the rule carries alone moved when the standalone axis landed, and it
+ *  is worth saying so rather than leaving the old sentence to rot.** `Okt` and
+ *  `Dez` are now derived spellings in their own right, so the point-dropping is
+ *  no longer what rescues them. What it carries alone today is the other
+ *  direction: an exporter writing a point on a spelling CLDR gives without one —
+ *  `2. Mär. 2026`, which is exactly what a German export does with a standalone
+ *  abbreviation — and that is the case that fails when the rule is deleted. */
 export const normalizeMonthToken = (token) => token.toLocaleLowerCase('de-DE').replace(/\.$/, '')
+
+/**
+ * The mark that follows the day, trimmed — `". "` for de-DE gives `.`, `", "`
+ * for en-US gives `,`, and en-GB's `" "` gives nothing at all.
+ *
+ * Derived for the same reason the names are: writing those two punctuation marks
+ * by hand would be the hand-written table one screen up, one field over.
+ *
+ * **It answers `null` for a standalone formatter, and that is structural rather
+ * than remembered.** A standalone formatter is `{ month, timeZone }` — it has no
+ * `day` part at all, so "what follows the day" is a question it cannot answer,
+ * and the function says so by *looking for the part* rather than by a caller
+ * knowing which context it is in. The loop below therefore calls it on every
+ * formatter and the standalone axis contributes no trailer by construction. The
+ * distinction matters: the standalone context is an accepted *vocabulary*, not a
+ * second source of truth for the shape a locale writes.
+ *
+ * **The explicit `dayAt === -1` line is refused twice over, and it is kept as a
+ * statement rather than deleted to reach coverage** — the same treatment two
+ * branches in `readsAsMonthNameDate` got, and measured the same way. A standalone
+ * formatter under these options emits exactly one part, the month, so there is
+ * no `literal` anywhere in it to mistake for a trailer: strike the line and the
+ * function still answers `null`, and the whole suite stays green. What is
+ * genuinely load-bearing is the `findIndex` above it, and what makes *both* safe
+ * is a property of `Intl`'s output rather than of this code — which is precisely
+ * why the line is written down. The day these options gain a field, "the part
+ * after index 0" and "the part after the day" stop being the same part.
+ */
+function dayTrailerOf(format) {
+  const parts = format.formatToParts(new Date(Date.UTC(2026, 7, 2)))
+  const dayAt = parts.findIndex((part) => part.type === 'day')
+  if (dayAt === -1) return null
+
+  const after = parts[dayAt + 1]
+  const trailer = after?.type === 'literal' ? after.value.trim() : ''
+  return trailer === '' ? null : trailer
+}
 
 /**
  * Ask `Intl` for the month names, the day's trailing literal, and whether the
  * engine actually had each locale.
  *
+ * Over three axes — locale, width, and context — because a month name is asked
+ * for in two contexts and an exporter may write either. `format` is the source
+ * of truth for the shape; `standalone` is a second accepted vocabulary worth
+ * exactly one spelling (`Mär`) and no collision. See `MONTH_CONTEXTS`.
+ *
  * A locale the engine falls back on is the one failure worth being loud about:
  * it hands back an English table under a German tag, and every value in it looks
  * plausible and is wrong. `resolvedOptions().locale` is therefore checked per
- * formatter and a mismatch is *collected* rather than thrown — the same
- * empty-is-the-rule shape `canonicalTypeGaps` has, so it fails a test instead of
- * a user's file read.
+ * formatter — all twelve of them — and a mismatch is *collected* rather than
+ * thrown, the same empty-is-the-rule shape `canonicalTypeGaps` has, so it fails
+ * a test instead of a user's file read.
  */
 function deriveMonthNames(locales = MONTH_LOCALES) {
   const spellings = Array.from({ length: 12 }, () => [])
@@ -260,41 +354,31 @@ function deriveMonthNames(locales = MONTH_LOCALES) {
 
   for (const locale of locales) {
     for (const width of MONTH_WIDTHS) {
-      const format = new Intl.DateTimeFormat(locale, {
-        day: 'numeric',
-        month: width,
-        year: 'numeric',
-        timeZone: 'UTC',
-      })
-      if (format.resolvedOptions().locale !== locale) {
-        fallbacks.push(`${locale}/${width}`)
-        continue
-      }
+      for (const context of MONTH_CONTEXTS) {
+        const format = new Intl.DateTimeFormat(locale, monthFormatOptions(context, width))
+        if (format.resolvedOptions().locale !== locale) {
+          fallbacks.push(`${locale}/${width}/${context}`)
+          continue
+        }
 
-      // The literal that follows the day — `". "` for de-DE, `", "` for en-US,
-      // `" "` for en-GB. Derived for the same reason the names are: writing
-      // those two punctuation marks by hand would be the hand-written table one
-      // screen up, one field over.
-      const parts = format.formatToParts(new Date(Date.UTC(2026, 7, 2)))
-      const dayAt = parts.findIndex((part) => part.type === 'day')
-      const after = parts[dayAt + 1]
-      const trailer = after?.type === 'literal' ? after.value.trim() : ''
-      if (trailer !== '') dayTrailers.add(trailer)
+        const trailer = dayTrailerOf(format)
+        if (trailer !== null) dayTrailers.add(trailer)
 
-      for (let month = 0; month < 12; month += 1) {
-        // The 15th, so no zone or calendar edge can move the month even if the
-        // `timeZone` above were ever dropped by a careless edit.
-        const named = format
-          .formatToParts(new Date(Date.UTC(2026, month, 15)))
-          .find((part) => part.type === 'month')?.value
-        if (named === undefined) continue
+        for (let month = 0; month < 12; month += 1) {
+          // The 15th, so no zone or calendar edge can move the month even if the
+          // `timeZone` above were ever dropped by a careless edit.
+          const named = format
+            .formatToParts(new Date(Date.UTC(2026, month, 15)))
+            .find((part) => part.type === 'month')?.value
+          if (named === undefined) continue
 
-        if (!spellings[month].includes(named)) spellings[month].push(named)
+          if (!spellings[month].includes(named)) spellings[month].push(named)
 
-        const key = normalizeMonthToken(named)
-        const seen = byName.get(key)
-        if (seen === undefined) byName.set(key, month + 1)
-        else if (seen !== month + 1) collisions.push({ spelling: key, months: [seen, month + 1] })
+          const key = normalizeMonthToken(named)
+          const seen = byName.get(key)
+          if (seen === undefined) byName.set(key, month + 1)
+          else if (seen !== month + 1) collisions.push({ spelling: key, months: [seen, month + 1] })
+        }
       }
     }
   }

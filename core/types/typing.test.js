@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { TYPES } from './catalog.js'
 import {
   MEASURED_COLLISIONS,
+  MEASURED_CONTEXTS,
   MEASURED_DAY_TRAILERS,
   MEASURED_DISTINCT_SPELLINGS,
   MEASURED_ENGINES,
@@ -34,6 +35,7 @@ import {
   detectColumn,
   detectTable,
   expandTwoDigitYear,
+  MONTH_CONTEXTS,
   MONTH_LOCALES,
   MONTH_WIDTHS,
   monthLocaleGaps,
@@ -1825,6 +1827,35 @@ describe('piece 7 — month names', () => {
     })
   })
 
+  it('reads the German standalone abbreviation too, by derivation and not by hand', () => {
+    // **A different mechanism from the case above, and they sit together so the
+    // difference is visible.** `Aug` reads because normalization drops `Aug.`'s
+    // trailing point — one spelling, folded. `Mär` reads because the derivation
+    // asks `Intl` in a *second context*: no German formatter writes `Mär` inside
+    // a date, so no amount of normalizing `März` produces it, and before the
+    // owner's decision of 2026-08-03 this column was text while the other eleven
+    // months read. March was the only month it cost, because every other German
+    // standalone name already arrived through the dropped point (`Okt` ≡ `Okt.`)
+    // or through English (`Jun`, `Jul`, `Sep`, `Mar`).
+    expect(detectColumn(['2. Mär. 2026', '3. Mär. 2026'])).toMatchObject({
+      type: DATE,
+      format: { pattern: 'month name' },
+      counts: { parsed: 2, unparsed: 0 },
+    })
+    expect(detectColumn(['2. Mär 2026', '3 Mär 2026']).counts).toMatchObject({ parsed: 2 })
+
+    // …and the format context is still the source of truth rather than a peer:
+    // the long name and the dotted format-context spelling read exactly as they
+    // did, so the axis was added and nothing was traded for it.
+    expect(detectColumn(['2. März 2026', '3. März 2026']).type).toBe(DATE)
+    expect(detectColumn(['2. Aug. 2026', '31. Juli 2026']).type).toBe(DATE)
+
+    // Excel's own German abbreviation is in no CLDR context at all, so no
+    // derivation produces it and it stays text. Ledger entry, and the owner's
+    // call rather than a derivation question.
+    expect(detectColumn(['2. Mrz 2026', '3. Mrz 2026']).type).toBe(TEXT)
+  })
+
   it('reads a column that mixes the locales, and calls it settled', () => {
     // Not an ambiguity: both values are the same date under the one candidate,
     // and an ambiguity between readings that mean the same thing is not one.
@@ -2047,6 +2078,10 @@ describe('the month table, derived and frozen', () => {
     // fixture named the axes and compared them to nothing, which is a comment.
     expect([...MONTH_LOCALES]).toEqual([...MEASURED_LOCALES])
     expect([...MONTH_WIDTHS]).toEqual([...MEASURED_WIDTHS])
+    // The context axis is pinned the same way, and it is the newest and
+    // therefore the likeliest to be dropped by a later simplification: the union
+    // still looks plausible without it, and only March gives it away.
+    expect([...MONTH_CONTEXTS]).toEqual([...MEASURED_CONTEXTS])
   })
 
   it('has no spelling that means two months, which is what makes one candidate sound', () => {
@@ -2069,7 +2104,12 @@ describe('the month table, derived and frozen', () => {
     // whether the check exists or not, so this hands it one no engine has:
     // `Intl` resolves `xx-YY` to the default locale and would otherwise hand
     // back that locale's month names under the `xx-YY` tag.
-    expect(monthLocaleGaps(['xx-YY'])).toEqual(['xx-YY/short', 'xx-YY/long'])
+    expect(monthLocaleGaps(['xx-YY'])).toEqual([
+      'xx-YY/short/format',
+      'xx-YY/short/standalone',
+      'xx-YY/long/format',
+      'xx-YY/long/standalone',
+    ])
     expect(monthLocaleGaps([...MEASURED_LOCALES])).toEqual([])
   })
 
@@ -2092,6 +2132,35 @@ describe('the month table, derived and frozen', () => {
     }
 
     expect([...trailers].sort()).toEqual([...MEASURED_DAY_TRAILERS].sort())
+  })
+
+  it('asks only the format context for the day trailer, because only it has a day', () => {
+    // The standalone axis is an accepted *vocabulary*, not a second source of
+    // truth for the shape a locale writes — and this is the line that proves it.
+    // A standalone formatter is `{ month, timeZone }` and has no `day` part, so
+    // "what follows the day" is a question it cannot answer. `dayTrailerOf` says
+    // so by looking for the part rather than by a caller knowing which context
+    // it is in, which is what keeps the rule structural instead of remembered.
+    // The fact the whole arrangement rests on, asserted rather than believed —
+    // and asserted twice, because the second half is the stronger statement:
+    // a standalone formatter has no `day` part, and it has no `literal` part
+    // either, so there is nothing in it a trailer could be read out of. That
+    // second one is why striking `dayTrailerOf`'s explicit `dayAt === -1` line
+    // leaves the suite green: the guard is a stated contract, not the thing
+    // doing the work. It is kept for the day these options gain a field.
+    for (const locale of MEASURED_LOCALES) {
+      for (const width of MEASURED_WIDTHS) {
+        const standalone = new Intl.DateTimeFormat(locale, { month: width, timeZone: 'UTC' })
+        const parts = standalone.formatToParts(new Date(Date.UTC(2026, 7, 2)))
+
+        expect([locale, width, parts.some((p) => p.type === 'day')]).toEqual([locale, width, false])
+        expect([locale, width, parts.map((p) => p.type)]).toEqual([locale, width, ['month']])
+      }
+    }
+
+    // …and the derived set is still exactly the two marks a *date* carries, so
+    // the second axis added no trailer and could not have.
+    expect([...MEASURED_DAY_TRAILERS]).toEqual(['.', ','])
   })
 
   it('is derived in format context, which is not a refinement but the feature', () => {

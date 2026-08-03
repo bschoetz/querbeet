@@ -20,6 +20,12 @@
 // product may read it: the day it is used as the table, the derivation stops
 // being derived and this stops being an independent measurement.
 //
+// WHAT IS MEASURED HERE, AS OF 2026-08-03: three locales × two widths × **two
+// contexts**. The context axis is the owner's decision of that date, which
+// closed the German-standalone gap by deriving a second axis rather than by
+// writing `Mär` down. The engine stamps below are unchanged and still stand —
+// the axis moved, the engines did not.
+//
 // HOW TO RE-MEASURE. `node _bmad-output/planning-artifacts/spikes/
 // intl-month-names-2026-08-03/run-spike.mjs` from the repo root re-runs the
 // original apparatus across all three engines and prints a disagreement count.
@@ -39,13 +45,20 @@ export const MEASURED_ENGINES = Object.freeze([
   Object.freeze({ name: 'firefox', version: '153.0' }),
 ])
 
-/** The locales and widths the table is derived over — the axes of the
+/** The locales, widths and contexts the table is derived over — the axes of the
  *  measurement, so a fixture that matches on content while the derivation
  *  quietly dropped an axis still fails. They are compared against the product's
- *  own `MONTH_LOCALES` and `MONTH_WIDTHS`, which is why those are exported: an
- *  axis named only here and never against anything is a comment. */
+ *  own `MONTH_LOCALES`, `MONTH_WIDTHS` and `MONTH_CONTEXTS`, which is why those
+ *  are exported: an axis named only here and never against anything is a
+ *  comment.
+ *
+ *  The context axis arrived on 2026-08-03 with the owner's decision to close the
+ *  German-standalone gap by derivation. It is **not** a demotion of the format
+ *  context: `format` remains the source of truth for the shape a locale writes
+ *  and is the only context that can answer the day trailer. */
 export const MEASURED_LOCALES = Object.freeze(['de-DE', 'en-US', 'en-GB'])
 export const MEASURED_WIDTHS = Object.freeze(['short', 'long'])
+export const MEASURED_CONTEXTS = Object.freeze(['format', 'standalone'])
 
 /** The normalization the union is unambiguous *under*. It is part of the
  *  measurement rather than a note about it: `Sept.` and `Sept` collapse to one
@@ -55,34 +68,42 @@ export const MEASURED_NORMALIZATION = 'toLocaleLowerCase("de-DE"), trailing "." 
 
 /**
  * Every raw CLDR spelling per month, in derivation order — locale by locale as
- * `MEASURED_LOCALES` lists them, short before long, each distinct string once.
- * Index 0 is January.
+ * `MEASURED_LOCALES` lists them, short before long, format context before
+ * standalone, each distinct string once. Index 0 is January.
  *
- * Forty raw strings, **34 distinct once normalized, 0 of them meaning two
- * months**. The three spellings of September in one row — `Sept.` (de-DE),
- * `Sep` (en-US), `Sept` (en-GB) — are the measurement that decided this is a
- * *set* per month rather than one string per month, and they are all present
- * today rather than feared for tomorrow.
+ * Forty-three raw strings, **35 distinct once normalized, 0 of them meaning two
+ * months**. The four spellings of September in one row — `Sept.` (de-DE format),
+ * `Sep` (en-US, and de-DE standalone), `September`, `Sept` (en-GB) — are the
+ * measurement that decided this is a *set* per month rather than one string per
+ * month, and they are all present today rather than feared for tomorrow.
+ *
+ * **`Mär` on March is the whole of what the standalone axis added**, measured
+ * 2026-08-03: every other German standalone name already arrived, either through
+ * the dropped trailing point (`Okt` normalizes onto `Okt.`, `Dez` onto `Dez.`)
+ * or through English (`Jun`, `Jul`, `Sep`, `Mar`). Three raw strings joined,
+ * one new normalized spelling came of it, 34 → 35, and nothing collided.
  */
 export const MEASURED_SPELLINGS = Object.freeze([
-  Object.freeze(['Jan.', 'Januar', 'Jan', 'January']),
-  Object.freeze(['Feb.', 'Februar', 'Feb', 'February']),
-  Object.freeze(['März', 'Mar', 'March']),
-  Object.freeze(['Apr.', 'April', 'Apr']),
+  Object.freeze(['Jan.', 'Jan', 'Januar', 'January']),
+  Object.freeze(['Feb.', 'Feb', 'Februar', 'February']),
+  Object.freeze(['März', 'Mär', 'Mar', 'March']),
+  Object.freeze(['Apr.', 'Apr', 'April']),
   Object.freeze(['Mai', 'May']),
   Object.freeze(['Juni', 'Jun', 'June']),
   Object.freeze(['Juli', 'Jul', 'July']),
-  Object.freeze(['Aug.', 'August', 'Aug']),
-  Object.freeze(['Sept.', 'September', 'Sep', 'Sept']),
-  Object.freeze(['Okt.', 'Oktober', 'Oct', 'October']),
-  Object.freeze(['Nov.', 'November', 'Nov']),
-  Object.freeze(['Dez.', 'Dezember', 'Dec', 'December']),
+  Object.freeze(['Aug.', 'Aug', 'August']),
+  Object.freeze(['Sept.', 'Sep', 'September', 'Sept']),
+  Object.freeze(['Okt.', 'Okt', 'Oktober', 'Oct', 'October']),
+  Object.freeze(['Nov.', 'Nov', 'November']),
+  Object.freeze(['Dez.', 'Dez', 'Dezember', 'Dec', 'December']),
 ])
 
 /** Distinct spellings after normalization, and spellings meaning two months.
  *  Counted rather than eyeballed, and asserted separately from the table above
- *  so a table that grows without colliding still says by how much. */
-export const MEASURED_DISTINCT_SPELLINGS = 34
+ *  so a table that grows without colliding still says by how much. 34 before the
+ *  standalone axis, 35 after it, and 0 either way — which is what made the axis
+ *  admissible rather than merely convenient. */
+export const MEASURED_DISTINCT_SPELLINGS = 35
 export const MEASURED_COLLISIONS = 0
 
 /** Every trailing **mark** the day may carry, derived from the literal
