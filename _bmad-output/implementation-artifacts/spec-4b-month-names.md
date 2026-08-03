@@ -2,8 +2,8 @@
 title: 'Story 4b — Month names in dates, German and English'
 type: 'feature'
 created: '2026-08-03'
-status: 'in-progress'
-review_loop_iteration: 0
+status: 'in-review'
+review_loop_iteration: 1
 baseline_commit: 'b06282bce31a29d3336abcb44aff724914a9a713'
 context:
   - '_bmad-output/planning-artifacts/spikes/intl-month-names-2026-08-03/findings.md'
@@ -119,6 +119,82 @@ context:
 - Given `npm run verify`, when it runs on the finished story, then lint, unit and e2e all pass.
 
 ## Spec Change Log
+
+### 2026-08-03 — review round 1: ten patches, three ledger entries, no Boundary moved
+
+Three reviewers found no intent gap and no spec defect — the code did what the
+spec said. What it found instead was a set of rules nothing observed, and that is
+the shape of the whole round.
+
+**The headline, because it is the one that was actually broken in the product.**
+`normalizeMonthToken`'s dropped trailing point was mutation-survivable: deleting
+it left all 409 tests green while `['2. Okt 2026', '3. Okt 2026']` and the same
+for `Dez` flipped from `date` to `text`. Every existing normalization case used a
+month with an undotted English twin (`Aug.` beside `Aug`), so the rule was never
+load-bearing where it was tested — and `Okt.` and `Dez.` are the only two months
+it carries alone. Fixed in the file's derived style: the function is exported and
+a case walks **every** derived spelling through it in five spellings each (as
+derived, point dropped, upper-cased, lower-cased, upper-cased with the point
+dropped). The distinct-count test now calls the product's function instead of a
+local copy of it — the local copy is why the mutation survived that test too.
+
+**The e2e journey carried three German values, so the entire English half of the
+vocabulary and the `,` day trailer were unobserved in Chromium and Firefox.**
+That is the exact "green test over a broken product" the frozen fixture's header
+names: the month table is derived from the *engine's* ICU and every unit guard
+runs under Node. The column now carries one value per locale group — de-DE short
+and long, en-US (month first, comma trailer), en-GB (month second, no trailer) —
+and asserts the column reads fully. Both engines, no new cost.
+
+**`namedReadingGaps()` said "every reading" and checked two kinds of four.** It
+is `readingLabelGaps()` now and walks every kind `candidatesFor` serves. Number
+readings fell through `NUMBER_LABEL[locale] ?? locale` with nothing watching
+them — and this story put a third locale into a locale list in the same file as
+`NUMBER_LOCALES`, so the day a third *number* locale arrives the pane would have
+rendered a bare `en-GB`. The four boolean pairs are explicit entries in
+`NAMED_READING` for the reason `ISO 8601` is: they render as their own two words
+because the words are the column's values, and until they were entered they
+passed the check by looking like patterns that spell themselves.
+
+**Both label maps are null-prototype and looked up with `Object.hasOwn`.** A
+pattern named `constructor` would have rendered a function body *and* been
+filtered out of the gap function as already covered — a clean report on exactly
+the case the report exists to catch.
+
+**Six more, each of the same kind.** A candidate lacking `order` must carry
+`monthName: true`, so the escape hatch the two scoped walks opened is bound to
+the one candidate it was opened for. `MEASURED_DAY_TRAILERS` contradicted its own
+docstring; the value was right and the sentence was wrong. Three fixture
+assertions compared a constant to a copy of itself — `MONTH_LOCALES` and
+`MONTH_WIDTHS` are exported and compared, and the running engine's ICU is
+asserted against the Node stamp (through `globalThis`, because `core/` is
+deliberately linted with neither the browser nor the Node globals).
+`deriveMonthNames` returned a `Map` and a `Set` raw while freezing everything
+beside them, in the file whose `freezeDeep` docblock exists because a rule is not
+a place to keep mutable state; both are frozen structures now. A column mixing a
+month-name date with a numeric one — the realistic German export — is `text`,
+`settled`, and now a stated answer rather than an accident of two hit rates. And
+`readsAsMonthNameDate` tests the four-digit year before it lowercases three
+tokens.
+
+**Re-measured, because the reorder touched the hot path:** 2.39/2.39/2.41/2.38 s
+before against 2.50/2.49/2.52/2.53 s after, **+4.9 %** — the same figure as the
++4.5 % of the first run, within the noise of two runs. The reorder is a
+worst-case and readability win rather than a measurable one, and is recorded that
+way rather than claimed as a saving.
+
+**Mutation-verified after the round:** the dropped point (3 cases), the missing
+`monthName` flag (12), a dropped locale axis (2), a dropped width axis (7) and a
+moved ICU stamp (1) each fail exactly the cases that name them.
+
+**Three ledger entries, none of them fixed here.** Non-breaking spaces (refused,
+and the derivation backs it — all three skeletons emit U+0020 and only U+0020).
+German standalone abbreviations, which cost **exactly one month**: `Mär` is the
+only German standalone spelling the union lacks, because `jun`, `jul`, `sep` and
+`mar` all arrive through English anyway — and Excel's own `Mrz` is not a CLDR
+spelling in any locale or width, so it could only ever be hand-written. And
+`FIELD_LETTERS`'s doubled-letter sniff, with the alternative named: a `named:
+true` flag declared on the candidate in the core.
 
 ### 2026-08-03 — as built
 

@@ -41,7 +41,9 @@ export const MEASURED_ENGINES = Object.freeze([
 
 /** The locales and widths the table is derived over — the axes of the
  *  measurement, so a fixture that matches on content while the derivation
- *  quietly dropped an axis still fails. */
+ *  quietly dropped an axis still fails. They are compared against the product's
+ *  own `MONTH_LOCALES` and `MONTH_WIDTHS`, which is why those are exported: an
+ *  axis named only here and never against anything is a comment. */
 export const MEASURED_LOCALES = Object.freeze(['de-DE', 'en-US', 'en-GB'])
 export const MEASURED_WIDTHS = Object.freeze(['short', 'long'])
 
@@ -83,8 +85,14 @@ export const MEASURED_SPELLINGS = Object.freeze([
 export const MEASURED_DISTINCT_SPELLINGS = 34
 export const MEASURED_COLLISIONS = 0
 
-/** The literal `formatToParts` puts after the day part, trimmed: `". "` for
- *  de-DE, `", "` for en-US, `" "` for en-GB. The empty one is what en-GB's
- *  bare space becomes, and it is in the measurement because it is what makes
- *  `2 Aug 2026` a shape with no trailing mark at all. */
+/** Every trailing **mark** the day may carry, derived from the literal
+ *  `formatToParts` puts after the day part and then trimmed: `". "` for de-DE
+ *  gives `.`, `", "` for en-US gives `,`.
+ *
+ *  en-GB's `" "` trims to nothing and is deliberately **not** an entry here. Its
+ *  absence is the point: `2 Aug 2026` carries no trailing mark at all, and "no
+ *  mark" is expressed by the day token's optional group rather than by an empty
+ *  string in a set of marks. An earlier version of this comment claimed the
+ *  empty string was in the measurement while the value below said otherwise;
+ *  the value was right. */
 export const MEASURED_DAY_TRAILERS = Object.freeze(['.', ','])

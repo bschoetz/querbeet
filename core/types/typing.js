@@ -50,7 +50,13 @@
 //      Story 4b's month-name candidate cost **about +4.5 %** on top: measured on
 //      the same Mix A at the same shape, four paired runs in alternating order,
 //      best of three per run — **2.40/2.40/2.45/2.42 s before against
-//      2.52/2.52/2.54/2.54 s after**. It is one candidate on a separator no date
+//      2.52/2.52/2.54/2.54 s after**. Re-measured after review round 1 moved the
+//      four-digit year test to the front of `readsAsMonthNameDate`, which was
+//      expected to buy back the three lowercasings an ordinary text value used
+//      to pay: **2.39/2.39/2.41/2.38 against 2.50/2.49/2.52/2.53, +4.9 %** — the
+//      same figure within the noise of two runs, so the reorder is a
+//      readability and worst-case win rather than a measurable one, and it is
+//      recorded that way rather than claimed. It is one candidate on a separator no date
 //      pattern used before, so `MARKS` grew from eight marks to **nine** (`. / -
 //      ,` plus `: % € $` plus the space) and the space is present in almost every
 //      report column, which is why a single candidate costs nearly twice what the
@@ -145,8 +151,12 @@ const NUMBER_LOCALES = ['de-DE', 'en-US']
  *  `en-US` and `en-GB` are two locales rather than one because CLDR abbreviates
  *  September differently in each: `Sep` against `Sept`. That single disagreement
  *  is what forces a *set* of accepted spellings per month below, and it is
- *  measured today rather than feared for tomorrow. */
-const MONTH_LOCALES = ['de-DE', 'en-US', 'en-GB']
+ *  measured today rather than feared for tomorrow.
+ *
+ *  Exported beside `MONTH_WIDTHS`: the two are the *axes* the frozen fixture
+ *  claims to pin, and a fixture that names an axis only in a comment cannot fail
+ *  when the derivation quietly drops one. */
+export const MONTH_LOCALES = Object.freeze(['de-DE', 'en-US', 'en-GB'])
 
 /**
  * A candidate list is a rule, and a rule is not a place to keep mutable state.
@@ -206,14 +216,29 @@ function freezeDeep(value) {
 // spellings, rather than a column that silently falls back to text.
 
 /** Both CLDR widths. `Sept.` has four letters, so "abbreviated" is not "three
- *  letters" and the two widths are two vocabularies, not one plus a prefix. */
-const MONTH_WIDTHS = ['short', 'long']
+ *  letters" and the two widths are two vocabularies, not one plus a prefix.
+ *
+ *  Exported beside `MONTH_LOCALES` because the two are the *axes* of the
+ *  derivation, and the frozen fixture claims to pin them: a table that matched
+ *  spelling for spelling while an axis had quietly been dropped would pass a
+ *  comparison against a fixture that named the axis only in a comment. */
+export const MONTH_WIDTHS = Object.freeze(['short', 'long'])
 
 /** Case-fold, then drop one trailing point. CLDR abbreviates only the *long*
  *  names, so `Jan. Feb. Apr. Aug. Sept. Okt. Nov. Dez.` carry a point while
  *  `März Mai Juni Juli` stand in full without one — and an exporter that
- *  upper-cases its headers or loses the point has not invented a new month. */
-const normalizeMonthToken = (token) => token.toLocaleLowerCase('de-DE').replace(/\.$/, '')
+ *  upper-cases its headers or loses the point has not invented a new month.
+ *
+ *  **Exported because the dropped point was measured to be unobservable.**
+ *  Deleting `.replace(/\.$/, '')` left the whole suite green: every case that
+ *  exercised the normalization used a month with an undotted English twin
+ *  (`Aug.` beside `Aug`), so the rule was never load-bearing where it was
+ *  tested. `Okt.` and `Dez.` are the only two months it carries alone — German
+ *  abbreviations with no English spelling behind them — and a test now walks
+ *  every derived spelling through this function rather than re-implementing it,
+ *  because a local copy in the test is a second rule that agrees with the first
+ *  until someone edits one of them. */
+export const normalizeMonthToken = (token) => token.toLocaleLowerCase('de-DE').replace(/\.$/, '')
 
 /**
  * Ask `Intl` for the month names, the day's trailing literal, and whether the
@@ -274,13 +299,24 @@ function deriveMonthNames(locales = MONTH_LOCALES) {
     }
   }
 
-  return {
+  // `byName` and `dayTrailers` are built as a `Map` and a `Set` because that is
+  // what building them wants, and neither survives this return in that form.
+  // `MONTHS` is module state, and `Object.freeze` does nothing to a `Map` —
+  // `.set` still works on a frozen one — so handing those two back raw would be
+  // exactly the hole `freezeDeep`'s docblock exists for, one screen up, whose
+  // own measured example is a mutated rule flipping a column's verdict. The
+  // lookup becomes a **null-prototype** frozen object rather than a plain one so
+  // a month spelled `constructor` or `toString` cannot inherit an answer.
+  const lookup = Object.create(null)
+  for (const [key, month] of byName) lookup[key] = month
+
+  return Object.freeze({
     spellings: freezeDeep(spellings),
-    byName,
+    byName: Object.freeze(lookup),
     collisions: freezeDeep(collisions),
     fallbacks: freezeDeep(fallbacks),
-    dayTrailers,
-  }
+    dayTrailers: freezeDeep([...dayTrailers]),
+  })
 }
 
 const MONTHS = deriveMonthNames()
@@ -831,7 +867,7 @@ const DAY_TOKEN = /^(\d{1,2})(?:st|nd|rd|th)?(.)?$/i
 function readsAsDayToken(token) {
   const match = DAY_TOKEN.exec(token)
   if (match === null) return null
-  if (match[2] !== undefined && !MONTHS.dayTrailers.has(match[2])) return null
+  if (match[2] !== undefined && !MONTHS.dayTrailers.includes(match[2])) return null
   return Number(match[1])
 }
 
@@ -866,10 +902,17 @@ function readsAsDayToken(token) {
  * correctness, because the date it yields is right either way.
  */
 function readsAsMonthNameDate(parts) {
+  // The year test stands first because it is the cheapest thing that can refuse
+  // a value, and this candidate is scored on every column carrying a space —
+  // which is nearly every text column in a report. One regex against the last
+  // token rejects `Anna Meier Schmidt` before three lowercasings and three map
+  // lookups are paid for it.
+  if (!FOUR_DIGITS.test(parts[2])) return false
+
   let monthAt = -1
   let month = 0
   for (let i = 0; i < 3; i += 1) {
-    const found = MONTHS.byName.get(normalizeMonthToken(parts[i]))
+    const found = MONTHS.byName[normalizeMonthToken(parts[i])]
     if (found === undefined) continue
     if (monthAt !== -1) return false
     monthAt = i
@@ -877,9 +920,7 @@ function readsAsMonthNameDate(parts) {
   }
   if (monthAt !== 0 && monthAt !== 1) return false
 
-  const dayAt = monthAt === 0 ? 1 : 0
-  if (!FOUR_DIGITS.test(parts[2])) return false
-  const day = readsAsDayToken(parts[dayAt])
+  const day = readsAsDayToken(parts[monthAt === 0 ? 1 : 0])
   if (day === null) return false
 
   return isRealDate(Number(parts[2]), month, day)

@@ -349,18 +349,32 @@ test('a date written with a month name is a date, and says so in German', async 
   // Story 4b, as one journey. The Source that opened the gate is a Microsoft 365
   // security export, and before this story every value below was `text` — a
   // column that can never be filtered with `>`, never grouped by month.
+  //
+  // THE COLUMN CARRIES ONE VALUE PER LOCALE GROUP, AND THAT IS THE POINT OF
+  // RUNNING IT HERE AT ALL. The month table is derived from the *engine's* ICU,
+  // and every unit guard on it runs under Node (AD-27, `environment: 'node'`) —
+  // so a disagreement between Node and a browser is a suite that passes green
+  // while the product fails, which is the failure the frozen fixture's header
+  // names. A German-only column would have left the whole English half of the
+  // vocabulary and the `,` day trailer unobserved in both engines. These four
+  // values exercise de-DE short and long, en-US (month first, comma trailer) and
+  // en-GB (month second, no trailer) in Chromium and Firefox.
   await pick(
     page,
     csv(
       'freigaben.csv',
-      'Konto;Ablauf\nA-1;2. Aug. 2026\nB-2;31. Juli 2026\nC-3;1. Sept. 2026\n',
+      'Konto;Ablauf\n' +
+        'A-1;2. Aug. 2026\n' +
+        'B-2;31. Juli 2026\n' +
+        'C-3;Aug 2, 2026\n' +
+        'D-4;2 Sept 2026\n',
     ),
   )
 
   const card = cards(page)
   await expect(card.getByLabel('Typ: Ablauf')).toHaveValue('date')
   await expect(columnRow(page, 'Ablauf').getByTestId('typing-hitrate')).toHaveText(
-    '3 von 3 Werten lesbar',
+    '4 von 4 Werten lesbar',
   )
 
   // The numeric candidates read nothing here, so there is no contest and no

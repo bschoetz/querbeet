@@ -34,9 +34,12 @@ import {
   detectColumn,
   detectTable,
   expandTwoDigitYear,
+  MONTH_LOCALES,
+  MONTH_WIDTHS,
   monthLocaleGaps,
   monthNameCollisions,
   monthNameSpellings,
+  normalizeMonthToken,
   numberParts,
   numberCandidates,
   scorableTypeGaps,
@@ -1120,6 +1123,15 @@ describe('piece 2 — datetime, and the two-digit year', () => {
     // `2. Aug. 26` has no derivation behind it and would reopen the century
     // question on a shape no Source has shown. It is refused, with a ledger
     // entry, rather than mirrored.
+    // **And the escape hatch is bound to the one candidate it was opened for.**
+    // `order` is optional in `readsAsDate`'s destructuring, so a numeric
+    // candidate added without one would slip past both scoped walks in silence —
+    // no mirror owed, no day position checked. Lacking an `order` is legal only
+    // for a candidate that reads its ordering out of the value.
+    for (const candidate of dateCandidates().filter((c) => !c.order)) {
+      expect([candidate.pattern, candidate.monthName]).toEqual([candidate.pattern, true])
+    }
+
     const mirrorOf = (pattern) => pattern.replace('yyyy', 'yy')
     const patterns = new Set(dateCandidates().map((c) => c.pattern))
     for (const candidate of dateCandidates().filter((c) => c.order && !c.shortYear)) {
@@ -1880,6 +1892,27 @@ describe('piece 7 — month names', () => {
     expect(r.evidence).toBeNull()
   })
 
+  it('leaves a column that mixes a month name with a numeric date as text', () => {
+    // The realistic German export: half the rows written one way, half the
+    // other. Each reading covers half the column, neither clears the 0.9
+    // threshold, and the column is `text` — the right answer, and a *stated*
+    // one now rather than an accident of two hit rates. It is also not an
+    // ambiguity: `settled` with no evidence, because the question is not which
+    // reading wins but that no reading reads the column.
+    expect(detectColumn(['2. Aug. 2026', '02.08.2026', '3. Aug. 2026', '03.08.2026'])).toMatchObject(
+      { type: TEXT, verdict: 'settled', evidence: null },
+    )
+
+    // …and one stray numeric date among month-name dates is one unparsed value,
+    // exactly as story 3 counts every other stray.
+    const mostly = [...Array.from({ length: 19 }, (_, i) => `${i + 1}. Aug. 2026`), '02.08.2026']
+    expect(detectColumn(mostly)).toMatchObject({
+      type: DATE,
+      format: { pattern: 'month name' },
+      counts: { parsed: 19, unparsed: 1 },
+    })
+  })
+
   it('stays below the threshold where the column is mostly text', () => {
     const cells = [
       ...Array.from({ length: 5 }, (_, i) => `${i + 1}. Aug. 2026`),
@@ -1941,13 +1974,79 @@ describe('the month table, derived and frozen', () => {
     }
   })
 
-  it('counts the same distinct spellings, under the same normalization', () => {
-    const normalize = (name) => name.toLocaleLowerCase('de-DE').replace(/\.$/, '')
-    const distinct = new Set(monthNameSpellings().flat().map(normalize))
+  it('counts the same distinct spellings, through the product’s own normalization', () => {
+    // `normalizeMonthToken` rather than a copy of it. A local re-implementation
+    // here agreed with the product until someone edited one of them — and it is
+    // why deleting the dropped trailing point left this count green while
+    // `2. Okt 2026` had stopped reading.
+    const distinct = new Set(monthNameSpellings().flat().map(normalizeMonthToken))
 
     expect(distinct.size).toBe(MEASURED_DISTINCT_SPELLINGS)
+  })
+
+  it('normalizes the way the fixture says it does, in both halves', () => {
+    // `MEASURED_NORMALIZATION` is the sentence the count above is true under, so
+    // it is checked against the *function* rather than against a copy of its own
+    // literal — which is what it used to be compared with.
     expect(MEASURED_NORMALIZATION).toBe('toLocaleLowerCase("de-DE"), trailing "." dropped')
+
+    // Case-folding, including the one the German locale decides.
+    expect(normalizeMonthToken('AUG')).toBe('aug')
+    expect(normalizeMonthToken('MÄRZ')).toBe('märz')
+    // …and the dropped point, which is the half that had nothing watching it.
+    expect(normalizeMonthToken('Okt.')).toBe('okt')
+    expect(normalizeMonthToken('Sept.')).toBe(normalizeMonthToken('Sept'))
+    // One point, at the end, and not a general strip: a point anywhere else is
+    // not a CLDR spelling and must not be folded away.
+    expect(normalizeMonthToken('a.b.')).toBe('a.b')
+  })
+
+  it('reads every derived spelling with its point dropped and its case flipped', () => {
+    // The normalization walked over the whole vocabulary rather than sampled,
+    // because the sample was the bug: every case that exercised it used a month
+    // with an undotted English twin (`Aug.` beside `Aug`), so the rule was never
+    // load-bearing where it was tested. `Okt.` and `Dez.` are the two months it
+    // carries alone, and both are in here by construction now.
+    for (const spellings of monthNameSpellings()) {
+      for (const spelling of spellings) {
+        for (const written of [
+          spelling,
+          spelling.replace(/\.$/, ''),
+          spelling.toLocaleUpperCase('de-DE'),
+          spelling.toLocaleLowerCase('de-DE'),
+          spelling.toLocaleUpperCase('de-DE').replace(/\.$/, ''),
+        ]) {
+          const cells = [`1. ${written} 2026`, `2. ${written} 2026`]
+          expect([written, detectColumn(cells).type]).toEqual([written, DATE])
+        }
+      }
+    }
+  })
+
+  it('says which engines it was measured in, and checks the one it is running in', () => {
+    // The stamps exist so a failure can name what moved — a Node bump and a
+    // browser bump are different findings. The running engine is the one this
+    // envelope can actually observe (`core/` is `environment: 'node'`, AD-27),
+    // so its ICU is compared to the Node stamp rather than to a copy of the
+    // engine-name list, which is what this used to be.
+    //
+    // Through `globalThis` rather than a bare `process`: `core/` is linted with
+    // neither the browser nor the Node globals, deliberately, because an
+    // undefined variable there is the second line of defence behind AD-2. That
+    // discipline holds for a test in the folder as much as for the module.
+    const node = MEASURED_ENGINES.find((engine) => engine.name === 'node')
+    const icu = globalThis.process?.versions?.icu
+
     expect(MEASURED_ENGINES.map((e) => e.name)).toEqual(['node', 'chromium', 'firefox'])
+    expect([icu, node.icu]).toEqual([node.icu, node.icu])
+  })
+
+  it('pins the axes the table is derived over, against the derivation itself', () => {
+    // A table can match spelling for spelling while an axis has quietly been
+    // dropped — de-DE and en-US alone still produce a plausible union. The
+    // fixture named the axes and compared them to nothing, which is a comment.
+    expect([...MONTH_LOCALES]).toEqual([...MEASURED_LOCALES])
+    expect([...MONTH_WIDTHS]).toEqual([...MEASURED_WIDTHS])
   })
 
   it('has no spelling that means two months, which is what makes one candidate sound', () => {

@@ -10,7 +10,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { TYPES } from '@core/types/catalog.js'
-import SourcesPane, { namedReadingGaps } from './SourcesPane.vue'
+import SourcesPane, { readingLabelGaps } from './SourcesPane.vue'
 import { settableTypeLabels, typeLabel, typeLabelGaps } from './type-labels.js'
 
 const column = (name, over = {}) => ({
@@ -454,12 +454,42 @@ describe('the reading select', () => {
     expect(options.filter((o) => /[dy]/.test(o))).toEqual([])
   })
 
-  it('has a German word for every reading that spells no field letters', () => {
+  it('has a German word for every reading it would otherwise render in the core’s words', () => {
     // Completeness rather than a sample, and the sibling of `typeLabelGaps()`
     // one level down: `patternLabel` is a string transform, so a candidate the
-    // core names instead of spelling — `ISO 8601`, `month name` — passes through
-    // it untouched and reaches a Source card in English. Empty is the rule.
-    expect(namedReadingGaps()).toEqual([])
+    // core *names* instead of spelling — `ISO 8601`, `month name` — passes
+    // through it untouched and reaches a Source card in English. Empty is the
+    // rule.
+    //
+    // It walks every kind `candidatesFor` serves rather than the two date-shaped
+    // ones: a number reading falls through `NUMBER_LABEL[locale] ?? locale` with
+    // nothing watching it, and story 4b put a third locale into a locale list in
+    // the same file as `NUMBER_LOCALES`. The day a third *number* locale arrives
+    // this fails instead of the pane rendering a bare `en-GB`.
+    expect(readingLabelGaps()).toEqual([])
+  })
+
+  it('spells the boolean pairs as the words that stand in the cells', async () => {
+    // The pairs are in the label map explicitly, and the reason is the same one
+    // `ISO 8601` is: they render as their own two words because the words are
+    // the column's *values* rather than interface prose. Until they were entered
+    // they passed the gap check by looking like patterns that spell themselves,
+    // which they are not — so this is the case that keeps the entries from
+    // looking redundant to whoever cleans the map next.
+    const w = await render(
+      stubStore(
+        source([
+          column('Freigegeben', { type: 'boolean', format: { pattern: 'ja/nein' } }),
+        ]),
+      ),
+    )
+
+    expect(
+      w
+        .get('select[aria-label="Lesart: Freigegeben"]')
+        .findAll('option')
+        .map((o) => o.text()),
+    ).toEqual(['true/false', 'wahr/falsch', 'ja/nein', '1/0'])
   })
 
   it('spells a datetime pattern in German field letters, two-digit year included', async () => {

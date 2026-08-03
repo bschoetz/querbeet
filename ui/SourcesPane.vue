@@ -6,7 +6,8 @@
 // observe — which is the state `typeLabelGaps` exists to keep out of a release,
 // one level up.
 
-import { DATE, DATETIME, candidatesFor as offeredCandidates } from '@core/types/typing.js'
+import { TYPES } from '@core/types/catalog.js'
+import { candidatesFor } from '@core/types/typing.js'
 
 /**
  * The German word for a reading that is not spelled in field letters.
@@ -21,27 +22,67 @@ import { DATE, DATETIME, candidatesFor as offeredCandidates } from '@core/types/
  * `ISO 8601` is in the map explicitly although its German word is the standard's
  * own name, and that is what makes the map honest: without the entry, "it comes
  * out right anyway" is an accident of the transform rather than a decision, and
- * the gap function below could not tell the two apart.
+ * the gap function below could not tell the two apart. **The four boolean pairs
+ * are here for the same reason**: they render as their own two words because the
+ * words are the column's *values* rather than interface prose — `ja/nein` is
+ * what stands in the cells — and until they were entered they passed the gap
+ * check by looking like patterns that spell themselves, which they do not.
+ *
+ * Null-prototype, because this is looked up with a key that comes out of the
+ * core: a candidate named `constructor` or `toString` would otherwise inherit an
+ * answer and render a function body.
  */
-const NAMED_READING = Object.freeze({
-  'ISO 8601': 'ISO 8601',
-  'month name': 'Monatsname (2. Aug. 2026)',
-})
+const NAMED_READING = Object.freeze(
+  Object.assign(Object.create(null), {
+    'ISO 8601': 'ISO 8601',
+    'month name': 'Monatsname (2. Aug. 2026)',
+    'true/false': 'true/false',
+    'wahr/falsch': 'wahr/falsch',
+    'ja/nein': 'ja/nein',
+    '1/0': '1/0',
+  }),
+)
+
+/** The German word for a number reading, which names its *locale* rather than
+ *  its separators: "de-DE against en-US" is a distinction a person can act on
+ *  and "`.,` against `,.`" is not. It sits beside `NAMED_READING` because the
+ *  gap function below has to consult both, and null-prototype for the same
+ *  reason — the key comes out of the core. */
+const NUMBER_LABEL = Object.freeze(
+  Object.assign(Object.create(null), {
+    'de-DE': 'Deutsch (1.234,56)',
+    'en-US': 'Englisch (1,234.56)',
+  }),
+)
 
 /** A pattern that spells itself — one that contains a field letter pair the
  *  transform can replace. Everything else needs a word. */
 const FIELD_LETTERS = /dd|yy|MM|HH|mm|ss/
 
-/** Every reading the core offers that spells no field letter and has no German
- *  word here. Empty is the rule, and a test asserts it — the same shape
- *  `typeLabelGaps()` has for the types. Without it, a candidate named rather
- *  than spelled reaches a Source card in English, which is what `ISO 8601`
- *  already did for one story before `month name` made it visible. */
-export const namedReadingGaps = () =>
-  [...offeredCandidates(DATE), ...offeredCandidates(DATETIME)]
-    .map((candidate) => candidate.pattern)
-    .filter((pattern) => pattern && !FIELD_LETTERS.test(pattern))
-    .filter((pattern) => NAMED_READING[pattern] === undefined)
+/**
+ * Every reading the core offers that this pane would render in the core's own
+ * words. Empty is the rule, and a test asserts it — the same shape
+ * `typeLabelGaps()` has for the types.
+ *
+ * **It walks every kind `candidatesFor` serves, because the sentence above says
+ * "every reading" and an invariant that checks two of four kinds is a sentence
+ * that is not true.** The date patterns were the visible half; the number
+ * readings fall through `NUMBER_LABEL[locale] ?? locale` with nothing watching
+ * them, and story 4b just put a third locale (`en-GB`) into a locale list in the
+ * same file as `NUMBER_LOCALES`, under a rule that says a third number locale
+ * arrives with the Source that needs it. The day it does, this fails instead of
+ * the pane rendering a bare `en-GB`.
+ */
+export const readingLabelGaps = () =>
+  TYPES.filter((type) => type.settable)
+    .flatMap((type) => [...candidatesFor(type.code)])
+    .filter((candidate) =>
+      candidate.locale !== undefined
+        ? !Object.hasOwn(NUMBER_LABEL, candidate.locale)
+        : !FIELD_LETTERS.test(candidate.pattern) &&
+          !Object.hasOwn(NAMED_READING, candidate.pattern),
+    )
+    .map((candidate) => candidate.pattern ?? candidate.locale)
 </script>
 
 <script setup>
@@ -58,7 +99,7 @@ export const namedReadingGaps = () =>
 import { shallowRef } from 'vue'
 import { nativeTypeOf } from '@core/types/catalog.js'
 import { ENCODINGS } from '@core/types/encoding.js'
-import { candidatesFor, unresolvedColumns } from '@core/types/typing.js'
+import { unresolvedColumns } from '@core/types/typing.js'
 import RowWindow from '@ui/RowWindow.vue'
 import { settableTypeLabels, typeLabel } from '@ui/type-labels.js'
 
@@ -284,20 +325,18 @@ const SETTABLE_TYPES = settableTypeLabels()
  *  named reading is answered from the map above before the transform is asked at
  *  all, because there is nothing in it for the transform to replace. */
 const patternLabel = (pattern) =>
-  NAMED_READING[pattern] ??
-  pattern.replace(/dd/g, 'TT').replace(/yyyy/g, 'JJJJ').replace(/yy/g, 'JJ')
-
-const NUMBER_LABEL = {
-  'de-DE': 'Deutsch (1.234,56)',
-  'en-US': 'Englisch (1,234.56)',
-}
+  Object.hasOwn(NAMED_READING, pattern)
+    ? NAMED_READING[pattern]
+    : pattern.replace(/dd/g, 'TT').replace(/yyyy/g, 'JJJJ').replace(/yy/g, 'JJ')
 
 const formatLabel = (format) =>
   format == null
     ? ''
     : format.pattern
       ? patternLabel(format.pattern)
-      : (NUMBER_LABEL[format.locale] ?? format.locale)
+      : Object.hasOwn(NUMBER_LABEL, format.locale)
+        ? NUMBER_LABEL[format.locale]
+        : format.locale
 
 /**
  * What an alternative is called when a sentence has to mention it.
@@ -309,7 +348,11 @@ const formatLabel = (format) =>
  * Dauer" is the question, and it is answered with the type select.
  */
 const readingLabel = (column, key) =>
-  isKindQuestion(column) ? typeLabel(key) : (NUMBER_LABEL[key] ?? patternLabel(key))
+  isKindQuestion(column)
+    ? typeLabel(key)
+    : Object.hasOwn(NUMBER_LABEL, key)
+      ? NUMBER_LABEL[key]
+      : patternLabel(key)
 
 /** Is this column's open question about its type rather than about a reading?
  *  The core says so on the evidence; deriving it from the type here would be a
