@@ -78,6 +78,20 @@ export const typingDiagnostics = (typing) => {
         }),
       )
     }
+    // Two pairs in one column is the same finding one field to the left: a
+    // column spelling its yes as `ja` and its no as `false` was not exported by
+    // one system, so reading it as a flag would decide which half is wrong.
+    // Both pairs are named for the same reason both affixes are — "this column
+    // mixes two spellings" is only actionable if the user learns which two — and
+    // it is reported whatever kind the column ended up as.
+    if (column.mixedBooleanPairs) {
+      out.push(
+        warning('typing.mixed_boolean_pairs', {
+          column: column.name,
+          pairs: column.mixedBooleanPairs,
+        }),
+      )
+    }
     // A reader is the one producer that can name a type the catalogue never
     // heard of (AD-20). The declaration was discarded on the way in — the
     // column's domain is plain `text` and detection ran on it — and the word

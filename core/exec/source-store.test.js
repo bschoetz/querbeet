@@ -785,6 +785,66 @@ describe('the questions story 4a added, as diagnostics and as a gate', () => {
     expect(source.typing.columns[0].type).toBe('text')
   })
 
+  it('warns about a column that mixes two boolean pairs, and names both', async () => {
+    // The sibling of the mixed-unit warning, and unconditional in the same way:
+    // nineteen `ja` beside one `false` is the same finding as one beside one.
+    const { source } = await withColumns([
+      { name: 'Freigabe', cells: [...Array.from({ length: 19 }, () => 'ja'), 'false'] },
+    ])
+
+    expect(codes(source)).toEqual([
+      ['warning', 'typing.mixed_boolean_pairs'],
+      ['unresolved', 'typing.unconfirmed'],
+    ])
+    expect(source.diagnostics[0].values).toEqual({
+      column: 'Freigabe',
+      pairs: ['true/false', 'ja/nein'],
+    })
+    expect(source.typing.columns[0].type).toBe('text')
+  })
+
+  it('reports two boolean pairs even when a different kind wins the column', async () => {
+    // `1` and `0` are perfectly good numbers, so the contamination disqualifies
+    // only the boolean reading — the column is `number` with `ja` unparsed, and
+    // the finding is the column's either way.
+    const cells = [...Array.from({ length: 19 }, (_, i) => (i % 2 ? '1' : '0')), 'ja']
+    const { store, source } = await withColumns([{ name: 'Freigabe', cells }])
+
+    expect(source.typing.columns[0]).toMatchObject({
+      type: 'number',
+      mixedBooleanPairs: ['ja/nein', '1/0'],
+    })
+    expect(codes(source)).toEqual([
+      ['warning', 'typing.mixed_boolean_pairs'],
+      ['warning', 'typing.unparsed_values'],
+      ['unresolved', 'typing.unconfirmed'],
+    ])
+
+    // …and a choice made is a question closed, exactly as for the units.
+    const chosen = store.setColumnTyping(source.id, 0, { type: 'text' })
+    expect(chosen.typing.columns[0].mixedBooleanPairs).toBeNull()
+    expect(codes(chosen)).toEqual([['unresolved', 'typing.unconfirmed']])
+  })
+
+  it('keeps the two-units warning on a column it only asks a question about', async () => {
+    // Eighteen `01.02.03` are a date-or-text question, and the two amounts
+    // beside them are a finding of their own. Detection dropped it on exactly
+    // this one of three sibling routes.
+    const cells = [...Array.from({ length: 18 }, () => '01.02.03'), '12 €', '12 $']
+    const { source } = await withColumns([{ name: 'Wert', cells }])
+
+    expect(source.typing.columns[0]).toMatchObject({
+      verdict: 'unresolved',
+      mixedAffixes: ['€', '$'],
+    })
+    expect(codes(source)).toEqual([
+      ['unresolved', 'typing.ambiguous_kind'],
+      ['warning', 'typing.mixed_affixes'],
+      ['warning', 'typing.unparsed_values'],
+      ['unresolved', 'typing.unconfirmed'],
+    ])
+  })
+
   it('resolves a reading for the kinds that have one, and none for the kinds that do not', async () => {
     const { store, source } = await withColumns([
       { name: 'Zeitpunkt', cells: ['31.12.2025 14:30', '01.03.2026 08:00'] },

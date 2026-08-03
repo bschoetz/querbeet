@@ -237,7 +237,7 @@ graph LR
 | Naming — files | `core/` and `adapters/` are lower-kebab `.js`; Vue components are PascalCase `.vue`; one Step kind per file under `core/steps/`. |
 | Naming — ports | A port is a noun of role, not of technology: `SourceReader`, `TableWriter`, `DocumentWriter`, `TableEngine`, `SessionStore`, `ChartRenderer`, `GraphView`, `Clipboard`, `Clock`. |
 | Data — ids | Short readable strings, prefixed by kind (`src:`, `s`, `tile:`). See AD-14. |
-| Data — comparison values | Canonical machine form only: a number is a number, a date is an ISO 8601 string in the Recipe and UTC-midnight epoch milliseconds in a Table (AD-21). Never a display form. Enforced at ingest, never coerced silently. |
+| Data — comparison values | Canonical machine form only: a number is a number, a date is an ISO 8601 string in the Recipe and UTC-midnight epoch **nanoseconds held as a `BigInt`** in a Table — one unit for all four temporal types (AD-21). Never a display form. Enforced at ingest, never coerced silently. |
 | Data — CSV parsing | Automatic type coercion in the parser is permanently off; typing is Step zero and nowhere else (AD-7, AD-20). |
 | Data — diagnostics | The one shape in AD-13. `code` stable and machine-readable, `values` structured, prose rendered in `ui/`. |
 | Data — Recipe serialization | One canonical serializer, key order fixed, used for both the file and the cache key hash. Byte-identical round trip is a test. |

@@ -305,19 +305,6 @@ function numberReadings(present) {
 
 const DIGITS = /^\d+$/
 
-/**
- * Peel the accounting sign off a value (piece 6).
- *
- * `(1.234,56)` and `1.234,56-` are both negative in the exports every ERP and
- * every accounting package writes. Two sign marks on one value — `(1.234,56-)`,
- * or a parenthesised value that also carries a leading minus — is not a number
- * at all rather than a doubly-negated one.
- *
- * The sign is returned, never discarded. Stripping the parentheses and dropping
- * what they meant is the one wrong-number defect this story could produce, and
- * story 6 converts through this same function precisely so the peeling and the
- * carrying cannot come apart.
- */
 /** Peel one affix off either end, with or without one space between it and the
  *  digits. At most one, and exactly one space — `12  %` keeps the second space
  *  in the body and does not read as a number, which is what a stray double
@@ -355,23 +342,32 @@ function peelAffix(text) {
  * which makes the composition order-independent by construction rather than by
  * enumerating the nestings someone thought of.
  *
+ * **`accounting` is the column's permission for the two accounting spellings,
+ * and only for them.** `(1)` is a footnote marker and `4711-` is an ERP part
+ * number, and read as signs both become settled, fully-readable negative numbers
+ * — a *wrong* number, which is the one defect named above. So the parenthesis
+ * and the trailing minus count as signs only where the column vouches for them
+ * (see `carriesAccountingEvidence`); without that they stay in the body and the
+ * value is not a number at all. The ordinary leading `-` is unaffected: `-500`
+ * is not an accounting form and needs no column to vouch for it.
+ *
  * It terminates: every branch either shortens the body or claims the one affix,
  * and the affix can be claimed once.
  */
-function peelWrappers(text) {
+function peelWrappers(text, accounting) {
   let body = text
   let affix = null
   let negative = false
   let marks = 0
 
   for (;;) {
-    if (body.length >= 2 && body.startsWith('(') && body.endsWith(')')) {
+    if (accounting && body.length >= 2 && body.startsWith('(') && body.endsWith(')')) {
       body = body.slice(1, -1)
       negative = true
       marks += 1
       continue
     }
-    if (body.length >= 2 && body.endsWith('-')) {
+    if (accounting && body.length >= 2 && body.endsWith('-')) {
       body = body.slice(0, -1)
       negative = true
       marks += 1
@@ -398,37 +394,69 @@ function peelWrappers(text) {
 }
 
 /**
+ * Does this column vouch for the two accounting spellings, under this reading?
+ *
+ * The parenthesis and the trailing minus are the one rule in this file that can
+ * produce a *wrong* number rather than an unread one, so — like the leading-zero
+ * guard and the overflow guard — it is answered by the whole column and not by
+ * one value. The evidence asked for is a decimal or grouping mark somewhere in
+ * the column **under the candidate being scored**: a column carrying `1.234,56`
+ * is money, a column of `(1)`, `(2)`, `(3)` is footnote markers, and `4711-` is
+ * an ERP part number. What it costs is named in the Boundaries rather than
+ * discovered: `(500)` and `(750)` with nothing else beside them are `text`.
+ *
+ * `present` is the column's mark set from `marksPresent`, which is the same
+ * route the column's one `affix` travels — column-level state reaches the
+ * per-value reader as an argument, never as a flag this module holds.
+ */
+const carriesAccountingEvidence = (present, { group, decimal }) =>
+  (group !== '' && present.has(group)) || (decimal !== '' && present.has(decimal))
+
+/**
  * The one number reading rule: the wrappers outside, the digits at the centre.
  *
- * Returns the integer digits with the grouping removed — which is what the
- * overflow guard compares, digit by digit — **and whether the value is
- * negative**, or `null` where the value is not a number under this reading.
+ * Returns `{ digits, fraction, negative }`, or `null` where the value is not a
+ * number under this reading. `digits` is the **integer** part with the grouping
+ * removed — which is what the overflow guard compares, digit by digit;
+ * `fraction` is the digits after the decimal mark, `''` where there are none;
+ * `negative` is the sign, in all three spellings that say it. The three together
+ * are the value: `12,5` and `12` are different returns, and so are `0,5` and
+ * `0`, which is what story 6 needs to rebuild a cell without asking this file's
+ * question a second time.
+ *
  * Grouping, if present, must be consistent: `1.23.456` is not a German number,
  * and accepting it would let a malformed column look fully readable.
  *
- * `affix` is the affix the *column* carries, and every parsed value must carry
- * it: a bare number in a percent column counts unparsed rather than quietly
- * joining a column of percentages.
+ * The two arguments after the reading are the *column's*, not the value's, and
+ * both must be the ones detection used or a re-read will disagree with the count
+ * the user confirmed. `affix` is the affix the column carries, and every parsed
+ * value must carry it: a bare number in a percent column counts unparsed rather
+ * than quietly joining a column of percentages. `accounting` is the column's
+ * permission for `(1.234,56)` and `1.234,56-` (see `carriesAccountingEvidence`),
+ * and it defaults to **off** — a caller with no column behind it gets the
+ * reading that cannot invent a negative.
  *
  * **Exported for story 6**, which converts a confirmed column into a Table and
  * must read every value exactly as detection counted it. A second parser there
  * would be a second opinion about what `(1.234,56)` means, and the first thing
  * it would get wrong is the sign.
  */
-export function numberParts(text, { group, decimal }, affix = null) {
-  const peeled = peelWrappers(text)
+export function numberParts(text, { group, decimal }, affix = null, accounting = false) {
+  const peeled = peelWrappers(text, accounting)
   if (peeled === null || peeled.affix !== affix) return null
 
   const body = peeled.body
   if (body === '') return null
 
   let integer = body
+  let fraction = ''
   if (decimal !== '') {
     const at = body.indexOf(decimal)
     if (at !== -1) {
       if (body.indexOf(decimal, at + 1) !== -1) return null // two decimal marks
       integer = body.slice(0, at)
-      if (!DIGITS.test(body.slice(at + decimal.length))) return null
+      fraction = body.slice(at + decimal.length)
+      if (!DIGITS.test(fraction)) return null
     }
   }
 
@@ -438,14 +466,15 @@ export function numberParts(text, { group, decimal }, affix = null) {
     if (parts.length < 2) return null
     if (!DIGITS.test(parts[0]) || parts[0].length === 0 || parts[0].length > 3) return null
     if (!parts.slice(1).every((p) => p.length === 3 && DIGITS.test(p))) return null
-    return { digits: parts.join(''), negative: peeled.negative }
+    return { digits: parts.join(''), fraction, negative: peeled.negative }
   }
-  return DIGITS.test(integer) ? { digits: integer, negative: peeled.negative } : null
+  return DIGITS.test(integer) ? { digits: integer, fraction, negative: peeled.negative } : null
 }
 
-/** Does `text` read as a number under these separators and this affix? */
-const readsAsNumber = (text, candidate, affix = null) =>
-  numberParts(text, candidate, affix) !== null
+/** Does `text` read as a number under these separators, this affix and this
+ *  column's accounting permission? */
+const readsAsNumber = (text, candidate, affix = null, accounting = false) =>
+  numberParts(text, candidate, affix, accounting) !== null
 
 /** The digits `Number` can still tell apart, as digits. */
 const MAX_SAFE_DIGITS = String(Number.MAX_SAFE_INTEGER)
@@ -471,9 +500,12 @@ function exceedsSafeInteger(digits) {
 /** A leading zero is information — an article number, a postcode, a cost
  *  centre — and reading it as a number destroys it. FR-9: such a column stays
  *  text unless the user says otherwise. Read through the sign and the affix, so
- *  `(0123)` and `0123 €` are the same finding as a bare `0123`. */
+ *  `(0123)` and `0123 €` are the same finding as a bare `0123` — and through the
+ *  accounting spellings whether or not the column vouches for them, because this
+ *  is a guard looking for hidden zeros rather than a reading looking for a
+ *  number: peeling less here would only hide the zeros deeper. */
 function hasLeadingZero(text) {
-  const peeled = peelWrappers(text)
+  const peeled = peelWrappers(text, true)
   return /^0\d/.test(peeled === null ? text : peeled.body)
 }
 
@@ -607,8 +639,9 @@ function affixScan(values, readings, present) {
   const bestCount = (affix) => {
     let best = 0
     for (const reading of readings) {
+      const accounting = carriesAccountingEvidence(present, reading)
       let parsed = 0
-      for (const value of values) if (readsAsNumber(value, reading, affix)) parsed += 1
+      for (const value of values) if (readsAsNumber(value, reading, affix, accounting)) parsed += 1
       if (parsed > best) best = parsed
     }
     return best
@@ -796,6 +829,7 @@ export function detectColumn(cells, options = {}) {
       refusedNativeType,
       affix: null,
       mixedAffixes: null,
+      mixedBooleanPairs: null,
       ...over,
     })
 
@@ -827,7 +861,28 @@ export function detectColumn(cells, options = {}) {
   // number would invite exactly that sum.
   const { affix, used } = affixScan(values, readings, present)
   const mixedAffixes = used.length > 1 ? Object.freeze([...used]) : null
-  const readsNumber = (value, candidate) => readsAsNumber(value, candidate, affix)
+  const readsNumber = (value, candidate) =>
+    readsAsNumber(value, candidate, affix, carriesAccountingEvidence(present, candidate))
+
+  // Which pairs the column spells its yes and its no in. Read off the scores
+  // rather than walked for separately — the boolean kind below is scored over
+  // every value anyway, and a second walk would buy nothing but the cost the
+  // ledger already carries an entry about. Declaration order, not hit order, so
+  // the warning names them the way `mixedAffixes` does.
+  const booleanHits = score(values, BOOLEAN_PAIRS, readsAsBoolean)
+  const pairsUsed = BOOLEAN_PAIRS.filter((pair) =>
+    booleanHits.some((hit) => hit.candidate === pair && hit.parsed > 0),
+  )
+  // A pair never mixes with another, and the rule is unconditional rather than
+  // scored: nineteen `ja` beside one `false` is the same finding as one beside
+  // one. A threshold would make the guarantee true at 50/50 and false at 95/5,
+  // and "a pair never mixes" is either a rule or it is a tendency. The `1`/`0`
+  // pair takes part like any other — so `1`, `0` beside `ja` disqualifies
+  // `boolean` while the *number* reading of `1` and `0` is untouched and `ja`
+  // counts unparsed. Mirrors the affix rule field for field, including that the
+  // finding is carried whatever kind ends up winning the column.
+  const mixedBooleanPairs =
+    pairsUsed.length > 1 ? Object.freeze(pairsUsed.map((pair) => pair.pattern)) : null
 
   // Three ways the number reading is disqualified for the *whole* column rather
   // than value by value. One leading zero anywhere: the zeros are the
@@ -842,7 +897,7 @@ export function detectColumn(cells, options = {}) {
   const overflows = (value) =>
     value.length >= MAX_SAFE_DIGITS.length &&
     readings.some((reading) => {
-      const parts = numberParts(value, reading, affix)
+      const parts = numberParts(value, reading, affix, carriesAccountingEvidence(present, reading))
       return parts !== null && exceedsSafeInteger(parts.digits)
     })
 
@@ -880,7 +935,11 @@ export function detectColumn(cells, options = {}) {
       reads: readsAsClock,
       hits: clocks ? score(values, CLOCK_CANDIDATES, readsAsClock) : EMPTY,
     },
-    { type: BOOLEAN, reads: readsAsBoolean, hits: score(values, BOOLEAN_PAIRS, readsAsBoolean) },
+    {
+      type: BOOLEAN,
+      reads: readsAsBoolean,
+      hits: mixedBooleanPairs !== null ? EMPTY : booleanHits,
+    },
   ]
 
   let winner = null
@@ -889,7 +948,15 @@ export function detectColumn(cells, options = {}) {
   }
   const best = winner?.hits[0]
 
-  if (!best || best.parsed / values.length < PROPOSAL_THRESHOLD) return record({ mixedAffixes })
+  /** What the column-wide scans found, on every route that can reach them.
+   *  `record` says what the shape *is*; this says what this column *has*, and
+   *  merging it in one place is what keeps a finding from being carried on two
+   *  of three sibling returns and forgotten on the third — which is exactly how
+   *  `mixedAffixes` was lost on the short-year route below. A new finding is
+   *  added here and is then on every proposal by construction. */
+  const found = (over) => record({ mixedAffixes, mixedBooleanPairs, ...over })
+
+  if (!best || best.parsed / values.length < PROPOSAL_THRESHOLD) return found({})
 
   const overKind = winner.over === 'kind'
   const type = overKind ? best.candidate.type : winner.type
@@ -901,9 +968,9 @@ export function detectColumn(cells, options = {}) {
   // *types* because the choice on offer is `Datum` or `Text`.
   if (type === DATE && best.candidate.shortYear) {
     const settled = shortYearVerdict(values, best.candidate)
-    if (settled === TEXT) return record({ mixedAffixes })
+    if (settled === TEXT) return found({})
     if (settled === 'unresolved') {
-      return record({
+      return found({
         type: DATE,
         format: best.candidate,
         counts: counts(best.parsed),
@@ -943,22 +1010,26 @@ export function detectColumn(cells, options = {}) {
     }
   }
 
-  return record({
+  // The two column-wide findings ride along by way of `found`, whatever kind
+  // won. Eighteen German dates beside `12 €` and `12 $` propose `date`, and the
+  // two amounts would otherwise survive only as an anonymous unparsed count —
+  // the two-units fact is still true, still the user's to act on, and losing it
+  // because a *different* kind cleared the threshold is the finding going quiet
+  // exactly where it is least expected. What the sentences in `ui/` may not
+  // claim is that the column is read as text, because sometimes it is not.
+  return found({
     type,
     // `time` and `duration` carry no reading to choose, so they carry no format.
     format: overKind ? null : best.candidate,
     counts: counts(best.parsed),
     verdict,
     evidence,
+    // Only a number column carries a unit. Without the suppression a column of
+    // German dates with one `12 €` in it would render `Einheit: €` under a card
+    // typed `Datum` — the affix is scanned for every column, because the scan is
+    // what decides whether a *number* reading is affixed, and the finding stops
+    // being about this column the moment another kind wins it.
     affix: type === NUMBER ? affix : null,
-    // Carried whatever kind won. Eighteen German dates beside `12 €` and `12 $`
-    // propose `date`, and the two amounts would otherwise survive only as an
-    // anonymous unparsed count — the two-units fact is still true, still the
-    // user's to act on, and losing it because a *different* kind cleared the
-    // threshold is the finding going quiet exactly where it is least expected.
-    // What the sentence in `ui/` may no longer claim is that the column is read
-    // as text, because sometimes it is not.
-    mixedAffixes,
   })
 }
 
@@ -1038,13 +1109,22 @@ export const candidatesFor = (type) =>
           ? BOOLEAN_PAIRS
           : []
 
-/** Which reader a chosen type is scored with. The affix is not part of a format
- *  — a format answers which locale reads the digits, an affix answers what unit
- *  rides on the column — so a number reading is bound to the column's own affix
- *  here rather than carrying it. */
-const readerFor = (type, affix) =>
+/** Which reader a chosen type is scored with. Neither the affix nor the
+ *  accounting evidence is part of a format — a format answers which locale reads
+ *  the digits, an affix answers what unit rides on the column, and the evidence
+ *  answers whether `(500)` is a negative number in *this* column — so a number
+ *  reading is bound to both here rather than carrying them. `present` is the
+ *  column's mark set; without one there is no column vouching for anything, and
+ *  the accounting spellings do not read. */
+const readerFor = (type, affix, present = null) =>
   type === NUMBER
-    ? (value, candidate) => readsAsNumber(value, candidate, affix)
+    ? (value, candidate) =>
+        readsAsNumber(
+          value,
+          candidate,
+          affix,
+          present !== null && carriesAccountingEvidence(present, candidate),
+        )
     : type === DATE
       ? readsAsDate
       : type === DATETIME
@@ -1086,9 +1166,9 @@ export function bestFormat(cells, type, missingTokens) {
   const candidates = candidatesFor(type)
   if (candidates.length === 0) return null
   const { values } = sift(cells, missingTokens)
-  const { affix } =
-    type === NUMBER ? affixScan(values, candidates, marksPresent(values)) : { affix: null }
-  return score(values, candidates, readerFor(type, affix))[0].candidate
+  const present = type === NUMBER ? marksPresent(values) : null
+  const { affix } = present ? affixScan(values, candidates, present) : { affix: null }
+  return score(values, candidates, readerFor(type, affix, present))[0].candidate
 }
 
 /** Re-score a column under a type and format the user chose. The verdict is
@@ -1107,12 +1187,16 @@ export function scoreColumn(cells, { type, format, missingTokens, domain }) {
   // German to English digits would take the percent sign off it — under en-US
   // not one of those values parses, so the chosen reading alone would report
   // that the column carries no unit at all.
+  //
+  // The accounting evidence is re-derived from the same place and for the same
+  // reason, so the two paths cannot disagree about what a value reads as: a user
+  // choosing `number` on a column of `4711-` part numbers must not resurrect the
+  // negatives detection refused to read.
+  const present = type === NUMBER ? marksPresent(values) : null
   const { affix } =
-    type === NUMBER && format
-      ? affixScan(values, numberCandidates(), marksPresent(values))
-      : { affix: null }
+    present && format ? affixScan(values, numberCandidates(), present) : { affix: null }
 
-  const reads = readerFor(type, affix)
+  const reads = readerFor(type, affix, present)
   // A type with candidates and no chosen reading has nothing to score against,
   // so every value counts readable — the shape a native column arrives in.
   const scorable = reads !== null && (format != null || candidatesFor(type).length === 0)
@@ -1143,6 +1227,9 @@ export function scoreColumn(cells, { type, format, missingTokens, domain }) {
     // sentence of their own. A choice made is a question closed — what the
     // choice costs is the unparsed count, which is reported either way.
     mixedAffixes: null,
+    // Never here either, and for the same reason: the two-pairs finding is a
+    // reason a column was not proposed as a boolean, and the user has answered.
+    mixedBooleanPairs: null,
   })
 }
 

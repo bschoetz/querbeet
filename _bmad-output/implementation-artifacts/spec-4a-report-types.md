@@ -3,7 +3,7 @@ title: 'Story 4a — Typing reaches the types a report actually holds'
 type: 'feature'
 created: '2026-08-02'
 status: 'in-review'
-review_loop_iteration: 2
+review_loop_iteration: 3
 baseline_commit: '7183651ab02fc630fe1f8e775a186a9c13c8bac8'
 context:
   - '_bmad-output/planning-artifacts/architecture/architecture-querbeet-2026-08-02/ARCHITECTURE-SPINE.md'
@@ -29,9 +29,9 @@ context:
 - **Three two-digit parts settle nothing.** A `dd.MM.yy` column in which **every** value has all three parts two-digit — `01.02.03`, `04.05.06` — is `unresolved`, not `settled`: it can be a date, and nothing in the column decides whether it is one. Version numbers, chapter numbers and part numbers have exactly this shape, and before this story they read as `text`; a settled date is a *worse* answer than the one they used to get. The user chooses date or text and the gate stays shut until they do — story 3's machinery, on the case it was built for. **Two things settle such a column, and both are evidence in the values rather than a preference:** a day past twelve settles it as a date, because `31` is no month and no version number counts that way by accident — which is why `31.12.25`, the shape the owner actually asked for, is unaffected; and a triple that cannot be a date at all settles it as text, because `01.13.03` is a version number and nothing else. Only triple-shaped values are asked this question, so one stray word beside twenty real dates is still twenty dates and one unparsed value.
 - **(3) Time and duration:** `time` is `HH:mm(:ss)`, hours 00–23 (1 or 2 digits), minutes/seconds two digits ≤ 59; `duration` is the same shape with hours unbounded (any digit count). Every time-readable value is duration-readable, so: a value at or past `24:00` is exclusive evidence and settles the column as `duration` through story 3's decisive machinery; a column where nothing passes `24:00` is `unresolved` between the two — the user answers via the type select, and no default is picked quietly.
 - **AD-21 is amended** (task, planning artifact) and the resolution is **nanoseconds, held as `BigInt`, in all four temporal types**: a date column holds UTC-midnight epoch nanoseconds, a datetime column UTC epoch nanoseconds, a time column nanoseconds since midnight, a duration column plain nanoseconds. **One unit for all four, deliberately** — a split rule would make a date-against-datetime join a unit conversion, which is the class of error AD-21 exists to prevent. `BigInt` rather than `Number` because 100-nanosecond ticks are already past `Number.MAX_SAFE_INTEGER` today (`1,77e16` against `9,007e15`); microseconds are the last exact `Number` and cover only six of `datetime2(7)`'s seven digits, so they would buy the same architectural change for an answer that is still wrong. The cost is named rather than discovered: `BigInt` and `Number` do not mix in arithmetic, so the `TableEngine` adapter absorbs it (AD-19) and story 14's serializer spells it out, because JSON has no `BigInt`.
-- **(4) Boolean pairs:** `true`/`false`, `wahr`/`falsch`, `ja`/`nein` (word pairs case-insensitive, so German Excel's `WAHR`/`FALSCH` is the same pair), `1`/`0`. A pair never mixes with another — `ja` beside `false` is text. **The 1/0 rule:** `1`/`0` is also a perfectly good number, so a column readable as both proposes `number` — the reading that loses less — and `boolean` stays one settable choice away. Word pairs propose `boolean` outright.
+- **(4) Boolean pairs:** `true`/`false`, `wahr`/`falsch`, `ja`/`nein` (word pairs case-insensitive, so German Excel's `WAHR`/`FALSCH` is the same pair), `1`/`0`. **A pair never mixes with another, and the rule is unconditional rather than scored** — a column in which values read under two different pairs is not a boolean column at whatever ratio: `boolean` is disqualified for the **whole** column, the column is `text`, and a warning names both pairs, exactly as two affixes do. Nineteen `ja` beside one `false` is the same finding as one beside one; a threshold would make the guarantee true at 50/50 and false at 95/5, and "a pair never mixes" is either a rule or it is a tendency. The `1`/`0` pair takes part in this like any other, so `1`, `0` beside `ja` disqualifies `boolean` while the number reading of `1` and `0` is untouched and `ja` counts unparsed. **The 1/0 rule:** `1`/`0` is also a perfectly good number, so a column readable as both proposes `number` — the reading that loses less — and `boolean` stays one settable choice away. Word pairs propose `boolean` outright.
 - **(5) Affix:** recognized affixes are `%`, `€`, `$` — decisive markers with no second reading; prefix or suffix, with or without one space. The stored number is the number in the field (`12,5` for `12,5 %`, never `0,125`); the affix rides on the column record as a property and never alters a cell. Every parsed value must carry the column's one affix — a bare number in an affixed column counts unparsed. A column mixing two affixes is `text` plus a warning naming both; the number in front carries only the ordinary de/en question.
-- **(6) Accounting signs:** `(1.234,56)` and `1.234,56-` read as negative numbers under both locales, combinable with an affix; a value carrying two sign marks is unreadable. The sign is part of the one reading rule in `typing.js` that story 6 converts with — stripping parentheses without carrying the sign flips the value, and that is the one wrong-number defect this story can produce.
+- **(6) Accounting signs:** `(1.234,56)` and `1.234,56-` read as negative numbers under both locales, combinable with an affix; a value carrying two sign marks is unreadable. The sign is part of the one reading rule in `typing.js` that story 6 converts with — stripping parentheses without carrying the sign flips the value, and that is the one wrong-number defect this story can produce. **Because it is that, the two accounting forms need column-wide evidence and are not read off a single value:** the parenthesis and trailing-minus forms count only in a column where at least one value carries a decimal or grouping mark under the candidate being scored. `4711-` is an ERP part number and `(1)` is a footnote marker, and both would otherwise be settled, fully-readable negative numbers — a *wrong* number, which is worse than an untyped column and is exactly why the leading-zero guard and the overflow guard already judge the whole column on one value. A column of `(500)` and `(750)` with nothing else in it is therefore `text`; the cost is named rather than discovered, and it is the same trade those two guards already make. The ordinary leading `-` is unaffected — `-500` is not an accounting form and needs no column to vouch for it.
 - **Cross-kind proposal:** kinds are scored independently and the highest hit rate at or above the 0.9 threshold proposes. **A tie goes to the kind declared first, and the declaration order is the rule** — `number`, `date`, `datetime`, clock, `boolean` — so "a tie goes to `number`" is what that order produces while a number reading is in the running, and the order still answers the case where it is not (a leading zero, an overflow or two affixes disqualify the number reading, and something has to break the tie among what is left). The order is the rule because a tie means the values do not distinguish the kinds, so the only honest tie-break is a stated preference rather than a computed one. AD-13 holds: codes from `core/`, German only in `ui/`, and a type without a German word is a failing test.
 
 **Ask First:** any candidate, pair or locale beyond the lists above (month names, space grouping, a fifth boolean pair); changing the catalogue record shape beyond adding records and flipping flags; any new dependency.
@@ -62,13 +62,19 @@ context:
 | Not a time | `24:00`, `12:60` | `24:00` duration-only evidence; `12:60` reads as neither | N/A |
 | German boolean | `ja`, `Nein`, `k.A.` | `boolean`, `ja/nein` pair, `k.A.` missing | N/A |
 | German Excel boolean | `WAHR`, `FALSCH` | `boolean`, `wahr/falsch` pair — case-insensitive | N/A |
-| Pairs mixed | `ja`, `false` | `text` — a pair never mixes with another | N/A |
+| Pairs mixed | `ja`, `false` | `text` — a pair never mixes with another | warning naming both pairs |
+| Pairs mixed at a majority | nineteen `ja`, one `false` | `text` — the rule is unconditional, not scored | warning naming both pairs |
+| Numeric pair beside a word pair | nineteen `1`/`0`, one `ja` | `boolean` disqualified; `number` still reads the nineteen, `ja` unparsed | warning + `typing.unparsed_values` |
+| The same three cells and nothing else | `1`, `0`, `ja` | `text` — `boolean` is disqualified and the number reading covers 2 of 3, under the 0.9 threshold | warning naming both pairs |
 | Numeric boolean | `1`, `0` only | proposed `number`; `boolean` settable | N/A |
 | Percent | `12,5 %`, `80%` | `number`, affix `%`, stored text unchanged | N/A |
 | Currency prefix | `$1,234.56` (en) | `number`, affix `$` | N/A |
 | Mixed affixes | `12 €` and `12 $` | `text` + warning naming both | warning diagnostic |
 | Bare value in affixed column | one `13` among twenty `12,5 %` | `13` counts unparsed | `typing.unparsed_values` |
 | Accounting negatives | `(1.234,56)`, `1.234,56-` | read as negative numbers, one warning-free column | N/A |
+| Accounting form with no column evidence | `4711-`, `4712-` — and `(1)`, `(2)`, `(3)` | `text` — no value in the column carries a decimal or grouping mark, so neither form is an accounting sign | N/A |
+| Accounting column that vouches for itself | `(1.234,56)`, `(500)` | both negative — one value carrying grouping is the column's evidence | N/A |
+| Ordinary leading minus | `-500`, `-750` | negative numbers — not an accounting form, needs no column evidence | N/A |
 | Double sign | `(1.234,56-)` | unreadable, counts unparsed | N/A |
 | Regressions | leading zero, `1.23.456`, de/en ambiguity | behave exactly as story 3 shipped them | N/A |
 
@@ -76,17 +82,17 @@ context:
 
 ## Code Map
 
-Line anchors are as shipped after review round 2.
+Line anchors are as shipped after review round 3.
 
 - `core/types/catalog.js:45` — `TYPES`: `time`, `duration` (`settable: true`, `native: false`); `settable` flipped on `DATETIME`/`BOOLEAN`. `canonicalTypeGaps` filters on `native`, so no `CANONICAL` entry is owed. `catalog.test.js` pins the flags and that no reader may declare a clock.
-- `core/types/typing.js` — the whole story lives here. `DATE_PATTERNS:116` (+ `dd.MM.yy`); `DATETIME_PATTERNS:170` (four candidates, everything optional on every one of them); `BOOLEAN_PAIRS:186` (+ `BOOLEAN_TOKEN_MAX` derived from it); `CLOCK_CANDIDATES:212` (two candidates of one kind, so `score:713`/`exclusive:731` answer time-vs-duration verbatim); `AFFIXES:222`; `MARKS:252`/`marksPresent:274` (derived — `:` and the affixes feed it, or narrowing silently disables candidates); `peelWrappers:361` (the sign and the unit, from the outside in, in either order — the sign counted and carried) feeding `numberParts:418`, **exported for story 6**, with `readsAsNumber:447`, `exceedsSafeInteger:463` (digits, never a float round trip) and `hasLeadingZero:475` reading through the same peeling; `readsAsDate:493` (width table gets the 2-digit year); `readsAsClockTime:555`/`readsAsDateTime:570` (one clock, never narrower behind a date, wider by exactly fraction and zone); `affixScan:603`; `detectColumn:777`, the five-kind competition at `:866-888`; `shortYearVerdict:994` (three two-digit parts settle nothing); `candidatesFor:1030` + `bestFormat:1085` learn datetime patterns and boolean pairs, and `bestFormat` reads the column's unit before it ranks the readings; `scoreColumn:1097` re-scores every new kind and re-derives the affix.
+- `core/types/typing.js` — the whole story lives here. `DATE_PATTERNS:116` (+ `dd.MM.yy`); `DATETIME_PATTERNS:170` (four candidates, everything optional on every one of them); `BOOLEAN_PAIRS:186` (+ `BOOLEAN_TOKEN_MAX` derived from it); `CLOCK_CANDIDATES:212` (two candidates of one kind, so `score`/`exclusive` answer time-vs-duration verbatim); `AFFIXES:222`; `MARKS:252` (derived — `:` and the affixes feed it, or narrowing silently disables candidates); `peelWrappers:357` (the sign and the unit, from the outside in, in either order — the sign counted and carried) gated by `carriesAccountingEvidence:412`, so the two accounting forms are read only where the column vouches for them; `numberParts:444`, **exported for story 6**, returning `{ digits, fraction, negative }` — enough to rebuild the value, which is what the export is for; `readsAsNumber:476`, `exceedsSafeInteger:492` (integer digits, never a float round trip) and `hasLeadingZero:507`, which peels the accounting spellings unconditionally because it hunts hidden zeros rather than proposing a reading; `readsAsDate:525` (width table gets the 2-digit year); `readsAsClockTime:587`/`readsAsDateTime:602` (one clock, never narrower behind a date, wider by exactly fraction and zone); `affixScan:635`; `detectColumn:810`, `mixedBooleanPairs:884` disqualifying the boolean kind unconditionally at `:941`, and `found:957` — the closure that merges both column-wide findings into every post-scan return, so the field cannot be carried on one route and forgotten on another; `shortYearVerdict:1065` (three two-digit parts settle nothing); `candidatesFor:1101` + `bestFormat:1165` learn datetime patterns and boolean pairs, and `bestFormat` reads the column's unit before it ranks the readings; `scoreColumn:1177` re-scores every new kind and re-derives the affix and the accounting evidence together.
 - `core/types/typing.test.js` — every matrix row above, per piece; regression block for story 3 verdicts; `scorableTypeGaps` and `canonicalTypeGaps` as the two completeness invariants; the carried sign in all four spellings and both nestings.
-- `core/exec/source-store.js:41` — `typingDiagnostics` (exported, because story 14 will hand it a typing this file did not build): `typing.mixed_affixes`, reported whatever kind wins, and the kind-ambiguity state emitting `typing.ambiguous_kind` rather than overloading `typing.ambiguous_locale`. `resolveFormat:569` keys on `pattern ?? locale` and refuses a reading no candidate offers — with no early return for any type, since `bestFormat` already answers `null` where there are no candidates. `setColumnTyping:609` needs no change: settability comes from the catalogue.
+- `core/exec/source-store.js:41` — `typingDiagnostics` (exported, because story 14 will hand it a typing this file did not build): `typing.mixed_affixes` and `typing.mixed_boolean_pairs:89`, both reported whatever kind wins, and the kind-ambiguity state emitting `typing.ambiguous_kind` rather than overloading `typing.ambiguous_locale`. `resolveFormat:583` keys on `pattern ?? locale` and refuses a reading no candidate offers — with no early return for any type, since `bestFormat` already answers `null` where there are no candidates. `setColumnTyping:623` needs no change: settability comes from the catalogue.
 - `ui/type-labels.js:15` — `Uhrzeit`, `Dauer`; completeness test `typeLabelGaps` already bites.
-- `ui/SourcesPane.vue` — `patternLabel:222` gains `yy → JJ`; `readingLabel:246` learns datetime patterns and boolean pairs; `isKindQuestion:252`/`typeUndecided:259` put the placeholder on the **type** select *and* suppress the reading select while a kind question is open; `verdictText:303` words a kind question as a type; the card shows a column's affix. `ui/SourcesPane.test.js` covers wording, both placeholders, the suppressed select and the affix render.
+- `ui/SourcesPane.vue` — `patternLabel:238` gains `yy → JJ`; `readingLabel:262` learns datetime patterns and boolean pairs; `isKindQuestion:268`/`typeUndecided:275` put the placeholder on the **type** select *and* suppress the reading select while a kind question is open; `verdictText:331` words a kind question as a type and now returns `''` on a record whose evidence is absent or half-filled, the same hardening `typingDiagnostics` already had — a restored record with nothing to say renders nothing rather than throwing or printing a sentence with a hole in it; the German sentence for `typing.mixed_boolean_pairs:197` names both pairs and does not claim the column is read as text; the card shows a column's affix. `ui/SourcesPane.test.js` covers wording, both placeholders, the suppressed select, the affix render and the empty-evidence record.
 - `tests/e2e/typing.spec.js` — four journeys: the ERP export (timestamp, clock-time, ja/nein, percent, accounting) resolving time vs. duration and opening the gate; duration settling itself beside a mixed-unit column; the timestamps SQL Server, Postgres and ISO 8601 actually write; and the version-number column that must be asked about rather than dated.
 - `_bmad-output/planning-artifacts/architecture/.../ARCHITECTURE-SPINE.md:168` — AD-21 amendment (nanoseconds as `BigInt`, one unit for all four temporal types).
-- `_bmad-output/implementation-artifacts/deferred-work.md` — seven open story-4a entries: the Parquet reader's own rounding, the missing `MM.dd.yy` mirror, `shortYearVerdict`'s `dmy` assumption, fractional-part precision, negative durations, the unconditional mixed-affix rule, and the boolean-pair narrowing (which reads with the detection-cost entry, not instead of it).
+- `_bmad-output/implementation-artifacts/deferred-work.md` — ten open story-4a entries: the Parquet reader's own rounding, the missing `MM.dd.yy` mirror, `shortYearVerdict`'s `dmy` assumption, fractional-part precision, negative durations, the unconditional mixed-affix rule, the boolean-pair narrowing (which reads with the detection-cost entry, not instead of it), and three from round 3 — the two-digit year reaching one separator and one order (with the unreachable `ymd` branch that follows from it), the legal ISO 8601 the `ISO 8601` candidate still refuses, and the zone offset that accepts hours no zone has.
 - `_bmad-output/specs/spec-querbeet/stories.yaml` — story 14 gains the three record fields this story added (`affix`, `mixedAffixes`, `evidence.over`) plus the `BigInt` encoding, as things an older Recipe will lack.
 - `README.md` — the story count, and a bullet for the types a report actually holds.
 
@@ -105,15 +111,161 @@ Line anchors are as shipped after review round 2.
 - [x] `ui/SourcesPane.vue` + test — labels, ambiguity wording, affix on the card.
 - [x] `tests/e2e/typing.spec.js` — the journey above, both engines.
 - [x] `deferred-work.md` — close the sub-ms entry with the decision.
+- [x] `core/types/typing.js` + `core/exec/source-store.js` + `ui/SourcesPane.vue` + tests — round 3: boolean contamination unconditional with `typing.mixed_boolean_pairs`; accounting signs gated on column evidence; `numberParts` returns the fraction.
+- [x] `core/types/typing.js` + `ui/SourcesPane.vue` + tests — round 3: the forgotten `mixedAffixes` route, the unpinned `affix` suppression, the stale `peelSign` docblock, and the UI's unguarded `evidence` reads.
+- [x] `ARCHITECTURE-SPINE.md`, `stories.yaml`, `README.md` — round 3: the amended AD-21 reaches the Conventions row and the story 3/4a/6 briefs; the README says what runs today.
 
 **Acceptance Criteria:**
 - Given the type vocabulary, when `time` and `duration` are added, then they are declared in `core/types/catalog.js` and nowhere else — no second list anywhere restates the types.
 - Given a column of clock times with no value past 24:00, when detection runs, then the Source cannot be confirmed until the user chooses `Uhrzeit` or `Dauer` — the gate blocks on `unresolved` exactly as for the locale case.
 - Given an affixed column with a user-overridden reading, when `setColumnTyping` re-scores it, then the affix property survives on the record.
+- Given `numberParts`, when it reads a value, then its return carries everything story 6 needs to rebuild that value — the integer digits, the fractional digits, and the sign — so that `12,5` and `12` are distinguishable in the return and no second parser is owed.
+- Given a column in which values read under two different boolean pairs, when detection runs, then `boolean` is disqualified for the whole column and a warning names both pairs, at any ratio.
+- Given a column whose only sign marks are parentheses or trailing minuses and in which no value carries a decimal or grouping mark, when detection runs, then no value reads as a negative number.
 - Given the story-3 test suite, when this story lands, then every existing verdict, count and diagnostic is unchanged.
 - Given `npm run verify`, then lint, both Vitest projects and Playwright (Chromium + Firefox, `file://`) pass.
 
 ## Spec Change Log
+
+### 2026-08-03 — review round 3: the fix for round 2 left its own comment behind, and three rules the owner tightened
+
+Three context-free layers ran again on `git diff 7183651..HEAD` — the same three that were not
+exhausted after two rounds. Twenty-five claims; every one re-measured against the shipped tree
+before triage, five rejected as measured non-defects or duplicates.
+
+**The round-2 fix produced the round-2 defect one function to the left.** `peelSign` was replaced
+by `peelWrappers`, and its entire docblock stayed behind — `typing.js:307-320` still reads "The
+sign is returned, never discarded … story 6 converts through this same function precisely so the
+peeling and the carrying cannot come apart", and it now sits directly above the JSDoc for
+`peelAffix`, which peels no sign, counts no sign and returns no sign. Two docblocks on one
+function, the stale one repeating the exact promise that round 2's change log calls "a reassuring
+sign in front of a trap". The change log's own sentence "`peelSign` and `peelAffix` are gone as
+separate passes" is also false: `peelAffix` is alive at `typing.js:325` and is called from inside
+`peelWrappers`'s loop. Third round in which a prose claim about this file did not survive
+measurement.
+
+**`numberParts` is exported for story 6 and cannot serve story 6 — decided: widen the return.**
+Measured: `numberParts('12,5', de)` → `{digits:'12', negative:false}`, and `numberParts('0,5',
+de)` is byte-identical to `numberParts('0', de)`. The fraction is discarded outright, so story 6
+cannot rebuild a value from the return and must write the second parser the export exists to
+prevent. `.negative`, the round's headline fix, has no production consumer at all: it is read
+only inside `numberParts` and in tests, while the one production caller reads `.digits`. The
+owner's choice is to widen the return so it carries the integer digits, the fractional digits and
+the sign — the contract is cheapest to fix before story 6 exists, and correcting the docblock
+instead would have left the export buying nothing.
+
+**Two frozen rules were tightened by the owner, both because a threshold was standing where a
+rule was claimed.**
+
+(1) *Boolean contamination is now unconditional.* Measured: `[...19× 'ja', 'false']` was
+`boolean`, `ja/nein`, `decisive`, one unparsed, while the frozen block said "a pair never mixes
+with another — `ja` beside `false` is text" and the sibling affix rule one paragraph away is
+genuinely unconditional. Two contaminations of identical shape got opposite answers, and the only
+test was the 50/50 case. The guarantee is now what it claimed to be: two pairs present
+disqualifies `boolean` for the whole column at any ratio, `text` plus a warning naming both,
+mirroring the affix rule field for field.
+
+(2) *The accounting sign now needs column-wide evidence.* Measured: `['4711-','4712-']` was
+`number`, `settled`, 2 of 2 readable — −4711 and −4712 — and `['(1)','(2)','(3)']` was −1, −2 and
+−3. An ERP part number and a footnote marker became confident negatives. The one rule the story
+names as "the one wrong-number defect this story can produce" had the loosest guard in the file:
+the only rule applied per value, where the leading-zero guard and the overflow guard both
+disqualify the whole column on a single value precisely because a wrong number is unrecoverable.
+The parenthesis and trailing-minus forms now count only where some value in the column carries a
+decimal or grouping mark. The ordinary leading minus is untouched.
+
+**A field forgotten on one of three sibling routes, in the commit that added the helper written to
+stop that.** `detectColumn`'s short-year `unresolved` return omits `mixedAffixes` where both its
+siblings pass it: measured, `[...18× '01.02.03', '12 €', '12 $']` returns `mixedAffixes: null`
+while the four-digit twin and the short-year *text* twin both return `['€','$']`. `record()`
+exists by its own comment because "spelling the shape out at each of them is how a field gets
+forgotten on one route and carried on another", and round 2's change log claims this loss was
+already closed.
+
+**The amended AD-21 did not reach the two documents that carry it out.**
+`ARCHITECTURE-SPINE.md:240` still says a date is "UTC-midnight epoch **milliseconds** in a Table
+(AD-21)", seventy lines below the AD-21 body this story rewrote to nanoseconds as `BigInt` — the
+load-bearing document contradicting itself on the one decision the story renegotiated. And
+`stories.yaml:185` still briefs **story 6, the story that performs the conversion**, with "epoch
+ms (AD-21)"; story 4a's own entry at `:82` still says a clock time needs "milliseconds since
+midnight". Story 14's brief was updated in this diff; story 6's was not. Round 2's boast about
+fixing "milliseconds in three places" covered this spec file only.
+
+**One mutation survives and one guard shipped half.** Removing the `affix: type === NUMBER ? affix
+: null` suppression leaves 351 of 351 tests green — measured — so a date column carrying one
+`12 €` could render `Einheit: €` under a card typed `Datum` with nothing to catch it. And
+`source-store.js` gained `evidence ?? null` in this diff, explicitly because a restored record
+with no evidence "would take the whole read down here", while `SourcesPane.vue:305/313/177`
+dereference `evidence.alternatives`, `decidedBy` and `contested` unguarded on the same records.
+
+**Rejected after measurement, so the next round does not re-raise them.** `bestFormat` returning a
+candidate that reads nothing is the documented design, not a defect — the counts then report 0 of
+N, which is the honest answer its own docblock argues for. The `typing.unparsed_values` wording
+"unter dem gewählten Typ" is a recorded round-1 decision and is true for every column. The
+hard-coded 2.08 s → 3.96 s figure is complained about in the sentence that already says the
+absolutes are hardware and the ratio is the finding.
+
+**Deferred with entries rather than fixed:** the two-digit year exists on `.` and `dmy` only, so
+`31/12/25` and `31-12-25` are `text` while their four-digit twins are dates — and
+`readsAsDate`'s `ymd`+`shortYear` branch is therefore unreachable; the candidate named `ISO 8601`
+still refuses `2025-12-31T24:00:00Z`, basic format, week dates and ordinal dates; and the zone
+offset accepts `+23:59` where no zone passes ±14:00. All three widen or bound a frozen list and
+are Ask First.
+
+**The owner's three named open risks, re-measured.** `peelWrappers` holds: `1.234,56-€`,
+`€-1.234,56`, `-€ 1.234,56`, `€(1.234,56)` and `1.234,56 €-` all read as −1234 while
+`(1.234,56)-` and `-(1.234,56)` are refused, so order-independence is real and the two-mark rule
+is its only boundary. `01.13.03` → `text` reproduces exactly as reported. The `numberParts`
+contract risk was real and is the sharper finding above.
+
+**Known-bad state avoided.** Story 6 briefed in three documents with the unit its own architecture
+decision overturned, converting through an exported parser that cannot rebuild the values it
+reads; and a part-number column silently reported as fully-readable negative numbers by the one
+rule the story calls its worst case.
+
+**KEEP.** Everything the three rounds established: the nanosecond representation, the
+digit-comparing overflow guard, the restructured clock reader and its never-narrower invariant,
+the two-digit-triple question with both settling mechanisms, the order-independent `peelWrappers`
+loop and its two-mark rule, the four boolean pairs, the affix scored as a candidate, and the
+type-select placeholder.
+
+### 2026-08-03 — review round 3, as built: one closure instead of three careful returns, and a matrix row of mine that was wrong
+
+**The forgotten field was fixed by removing the way it can be forgotten.** Rather than adding
+`mixedAffixes` to the one return that lacked it, `detectColumn` gained `found:957` — a closure
+that merges both column-wide findings into every post-scan return. `record()`'s comment said
+spelling the shape out at each return "is how a field gets forgotten on one route and carried on
+another", and the round that added the helper proved it on its own commit; now there is one
+spelling and the routes differ only in what they override. `mixedBooleanPairs` was born into that
+closure rather than threaded through the returns after it.
+
+**The accounting evidence travels the route the affix already travels.** The column's marks reach
+the per-value reader through `readerFor(type, affix, present)` and a fourth `accounting` argument
+on `numberParts`, the same way the column's one affix already reached it — no module state, no
+second route, and the detection path and `scoreColumn` agree by construction rather than by two
+matching edits. `hasLeadingZero` deliberately keeps peeling the accounting spellings
+unconditionally: it hunts hidden zeros rather than proposing a reading, so peeling less would
+only bury them.
+
+**`numberParts`'s new `accounting` argument defaults to `false`, and that is a behaviour change
+for a direct caller.** `numberParts('(1.234,56)', de)` now returns `null` where it returned a
+negative. That is the honest default — a caller with no column behind it cannot invent an
+accounting column — but it is a fact about the exported contract story 6 will meet, so it is
+recorded here rather than left in a docblock.
+
+**A row in my own I/O matrix was wrong and is corrected.** I specified `1`, `0`, `ja` as three
+cells with the outcome "`number` still reads `1`/`0`, `ja` unparsed". Measured before *and* after
+the change: that column is `text`, because the number reading covers 2 of 3 = 0.667, under the
+frozen 0.9 threshold. The row now carries both cases — nineteen numbers and one `ja` for the
+outcome I meant, and the three-cell column for what those three cells actually do. Same class as
+round 2's `12,5`, `13` correction: a matrix row written to illustrate a rule, stating a hit rate
+its own cells cannot produce. The implementer flagged it rather than adjusting the threshold to
+match my sentence, which is the right way round.
+
+**Verified after the change**, not asserted: `npx eslint .` clean; `npx vitest run` 365 tests
+across 11 files, from a baseline of 351; `npx playwright test` 111 passed, 1 skipped. Three
+mutations were run and each now fails — the `affix` suppression on non-number kinds (1 failure),
+the unconditional boolean disqualification (2), and the accounting evidence gate (2).
 
 ### 2026-08-02 — review round 2: the sign that was not carried, and two frozen sentences of mine that were false
 

@@ -33,8 +33,8 @@
   invoke_dev_with: >-
     Detection reads every value, never a sample (CAP-9). Unparsed values become
     boxed cells the TableEngine adapter alone understands (AD-22); dates
-    normalize to UTC-midnight epoch ms (AD-21); native columns still get the
-    missing-value sweep (AD-20). The gate belongs to core/exec, not the UI
+    normalize to UTC-midnight epoch nanoseconds held as a BigInt (AD-21);
+    native columns still get the missing-value sweep (AD-20). The gate belongs to core/exec, not the UI
     (AD-29), even while the scheduler is still minimal.
 - id: "4"
   title: XLSX and Parquet Sources
@@ -79,8 +79,9 @@
     already holds the representation, so this is candidates, not
     architecture. (3) time from text, which is the one piece that opens the
     architecture: AD-21 knows date and datetime only, and a clock time with no
-    date needs a third representation — milliseconds since midnight — added to
-    it. It also carries a real ambiguity, clock time against duration: a
+    date needs a third representation — nanoseconds since midnight, held as a
+    BigInt like the other three — added to it. It also carries a real
+    ambiguity, clock time against duration: a
     duration sums and passes 24:00, a clock time does not, and 36:15 settles
     the column while 08:15 does not. That is story 3's unresolved machinery,
     used for what it was built for, not a default picked quietly. (4) boolean
@@ -182,7 +183,8 @@
     converted values cannot replace it in place. Applying a confirmed mapping
     therefore happens on the way into a Table here: unparsed values become
     boxes carrying their original text (AD-22), dates normalize to
-    UTC-midnight epoch ms (AD-21), and where that converted copy lives — and
+    UTC-midnight epoch nanoseconds held as a BigInt — one unit for all four
+    temporal types (AD-21) — and where that converted copy lives — and
     what it costs against R4/D2's 80.2 MB per 100k x 20 — is a Table question
     answered here, not a typing question answered there. With the boxes come
     the rows behind the number: story 3's panel says "842 von 900 Werten

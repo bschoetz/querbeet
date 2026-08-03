@@ -848,6 +848,37 @@ describe('piece 4 — boolean pairs', () => {
     expect(detectColumn(['wahr', 'nein']).type).toBe(TEXT)
   })
 
+  it('disqualifies boolean at any ratio, not at a threshold, and names both pairs', () => {
+    // Nineteen `ja` beside one `false` used to be `boolean`, `ja/nein`,
+    // `decisive`, one unparsed — while `ja` beside `false` was text. Two
+    // contaminations of identical shape got opposite answers, and "a pair never
+    // mixes" was a tendency rather than a rule. It is the rule now, and it
+    // mirrors the affix rule field for field, warning included.
+    const many = detectColumn([...Array.from({ length: 19 }, () => 'ja'), 'false'])
+
+    expect(many.type).toBe(TEXT)
+    expect(many.mixedBooleanPairs).toEqual(['true/false', 'ja/nein'])
+
+    const both = detectColumn(['ja', 'false'])
+    expect(both.type).toBe(TEXT)
+    expect(both.mixedBooleanPairs).toEqual(['true/false', 'ja/nein'])
+
+    // One pair is no finding, however the column ends up.
+    expect(detectColumn(['ja', 'nein', 'ja']).mixedBooleanPairs).toBeNull()
+  })
+
+  it('lets 1/0 take part like any other pair, and leaves the number reading alone', () => {
+    // The finding is carried whatever kind ends up winning — here `number`,
+    // because `1` and `0` are perfectly good numbers and the boolean reading is
+    // the only one the contamination disqualifies. `ja` counts unparsed.
+    const cells = [...Array.from({ length: 19 }, (_, i) => (i % 2 ? '1' : '0')), 'ja']
+    const r = detectColumn(cells)
+
+    expect(r.type).toBe(NUMBER)
+    expect(r.counts).toMatchObject({ parsed: 19, unparsed: 1 })
+    expect(r.mixedBooleanPairs).toEqual(['ja/nein', '1/0'])
+  })
+
   it('proposes number for 1/0 — the reading that loses less — and keeps boolean settable', () => {
     // `1`/`0` is a perfectly good number, and a tie across kinds goes to number.
     // Nothing is lost by that: the user is one choice away, and the choice is
@@ -948,6 +979,32 @@ describe('pieces 5 and 6 — affixed numbers and accounting signs', () => {
     expect(r.counts).toMatchObject({ parsed: 18, unparsed: 2 })
   })
 
+  it('keeps it on the short-year route too, where it was being dropped', () => {
+    // The third of three sibling returns. `record()` exists by its own comment
+    // because "spelling the shape out at each of them is how a field gets
+    // forgotten on one route and carried on another" — and the field was
+    // forgotten on this one in the commit that added the helper. Eighteen
+    // `01.02.03` are a date-or-text question; the two units are a finding of
+    // their own and survive it.
+    const r = detectColumn([...Array.from({ length: 18 }, () => '01.02.03'), '12 €', '12 $'])
+
+    expect(r.verdict).toBe('unresolved')
+    expect(r.evidence).toEqual({ over: 'kind', alternatives: [DATE, TEXT] })
+    expect(r.mixedAffixes).toEqual(['€', '$'])
+  })
+
+  it('puts no unit on a column that a different kind won', () => {
+    // The affix is scanned on every column, because the scan is what decides
+    // whether a *number* reading is an affixed one. Carried onto the record
+    // regardless of the winner, eighteen German dates with one `12 €` among them
+    // render `Einheit: €` beneath a card typed `Datum`.
+    const dates = Array.from({ length: 18 }, (_, i) => `${13 + (i % 15)}.02.2025`)
+    const r = detectColumn([...dates, '12 €'])
+
+    expect(r.type).toBe(DATE)
+    expect(r.affix).toBeNull()
+  })
+
   it('does not read an affix out of prose', () => {
     // The finding is "two units are in use", not "two symbols occur". A text
     // column mentioning both reads as a number under neither, so neither is used.
@@ -978,17 +1035,54 @@ describe('pieces 5 and 6 — affixed numbers and accounting signs', () => {
     // — so nothing but this asserts the field story 6 converts with. Three
     // spellings say negative and the ordinary leading minus is one of them; it
     // was the one being dropped, under a comment promising it was not.
+    //
+    // The two accounting spellings need the column's permission — the fourth
+    // argument — because on their own they are footnote markers and part
+    // numbers. The values here carry a decimal mark, which is exactly the
+    // evidence a column of them presents.
     const de = numberCandidates().find((c) => c.locale === 'de-DE')
+    const negative = { digits: '1234', fraction: '56', negative: true }
 
-    expect(numberParts('-1.234,56', de)).toEqual({ digits: '1234', negative: true })
-    expect(numberParts('(1.234,56)', de)).toEqual({ digits: '1234', negative: true })
-    expect(numberParts('1.234,56-', de)).toEqual({ digits: '1234', negative: true })
-    expect(numberParts('1.234,56', de)).toEqual({ digits: '1234', negative: false })
-    expect(numberParts('+1.234,56', de)).toEqual({ digits: '1234', negative: false })
+    expect(numberParts('-1.234,56', de)).toEqual(negative)
+    expect(numberParts('(1.234,56)', de, null, true)).toEqual(negative)
+    expect(numberParts('1.234,56-', de, null, true)).toEqual(negative)
+    expect(numberParts('1.234,56', de)).toEqual({ digits: '1234', fraction: '56', negative: false })
+    expect(numberParts('+1.234,56', de)).toEqual({ digits: '1234', fraction: '56', negative: false })
 
     // …and the sign rides through an affix, which is where a second parser in
     // story 6 would first get it wrong.
-    expect(numberParts('-1.234,56 €', de, '€')).toEqual({ digits: '1234', negative: true })
+    expect(numberParts('-1.234,56 €', de, '€')).toEqual(negative)
+  })
+
+  it('returns enough to rebuild the value — the digits, the fraction and the sign', () => {
+    // The return is exported for story 6, which converts a confirmed column and
+    // must read every value exactly as detection counted it. It could not: the
+    // fraction was discarded, so `12,5` and `12` were byte-identical returns and
+    // so were `0,5` and `0`. An export that forces the caller to parse the value
+    // again is the second opinion the export exists to prevent.
+    const de = numberCandidates().find((c) => c.locale === 'de-DE')
+    const en = numberCandidates().find((c) => c.locale === 'en-US')
+
+    expect(numberParts('12,5', de)).toEqual({ digits: '12', fraction: '5', negative: false })
+    expect(numberParts('12', de)).toEqual({ digits: '12', fraction: '', negative: false })
+    expect(numberParts('0,5', de)).toEqual({ digits: '0', fraction: '5', negative: false })
+    expect(numberParts('0', de)).toEqual({ digits: '0', fraction: '', negative: false })
+
+    // The two pairs that were indistinguishable, pinned as pairs.
+    expect(numberParts('12,5', de)).not.toEqual(numberParts('12', de))
+    expect(numberParts('0,5', de)).not.toEqual(numberParts('0', de))
+
+    // `digits` keeps its one meaning: the integer part, grouping stripped —
+    // which is what the overflow guard compares, digit by digit.
+    expect(numberParts('1,234.56', en)).toEqual({
+      digits: '1234',
+      fraction: '56',
+      negative: false,
+    })
+
+    // And the guard stays scoped to those digits. A twenty-digit *fraction* is
+    // an open ledger entry, not something this widening closed by accident.
+    expect(detectColumn(['1,2345678901234567890', '2,5']).type).toBe(NUMBER)
   })
 
   it('composes the sign and the unit in either order', () => {
@@ -1007,9 +1101,9 @@ describe('pieces 5 and 6 — affixed numbers and accounting signs', () => {
       ['(1.234,56 €)', de, '€'],
       ['1.234,56 €-', de, '€'],
     ]) {
-      expect([value, numberParts(value, candidate, affix)]).toEqual([
+      expect([value, numberParts(value, candidate, affix, true)]).toEqual([
         value,
-        { digits: '1234', negative: true },
+        { digits: '1234', fraction: '56', negative: true },
       ])
     }
 
@@ -1027,6 +1121,62 @@ describe('pieces 5 and 6 — affixed numbers and accounting signs', () => {
     // A leading minus is a sign mark like the other two, so it cannot be
     // combined with either — which is the rule the carried sign made real.
     expect(detectColumn(['-1.234,56-', '-80,00-']).type).toBe(TEXT)
+  })
+
+  it('reads the two accounting forms only where the column vouches for them', () => {
+    // The rule the story names as "the one wrong-number defect this story can
+    // produce" had the loosest guard in the file — the only rule applied per
+    // value, where the leading-zero guard and the overflow guard both disqualify
+    // a whole column on one value precisely because a wrong number is
+    // unrecoverable. `4711-` is an ERP part number and `(1)` is a footnote
+    // marker, and both were settled, fully-readable negative numbers.
+    expect(detectColumn(['4711-', '4712-']).type).toBe(TEXT)
+    expect(detectColumn(['(1)', '(2)', '(3)']).type).toBe(TEXT)
+    // The cost, named in the Boundaries rather than discovered: a column of
+    // parenthesised round amounts with nothing else in it is text.
+    expect(detectColumn(['(500)', '(750)']).type).toBe(TEXT)
+
+    // One value carrying a grouping or decimal mark is the whole column's
+    // evidence, and then every accounting form in it reads.
+    const r = detectColumn(['(1.234,56)', '(500)'])
+    expect(r).toMatchObject({ type: NUMBER })
+    expect(r.counts).toMatchObject({ parsed: 2, unparsed: 0 })
+
+    const de = numberCandidates().find((c) => c.locale === 'de-DE')
+    expect(numberParts('(500)', de, null, true)).toEqual({
+      digits: '500',
+      fraction: '',
+      negative: true,
+    })
+    expect(numberParts('(500)', de)).toBeNull() // …and nothing without the column
+  })
+
+  it('leaves the ordinary leading minus alone, because it is no accounting form', () => {
+    // `-500` says what it says on its own. Only the two spellings that mean
+    // something else outside an accounting package need a column to vouch.
+    const r = detectColumn(['-500', '-750'])
+
+    expect(r).toMatchObject({ type: NUMBER })
+    expect(r.counts).toMatchObject({ parsed: 2, unparsed: 0 })
+
+    const de = numberCandidates().find((c) => c.locale === 'de-DE')
+    expect(numberParts('-500', de)).toEqual({ digits: '500', fraction: '', negative: true })
+  })
+
+  it('does not let a chosen number reading resurrect the negatives', () => {
+    // The two paths agree about the column's evidence exactly as they already
+    // agree about its affix — or a user answering `Zahl` on a column of part
+    // numbers would confirm −4711 and −4712 with 2 of 2 readable under it.
+    const de = numberCandidates().find((c) => c.locale === 'de-DE')
+
+    expect(scoreColumn(['4711-', '4712-'], { type: NUMBER, format: de }).counts).toMatchObject({
+      parsed: 0,
+      unparsed: 2,
+    })
+    // …and it still reads everything detection read, where the column vouches.
+    expect(
+      scoreColumn(['(1.234,56)', '(500)'], { type: NUMBER, format: de }).counts,
+    ).toMatchObject({ parsed: 2, unparsed: 0 })
   })
 
   it('still sees a leading zero through a sign and an affix', () => {

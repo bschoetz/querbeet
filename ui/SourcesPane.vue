@@ -173,9 +173,17 @@ const GERMAN = {
   'typing.ambiguous_locale': (v) =>
     `Spalte „${v.column}“: nichts entscheidet zwischen zwei Lesarten. Bitte unter ` +
     `„Spalten & Typen“ wählen.`,
+  // The alternatives can be an empty list: the core reads them through `?.` on a
+  // typing it did not build (story 14 restores one from a Recipe), and a record
+  // carrying `verdict: 'unresolved'` with no evidence still has to name its
+  // column so the gate's reason is never silent. "entscheidet zwischen ." is a
+  // sentence with a hole in it, which is worse than the shorter true one.
   'typing.ambiguous_kind': (v) =>
-    `Spalte „${v.column}“: nichts entscheidet zwischen ${v.alternatives.map(typeLabel).join(' und ')}. ` +
-    `Bitte unter „Spalten & Typen“ den Typ wählen.`,
+    v.alternatives.length < 2
+      ? `Spalte „${v.column}“: der Typ ist ungeklärt. Bitte unter „Spalten & Typen“ den Typ ` +
+        `wählen.`
+      : `Spalte „${v.column}“: nichts entscheidet zwischen ${v.alternatives.map(typeLabel).join(' und ')}. ` +
+        `Bitte unter „Spalten & Typen“ den Typ wählen.`,
   // The sentence may not say "wird als Text gelesen": the finding survives
   // whatever kind wins, and eighteen German dates beside `12 €` and `12 $` are
   // still a date column. What is always true is why no number type is proposed.
@@ -183,6 +191,14 @@ const GERMAN = {
     `Spalte „${v.column}“ enthält Werte mit verschiedenen Einheiten ` +
     `(${v.affixes.join(' und ')}). Solche Werte lassen sich nicht zusammenrechnen, deshalb ` +
     `schlägt querbeet für diese Spalte keinen Zahlentyp vor. Bitte prüfen.`,
+  // Same discipline as the sentence above, for the same reason: the finding
+  // survives whatever kind wins the column, so this may not say "wird als Text
+  // gelesen" either. What is always true is why no boolean type is proposed.
+  'typing.mixed_boolean_pairs': (v) =>
+    `Spalte „${v.column}“ schreibt Ja und Nein in zwei verschiedenen Schreibweisen ` +
+    `(${v.pairs.join(' und ')}). Eine Spalte, die ihr Ja zweimal buchstabiert, stammt nicht aus ` +
+    `einem System, deshalb schlägt querbeet für diese Spalte keinen Wahrheitswert vor. ` +
+    `Bitte prüfen.`,
   // "unter der gewählten Lesart" was true while every type that could carry an
   // unreadable value had a reading to choose. `time` and `duration` have none —
   // the question they raise is answered in the Typ select — so on those columns
@@ -300,17 +316,32 @@ const hitRate = (c) => {
   return c.counts.missing === 0 ? rate : `${rate}, ${nf(c.counts.missing)} leer`
 }
 
+/**
+ * The sentence under a column's controls, and what it says about a record this
+ * pane did not build.
+ *
+ * `core/exec` reads a column's evidence through `?.` because story 14 restores a
+ * typing from a Recipe and a hand-edited or older file can carry a verdict with
+ * nothing behind it. The same records reach here, so the same care is owed: a
+ * verdict whose evidence is missing, empty or half-filled says **nothing**
+ * rather than "Nichts in dieser Spalte entscheidet zwischen  und ." — half a
+ * sentence reads as a rendering bug and hides the state it was meant to report.
+ * The column is still named in the diagnostic list and still blocks the gate.
+ */
 const verdictText = (c) => {
+  const named = (c.evidence?.alternatives ?? []).map((k) => readingLabel(c, k))
+  if (named.length < 2) return ''
+
   if (c.verdict === 'unresolved') {
-    const [a, b] = c.evidence.alternatives.map((k) => readingLabel(c, k))
+    const [a, b] = named
     // Which control answers it is named, because the two questions are answered
     // in different places: a reading in the Lesart select, a type in the Typ one.
     return isKindQuestion(c)
       ? `Nichts in dieser Spalte entscheidet zwischen ${a} und ${b} — bitte den Typ wählen.`
       : `Nichts in dieser Spalte entscheidet zwischen ${a} und ${b} — bitte wählen.`
   }
-  if (c.verdict === 'decisive') {
-    const [winner, other] = c.evidence.alternatives.map((k) => readingLabel(c, k))
+  if (c.verdict === 'decisive' && typeof c.evidence.decidedBy === 'number') {
+    const [winner, other] = named
     const decided = readsOnlyAs(c.evidence.decidedBy, winner)
     // Evidence pointing the other way is named too. A column where 47 values
     // say dd.mm and 3 say mm.dd is still dd.mm, but a sentence that mentions
@@ -937,9 +968,13 @@ const unconfirm = (id) => {
               </div>
 
               <!-- A verdict with no evidence behind it has nothing to say, and
-                   an empty amber line would read as a warning about nothing. -->
+                   an empty amber line would read as a warning about nothing. The
+                   condition is the sentence itself rather than the evidence
+                   field: a record restored from a Recipe can carry evidence that
+                   is present and yet says nothing, and `verdictText` is the one
+                   place that knows the difference. -->
               <p
-                v-if="col.verdict !== 'settled' && col.evidence"
+                v-if="col.verdict !== 'settled' && verdictText(col)"
                 data-testid="typing-verdict"
                 class="mt-2 text-xs"
                 :class="col.verdict === 'unresolved' ? 'text-amber-700' : 'text-slate-500'"

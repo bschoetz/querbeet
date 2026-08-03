@@ -122,6 +122,30 @@ describe('the two ambiguity sentences', () => {
     expect(w.find('[data-testid="typing-verdict"]').exists()).toBe(false)
   })
 
+  it('renders nothing rather than half a sentence for a record with no evidence', async () => {
+    // `core/exec` reads a column's evidence through `?.` because story 14
+    // restores a typing from a Recipe and a hand-edited or older record can
+    // carry a verdict with nothing behind it. The same records reach here, and
+    // dereferencing them unguarded took the render down — or, one field further
+    // on, produced "entscheidet zwischen  und ." under an amber line.
+    const w = await render(
+      stubStore(
+        source([
+          column('Datum', { type: 'date', verdict: 'unresolved', evidence: { alternatives: [] } }),
+          column('Betrag', { type: 'number', verdict: 'unresolved', evidence: {} }),
+          column('Menge', {
+            type: 'number',
+            verdict: 'decisive',
+            evidence: { alternatives: ['de-DE', 'en-US'] }, // decisive, no count
+          }),
+        ]),
+      ),
+    )
+
+    expect(w.findAll('[data-testid="typing-verdict"]')).toHaveLength(0)
+    expect(w.text()).not.toContain('entscheidet zwischen')
+  })
+
   it('names a number reading by locale, not by its separators', async () => {
     const w = await render(
       stubStore(
@@ -866,6 +890,59 @@ describe('the typing diagnostics in German', () => {
     // are still a date column. What is always true is why no number is proposed.
     expect(text).toContain('deshalb schlägt querbeet für diese Spalte keinen Zahlentyp vor')
     expect(text).not.toContain('sie wird als Text gelesen')
+    expect(text).not.toContain('Unbekannte Meldung aus dem Kern.')
+  })
+
+  it('has a sentence for the two boolean spellings, and does not claim text either', async () => {
+    const w = await render(
+      stubStore(
+        source([column('Kunde')], {
+          diagnostics: [
+            {
+              severity: 'warning',
+              code: 'typing.mixed_boolean_pairs',
+              values: { column: 'Freigabe', pairs: ['true/false', 'ja/nein'] },
+            },
+          ],
+        }),
+      ),
+    )
+
+    const text = w.text()
+    expect(text).toContain(
+      'Spalte „Freigabe“ schreibt Ja und Nein in zwei verschiedenen Schreibweisen ' +
+        '(true/false und ja/nein)',
+    )
+    // The finding survives whatever kind wins the column — `1`, `0` beside `ja`
+    // is a *number* column — so this sentence may no more claim text than its
+    // mixed-unit sibling may.
+    expect(text).toContain('deshalb schlägt querbeet für diese Spalte keinen Wahrheitswert vor')
+    expect(text).not.toContain('wird als Text gelesen')
+    expect(text).not.toContain('Unbekannte Meldung aus dem Kern.')
+  })
+
+  it('names the column even when the restored record has no alternatives to name', async () => {
+    // `core/exec` reads the alternatives through `?.` because story 14 restores
+    // a typing from a Recipe, and hands over the empty list where a record has
+    // nothing to say. "entscheidet zwischen ." is a sentence with a hole in it.
+    const w = await render(
+      stubStore(
+        source([column('Kunde')], {
+          diagnostics: [
+            {
+              severity: 'unresolved',
+              code: 'typing.ambiguous_kind',
+              values: { column: 'Beginn', alternatives: [] },
+            },
+          ],
+        }),
+      ),
+    )
+
+    const text = w.text()
+    expect(text).toContain('Spalte „Beginn“: der Typ ist ungeklärt.')
+    expect(text).toContain('Bitte unter „Spalten & Typen“ den Typ wählen.')
+    expect(text).not.toContain('entscheidet zwischen')
     expect(text).not.toContain('Unbekannte Meldung aus dem Kern.')
   })
 
