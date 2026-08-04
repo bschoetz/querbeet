@@ -361,18 +361,71 @@
     is the same seam the architecture's Deferred list calls graph auto-layout.
     Take it with whatever story first meets a graph too big to untangle by
     dragging.
-- id: "7"
-  title: Execution full build — cache, cancellation, execution modes
+# Story 7 was split 2026-08-04 by the project owner into three, in the order
+# below. Why, so nobody re-litigates it: each third is independently shippable —
+# reviewable, testable and mergeable without the other two — and only one pair
+# is coupled. The cache is reachable from core/exec/ alone and needs no UI at
+# all; the scheduler changes the shape of execute.js and adds a cancel and a
+# progress affordance; the modes need a threshold, a stale mark and an explicit
+# run action, and they presuppose the scheduler, because CAP-38's "a named
+# action starts the new one" has nothing to start until a run is an object.
+# Ordered cache first because it is what makes cancellation affordable: a
+# cancelled run that kept nothing would recompute the Steps that had already
+# finished, and cancelling would cost more than waiting.
+#
+# The id "7" is retired rather than kept by any of the three, for the reason "6"
+# was retired on 2026-08-03. It is unpinned — no spec file exists — and four
+# places name "story 7" in prose where they mean different thirds of it:
+# ui/EditorPane.vue (with its test) means the mode gate and the threshold,
+# spec-6b-execution-skeleton.md means the scheduler and gates 2 and 3,
+# core/exec/execute.js and epic-6-context.md mean all three. A bare "7" would
+# have made an existing reference actively wrong rather than merely ambiguous.
+- id: "7a"
+  title: The per-Step cache — content-addressed, diagnostics replayed, bounded
   description: >-
-    CAP-38: content-addressed per-Step cache that replays diagnostics,
-    cancellation between Steps, and the live/explicit mode switch at a stated
-    row threshold with the mode in force always visible.
+    CAP-38's first third: a cache keyed on what a Step is rather than on which
+    Step it is, whose entries hold the table and its diagnostics together, so a
+    hit replays the warnings instead of letting a repeat run look clean.
   invoke_dev_with: >-
-    Cache key per AD-8 — key(source) = hash(byteDigest + parseConfig), never
-    the Source id; entries store table and diagnostics together and a hit
-    replays them. Cancellation only between Steps; SharedArrayBuffer is hidden
-    from file:// and typeof lies about it (AD-9). The mode is scheduler state
-    the UI reads, never decides (AD-29).
+    key(step) = hash(canonical(config) + key(inputs)) and key(source) =
+    hash(byteDigest + parseConfig) — never the Source id, or a corrected
+    delimiter returns a stale table under an unchanged key (AD-8). The
+    canonical serializer is shared with the Recipe file (story 14); whichever
+    story writes it first, there must not be two. Bound by retained rows with
+    least-recently-used eviction — an eviction is a miss, never a wrong answer.
+    Measured: the last Step of a 30-Step graph costs 24.1/54 ms cached against
+    496.4/1394 ms recomputed, and holding all 30 intermediates costs 180 MB at
+    half a million rows.
+- id: "7b"
+  title: The scheduler — cancellation between Steps, progress, and a run with an identity
+  description: >-
+    CAP-38's second third: the topological walk becomes a scheduler that yields
+    between Steps, checks for cancellation through the message queue, reports
+    progress, and gives every run an id and a start time.
+  invoke_dev_with: >-
+    Cancellation is between Steps and exit latency is one Step, not one chunk.
+    There is no shared cancellation flag on this platform — SharedArrayBuffer is
+    hidden from file:// in both engines, typeof lies about it, and the
+    documented WebAssembly.Memory escape hatch yields a buffer neither engine
+    will post (AD-9). Steps stay pure and synchronous (AD-4); the yield point is
+    the scheduler around them. Run id and start time come from the Clock port
+    (AD-25). Progress costs about 2.6 %, so granularity is not where to save.
+    Step zero belongs on this path — its measured 548–555 ms currently run
+    inside a render function, uncancellable (deferred-work.md).
+- id: "7c"
+  title: The two execution modes — a stated threshold, a visible mode, and a stale mark
+  description: >-
+    CAP-38's last third: live below a stated row threshold and explicit above
+    it, the mode in force always visible, and a Preview or Result in explicit
+    mode marked as belonging to the previous run rather than looking current.
+  invoke_dev_with: >-
+    The mode is scheduler state the UI reads, never state the UI decides
+    (AD-29's third gate). The threshold is a number the user can see, crossing
+    it is announced when it happens, and it is a property of the session and
+    its data rather than of the Recipe. This story replaces 6b's interim rule —
+    recompute after every data-affecting change — and it is where gate 2 gets
+    its seam: the Pre-flight Check is story 15's, so render its absence
+    honestly rather than letting it read as checked.
 - id: "8"
   title: Union and Join Steps
   description: >-
