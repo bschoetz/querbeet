@@ -202,3 +202,184 @@ describe('what crosses at an edge', () => {
     expect(Number(ns)).toBe(Number(ns + 1n))
   })
 })
+
+// ------------------------------------------------------ the two verbs (6b)
+//
+// What is under test here is again not "does Arquero filter" — it is the three
+// things this side of the port owns and no Step kind may learn: that a box
+// matches no operator and is counted, that an ISO 8601 comparison value becomes
+// nanoseconds on this side, and that a filtered or reordered table still reads
+// correctly at its edges.
+
+describe('filter', () => {
+  const REPORT = () => [
+    column('Kunde', 'text', ['Anna', 'Bernd', 'Carla', 'Dora']),
+    column('Betrag', 'number', [1000, 500, 1000, 250]),
+  ]
+
+  const names = (t) => [...t.rows()].map((r) => r.Kunde)
+
+  it('shares its columns with the input rather than copying them', () => {
+    // The whole memory argument for `ColumnTable`: CAP-19 retains every Step's
+    // output, so a chain that copied twenty column arrays per link would cost
+    // 19.8 MB at the design shape where sharing costs a BitSet.
+    const t = engine.fromColumns(REPORT())
+    const out = engine.filter(t, { conditions: [{ column: 'Betrag', op: 'gt', value: 400 }] })
+
+    expect(out.table.rowCount()).toBe(3)
+    // The input is untouched — a Step may not mutate its inputs (AD-4).
+    expect(t.rowCount()).toBe(4)
+  })
+
+  it('counts what it removed and what a box excluded, separately', () => {
+    const t = engine.fromColumns([
+      column('Kunde', 'text', ['Anna', 'Bernd', 'Carla']),
+      column('Betrag', 'number', [1000, 'ungefähr 500', 250], [1]),
+    ])
+
+    const out = engine.filter(t, { conditions: [{ column: 'Betrag', op: 'gt', value: 400 }] })
+
+    expect(names(out.table)).toEqual(['Anna'])
+    expect(out.removed).toBe(2)
+    expect(out.boxed).toBe(1)
+  })
+
+  it('lets no box match any operator, `not_empty` included (AD-22)', () => {
+    const t = engine.fromColumns([column('Betrag', 'number', ['ungefähr'], [0])])
+
+    for (const op of ['eq', 'ne', 'lt', 'lte', 'gt', 'gte']) {
+      expect(engine.filter(t, { conditions: [{ column: 'Betrag', op, value: 0 }] }).table.rowCount(),
+        `a box matched ${op}`).toBe(0)
+    }
+    expect(engine.filter(t, { conditions: [{ column: 'Betrag', op: 'empty' }] }).table.rowCount()).toBe(0)
+    expect(
+      engine.filter(t, { conditions: [{ column: 'Betrag', op: 'not_empty' }] }).table.rowCount(),
+    ).toBe(0)
+  })
+
+  it('converts an ISO 8601 comparison value to nanoseconds, on this side', () => {
+    // AD-21 — `core/` may not construct a `BigInt` temporal value, so the string
+    // is the canonical machine form that crosses the port. 31.12.2025, 31.12.2024
+    // and 01.03.2026 as UTC-midnight epoch ns.
+    const t = engine.fromColumns([
+      column('Kunde', 'text', ['Anna', 'Bernd', 'Carla']),
+      column('Datum', 'date', [1767139200000000000n, 1735603200000000000n, 1772323200000000000n]),
+    ])
+
+    expect(
+      names(engine.filter(t, { conditions: [{ column: 'Datum', op: 'gte', value: '2025-12-31' }] }).table),
+    ).toEqual(['Anna', 'Carla'])
+    expect(
+      names(engine.filter(t, { conditions: [{ column: 'Datum', op: 'eq', value: '2025-12-31' }] }).table),
+    ).toEqual(['Anna'])
+  })
+
+  it('reads the four temporal shapes it accepts, and refuses everything else', () => {
+    const at = (type, values) => engine.fromColumns([column('v', type, values)])
+    const kept = (type, values, value, op = 'eq') =>
+      engine.filter(at(type, values), { conditions: [{ column: 'v', op, value }] })
+
+    // A datetime with an offset, a clock, and a signed duration.
+    expect(kept('datetime', [1767191400000000000n], '2025-12-31T14:30:00Z').table.rowCount()).toBe(1)
+    expect(kept('datetime', [1767191400000000000n], '2025-12-31 16:30:00+02:00').table.rowCount()).toBe(1)
+    expect(kept('time', [52200000000000n], '14:30').table.rowCount()).toBe(1)
+    expect(kept('duration', [-5400000000000n], '-01:30').table.rowCount()).toBe(1)
+
+    // A display form is not a canonical value, and is reported rather than guessed.
+    const refused = kept('date', [0n], '31.12.2025')
+    expect(refused.table).toBeNull()
+    expect(refused.unreadable).toEqual([{ column: 'v', type: 'date', value: '31.12.2025' }])
+  })
+
+  it('honours a filter already in force, so a chain narrows rather than restarts', () => {
+    const t = engine.fromColumns(REPORT())
+    const first = engine.filter(t, { conditions: [{ column: 'Betrag', op: 'gte', value: 500 }] }).table
+    const second = engine.filter(first, { conditions: [{ column: 'Kunde', op: 'ne', value: 'Anna' }] })
+
+    expect(names(second.table)).toEqual(['Bernd', 'Carla'])
+    expect(second.removed).toBe(1)
+  })
+
+  it('keeps every row when there is no condition at all', () => {
+    const out = engine.filter(engine.fromColumns(REPORT()), { conditions: [], combine: 'all' })
+    expect(out.table.rowCount()).toBe(4)
+    expect(out.removed).toBe(0)
+  })
+
+  it('throws for a column no table has — a refusal one layer up, a bug here', () => {
+    const t = engine.fromColumns(REPORT())
+    expect(() => engine.filter(t, { conditions: [{ column: 'Umsatz', op: 'eq', value: 1 }] })).toThrow(
+      /no column Umsatz/,
+    )
+  })
+
+  it('refuses a handle another engine produced', () => {
+    const other = createArqueroEngine()
+    const t = other.fromColumns(REPORT())
+    expect(() => engine.filter(t, { conditions: [] })).toThrow(/not produced by this engine/)
+  })
+})
+
+describe('selectColumns', () => {
+  const THREE = () => [
+    column('Kunde', 'text', ['Anna', 'Bernd']),
+    column('Betrag', 'number', [1000, 500]),
+    column('Datum', 'date', [1767139200000000000n, 1735603200000000000n]),
+  ]
+
+  it('makes the given order the output order, and carries the types', () => {
+    const out = engine.selectColumns(engine.fromColumns(THREE()), [
+      { from: 'Datum', to: 'Buchungstag' },
+      { from: 'Kunde', to: 'Kunde' },
+    ])
+
+    expect(out.schema()).toEqual([
+      { name: 'Buchungstag', type: 'date' },
+      { name: 'Kunde', type: 'text' },
+    ])
+    expect([...out.rows()]).toEqual([
+      { Buchungstag: 1767139200000000000n, Kunde: 'Anna' },
+      { Buchungstag: 1735603200000000000n, Kunde: 'Bernd' },
+    ])
+  })
+
+  it('keeps the box invisible across a rename', () => {
+    const t = engine.fromColumns([column('Betrag', 'number', [1000, 'ungefähr'], [1])])
+    const out = engine.selectColumns(t, [{ from: 'Betrag', to: 'Summe' }])
+
+    // The original text at the edge, exactly as before the rename — the mark is
+    // what a later story adds, and the *value* is what is guaranteed here.
+    expect(out.column('Summe')).toEqual([1000, 'ungefähr'])
+    expect([...out.rows()][1]).toEqual({ Summe: 'ungefähr' })
+  })
+
+  it('inherits the filter of the table it selects from', () => {
+    const filtered = engine.filter(engine.fromColumns(THREE()), {
+      conditions: [{ column: 'Betrag', op: 'gt', value: 600 }],
+    }).table
+    const out = engine.selectColumns(filtered, [{ from: 'Kunde', to: 'Kunde' }])
+
+    expect(out.rowCount()).toBe(1)
+    expect([...out.rows()]).toEqual([{ Kunde: 'Anna' }])
+  })
+
+  it('throws on a collision and on an unknown column — both refused one layer up', () => {
+    const t = engine.fromColumns(THREE())
+
+    expect(() =>
+      engine.selectColumns(t, [
+        { from: 'Kunde', to: 'X' },
+        { from: 'Betrag', to: 'X' },
+      ]),
+    ).toThrow(/two columns called X/)
+    expect(() => engine.selectColumns(t, [{ from: 'Umsatz', to: 'Umsatz' }])).toThrow(/no column Umsatz/)
+  })
+
+  it('keeps a column called `__proto__` reachable, as `fromColumns` does', () => {
+    const t = engine.fromColumns([column('__proto__', 'text', ['a', 'b'])])
+    const out = engine.selectColumns(t, [{ from: '__proto__', to: '__proto__' }])
+
+    expect(out.schema()).toEqual([{ name: '__proto__', type: 'text' }])
+    expect(Object.hasOwn([...out.rows()][0], '__proto__')).toBe(true)
+  })
+})

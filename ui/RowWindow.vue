@@ -64,7 +64,26 @@ const props = defineProps({
    *  this component. It is rendered as `title`, which is a pointer affordance —
    *  see the note at the cell for what that does and does not reach. */
   markTitle: { type: String, default: '' },
+  /**
+   * The stem of every `data-testid` this component renders.
+   *
+   * **The collision it exists for is real and it is not hypothetical.** The
+   * Sources pane is `v-show`, so it stays mounted while the Editor is on screen;
+   * a Step's preview embedding this component with the same ids would make every
+   * page-scoped `getByTestId('preview')` in the existing e2e suite match two
+   * grids, and the assertions that count them would fail somewhere far from the
+   * cause. Parameterizing the stem rather than each id keeps the five ids one
+   * decision instead of five props.
+   *
+   * `VIEWPORT_ROWS` is deliberately **not** a prop: the reuse seam for the height
+   * and for virtualization is story 10's, and widening it here would open that
+   * question one story early.
+   */
+  testid: { type: String, default: 'preview' },
 })
+
+/** The five ids, derived from the one stem. */
+const tid = (suffix) => (suffix ? `${props.testid}-${suffix}` : props.testid)
 
 const scroller = useTemplateRef('scroller')
 
@@ -126,10 +145,13 @@ watch(
   <div>
     <p
       v-if="props.table.columns.length === 0"
-      data-testid="preview-empty"
+      :data-testid="tid('empty')"
       class="rounded border border-slate-200 bg-slate-50 p-3 text-sm text-slate-500"
     >
-      Nichts anzuzeigen — diese Quelle hat keine Spalten.
+      <!-- "Diese Tabelle" rather than "diese Quelle": as of story 6b the same
+           component renders a Step's output, which is not a Source and has no
+           file behind it. -->
+      Nichts anzuzeigen — diese Tabelle hat keine Spalten.
     </p>
 
     <template v-else>
@@ -139,7 +161,7 @@ watch(
            is written down. -->
       <div
         ref="scroller"
-        data-testid="preview"
+        :data-testid="tid()"
         role="region"
         :aria-label="props.label"
         tabindex="0"
@@ -184,7 +206,7 @@ watch(
             <tr
               v-for="(row, i) in view.rows"
               :key="view.firstRow + i"
-              data-testid="preview-row"
+              :data-testid="tid('row')"
               :aria-rowindex="view.firstRow + i + 2"
               :class="(view.firstRow + i) % 2 === 1 ? 'bg-slate-50' : ''"
               :style="{ height: ROW_HEIGHT_PX + 'px' }"
@@ -203,7 +225,7 @@ watch(
               <td
                 v-for="(cell, c) in row"
                 :key="c"
-                :data-testid="view.marked[i]?.[c] ? 'preview-mark' : null"
+                :data-testid="view.marked[i]?.[c] ? tid('mark') : null"
                 class="whitespace-nowrap px-2 py-0"
                 :class="
                   view.marked[i]?.[c]
@@ -234,7 +256,7 @@ watch(
 
       <p
         v-if="props.table.rowCount === 0"
-        data-testid="preview-no-rows"
+        :data-testid="tid('no-rows')"
         class="mt-1 text-xs text-slate-500"
       >
         Keine Datenzeilen — nur die Kopfzeile.
@@ -245,7 +267,7 @@ watch(
            scrolling, because Firefox collapses an oversized spacer to zero. -->
       <div
         v-if="view.pages > 1"
-        data-testid="preview-pages"
+        :data-testid="tid('pages')"
         class="mt-2 flex items-center gap-2 text-xs text-slate-600"
       >
         <button

@@ -8,6 +8,7 @@
 import { mount } from '@vue/test-utils'
 import { h, nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
+import { createStepZeroCache } from '@core/exec/convert.js'
 import { createGraphStore } from '@core/graph/graph-store.js'
 import EditorPane from './EditorPane.vue'
 
@@ -28,8 +29,32 @@ const StubCanvas = {
   },
 }
 
+/**
+ * The engine and the Step-zero cache the pane executes through.
+ *
+ * A stub, and a deliberately inert one: the cases below are about the pane's own
+ * execution — the toolbar, the refusal region, the reconciliation watcher — and
+ * the Sources they use are name-and-id shapes with no typing at all, so Step zero
+ * answers `null` for every one of them and no run gets past gate 1. That is the
+ * right envelope for these cases; the executor is exercised in
+ * `core/exec/execute.test.js` and the whole chain in `tests/e2e/execution.spec.js`.
+ */
+const stubEngine = () => ({
+  fromColumns: (columns) => ({ columns }),
+  filter: () => ({ table: null, removed: 0, boxed: 0, unreadable: [] }),
+  selectColumns: () => ({}),
+})
+
 const render = (graph, sources = []) =>
-  mount(EditorPane, { props: { graph, sources, canvas: StubCanvas } })
+  mount(EditorPane, {
+    props: {
+      graph,
+      sources,
+      canvas: StubCanvas,
+      engine: stubEngine(),
+      stepZero: createStepZeroCache(stubEngine()),
+    },
+  })
 
 const refusal = (w) => w.find('[data-testid="editor-refusal"]').text()
 const cards = (w) => w.findAll('[data-testid="step-card"]')
@@ -266,5 +291,108 @@ describe('the slot row, end to end through the pane', () => {
     const guard = w.findComponent(StubCanvas).props('guard')
     expect(guard(filter, union, 0)).toBe(false)
     expect(guard('src:a', union, 0)).toBe(true)
+  })
+})
+
+// ------------------------------------------------- the interim recompute rule
+//
+// Until story 7's scheduler brings AD-29's mode gate and its row threshold,
+// execution recomputes after every **data-affecting** change and after nothing
+// else. That rule is invisible to every other envelope: an e2e run cannot tell a
+// recomputed number from an unchanged one, and the whole point is that the
+// unchanged ones cost 263–446 ms each at the design scale. Here the engine can
+// be counted.
+
+describe('what recomputes and what does not', () => {
+  /** A `Table` handle wide enough for the executor and the panel. */
+  const handle = (names) => ({
+    rowCount: () => 2,
+    schema: () => names.map((name) => ({ name, type: 'text' })),
+    column: () => [],
+    *rows() {
+      yield Object.fromEntries(names.map((name) => [name, 'x']))
+      yield Object.fromEntries(names.map((name) => [name, 'y']))
+    },
+  })
+
+  /** An engine that counts the verbs a run asks it for. */
+  const countingEngine = () => {
+    const calls = { filter: 0, selectColumns: 0 }
+    return {
+      calls,
+      fromColumns: () => handle(['a']),
+      filter: (table) => {
+        calls.filter += 1
+        return { table, removed: 0, boxed: 0, unreadable: [] }
+      },
+      selectColumns: (table) => {
+        calls.selectColumns += 1
+        return table
+      },
+    }
+  }
+
+  const withEngine = (graph, engine, sources = [{ id: 'src:a', name: 'Umsatz Q1' }]) =>
+    mount(EditorPane, {
+      props: {
+        graph,
+        sources,
+        canvas: StubCanvas,
+        engine,
+        // A cache stand-in that always answers: what is under test is the number
+        // of runs, not Step zero.
+        stepZero: { of: (entry) => (entry ? { table: handle(['Kunde', 'Betrag']) } : null) },
+      },
+    })
+
+  const wired = () => {
+    const graph = createGraphStore()
+    graph.syncSources([{ id: 'src:a', name: 'Umsatz Q1' }])
+    const filter = graph.addStep('filter', { name: 'Nur Große' }).id
+    graph.connect('src:a', filter, 0)
+    graph.setResult(filter)
+    return { graph, filter }
+  }
+
+  it('recomputes when a Step is connected', async () => {
+    const { graph } = wired()
+    const engine = countingEngine()
+    const w = withEngine(graph, engine)
+    const before = engine.calls.filter
+
+    await w.find('[data-testid="step-slot"] select').setValue('')
+    expect(engine.calls.filter).toBe(before) // disconnected: nothing to filter
+    await w.find('[data-testid="step-slot"] select').setValue('src:a')
+    expect(engine.calls.filter).toBe(before + 1)
+  })
+
+  it('recomputes for a configuration change', async () => {
+    const { graph, filter } = wired()
+    const engine = countingEngine()
+    withEngine(graph, engine)
+    const before = engine.calls.filter
+
+    graph.configureStep(filter, { combine: 'all', conditions: [] })
+    expect(engine.calls.filter).toBe(before)
+  })
+
+  it('does not recompute for a rename or a move', async () => {
+    // A rename changes a word on a card and a move changes two numbers. Neither
+    // changes what the Pipeline computes, and both are issued at pointer and
+    // keystroke frequency.
+    const { graph, filter } = wired()
+    const engine = countingEngine()
+    const w = withEngine(graph, engine)
+    const before = engine.calls.filter
+
+    const name = cardFor(w, filter).get('input[aria-label="Name"]')
+    name.element.value = 'Nur Bestand'
+    await name.trigger('change')
+    w.findComponent(StubCanvas).vm.$emit('move', filter, 120, 240)
+    await nextTick()
+
+    expect(graph.get(filter).name).toBe('Nur Bestand')
+    expect(graph.get(filter).x).toBe(120)
+    expect(engine.calls.filter).toBe(before)
   })
 })

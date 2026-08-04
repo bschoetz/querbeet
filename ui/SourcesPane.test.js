@@ -9,6 +9,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
+import { createStepZeroCache } from '@core/exec/convert.js'
 import { TYPES } from '@core/types/catalog.js'
 import { detectColumn } from '@core/types/typing.js'
 import SourcesPane, { readingLabelGaps } from './SourcesPane.vue'
@@ -73,8 +74,12 @@ const stubStore = (entry, { unresolved = [], formats = ['csv', 'xlsx', 'parquet'
  *  that file twice and this one less, exactly as the store stub above. */
 const stubEngine = () => ({ fromColumns: (columns) => ({ columns }) })
 
+// The cache is built here rather than inside the pane: as of story 6b it is
+// created once in `ui/App.vue` and shared with the Editor, so both panes mark and
+// execute from the same converted Table. Counting engine calls through the real
+// cache is still what the release case below asserts.
 const render = async (store, engine = stubEngine()) => {
-  const w = mount(SourcesPane, { props: { store, engine } })
+  const w = mount(SourcesPane, { props: { store, stepZero: createStepZeroCache(engine) } })
   await nextTick()
   return w
 }

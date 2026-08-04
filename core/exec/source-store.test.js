@@ -6,7 +6,7 @@
 // by tests/e2e/csv-sources.spec.js.
 
 import { describe, expect, it } from 'vitest'
-import { createSourceStore, typingDiagnostics } from './source-store.js'
+import { createSourceStore, typingDiagnostics, uniqueColumnNames } from './source-store.js'
 
 const utf8 = (s) => new TextEncoder().encode(s)
 
@@ -1296,7 +1296,8 @@ describe('a repeated column name', () => {
   // A CSV header may carry the same name twice, and a trailing delimiter yields
   // two columns called ''. A command keyed by name would edit the first of them
   // every time, while the second stayed unreachable — including by the gate
-  // that is supposed to hold the Source shut over it.
+  // that is supposed to hold the Source shut over it. So commands stay keyed by
+  // *position*, and the store makes the names themselves unique on ingest.
   const twice = [
     { name: 'Datum', cells: ['31.12.2025', '01.01.2026'] },
     { name: 'Datum', cells: ['03.04.2025', '05.06.2025'] },
@@ -1311,10 +1312,12 @@ describe('a repeated column name', () => {
     expect(after.typing.columns[1].chosen.format.pattern).toBe('MM.dd.yyyy')
   })
 
-  it('holds the gate shut over the second one', async () => {
+  it('holds the gate shut over the second one, under the name it was given', async () => {
     const { store, source } = await withColumns(twice)
 
-    expect(store.confirmTyping(source.id).unresolved).toEqual(['Datum'])
+    // `Datum_2`, not `Datum`: the second column is the one still open, and the
+    // refusal has to name the column the user will find in the panel.
+    expect(store.confirmTyping(source.id).unresolved).toEqual(['Datum_2'])
 
     store.setColumnTyping(source.id, 1, { type: 'date', format: DD })
     expect(store.confirmTyping(source.id).source.typing.confirmed).toBe(true)
@@ -1520,5 +1523,108 @@ describe('what a re-read carries across', () => {
     const after = await store.reconfigureParse(source.id, { headerRow: 2 })
 
     expect(after.typing.columns[0]).toMatchObject({ name: 'Summe', annotation: '' })
+  })
+})
+
+// ------------------------------------- unique column names (story 6b)
+//
+// Decided 2026-08-04 with the project owner. A Table is keyed by name and the
+// engine cannot hold two columns of one, so uniqueness has to exist somewhere
+// regardless — the only real question was whether the user can see where it
+// happened. It happens here, on ingest, and it is reported.
+
+describe('unique column names', () => {
+  const namesOf = (source) => source.typing.columns.map((c) => c.name)
+  const renameOf = (source) =>
+    source.diagnostics.find((d) => d.code === 'source.columns_renamed') ?? null
+
+  it('is a pure function anyone can check, and it is deterministic', () => {
+    expect(uniqueColumnNames(['Kunde', 'Betrag']).names).toEqual(['Kunde', 'Betrag'])
+    expect(uniqueColumnNames(['Betrag', 'Betrag']).names).toEqual(['Betrag', 'Betrag_2'])
+    expect(uniqueColumnNames(['Betrag', 'Betrag', 'Betrag']).names).toEqual([
+      'Betrag',
+      'Betrag_2',
+      'Betrag_3',
+    ])
+    // Running it twice over its own output changes nothing, which is what carries
+    // an annotation and a chosen type across a re-read — both are keyed by name.
+    const once = uniqueColumnNames(['Betrag', 'Betrag', '']).names
+    expect(uniqueColumnNames(once).names).toEqual(once)
+  })
+
+  it('names an empty header cell by its 1-based position, before the uniqueness pass', () => {
+    // A CSV header ending in two extra delimiters — `Kunde,Betrag,,` — produced
+    // two columns called `''` with no diagnostic at all, and the engine's refusal
+    // then read "a table cannot hold two columns called ".
+    const { names, renamed } = uniqueColumnNames(['Kunde', 'Betrag', '', ''])
+
+    expect(names).toEqual(['Kunde', 'Betrag', 'col_3', 'col_4'])
+    expect(renamed).toEqual([
+      { from: '', to: 'col_3', at: 3 },
+      { from: '', to: 'col_4', at: 4 },
+    ])
+  })
+
+  it('lets a name the file itself carries keep it, and moves the duplicate aside', () => {
+    // "Lowest free" means free of every *other* column's name too, not only of
+    // the ones already placed — so a file that contains the generated form still
+    // resolves, and the column whose name was in the file keeps it.
+    expect(uniqueColumnNames(['Betrag', 'Betrag', 'Betrag_2']).names).toEqual([
+      'Betrag',
+      'Betrag_3',
+      'Betrag_2',
+    ])
+    expect(uniqueColumnNames(['', 'col_1']).names).toEqual(['col_1_2', 'col_1'])
+  })
+
+  it('generates no German, because `core/` generates no user-visible name', () => {
+    // AD-13 puts German in `ui/`. `col_3` follows the precedent `makeNode` sets
+    // by falling back to an id; `Spalte 3` would be the first German string in
+    // the core, and the sentence about it lives in `ui/SourcesPane.vue`.
+    expect(uniqueColumnNames(['']).names[0]).toBe('col_1')
+  })
+
+  it('renames on ingest and reports the mapping as values', async () => {
+    const { source } = await withColumns([
+      { name: 'Datum', cells: ['31.12.2025'] },
+      { name: 'Datum', cells: ['03.04.2025'] },
+    ])
+
+    expect(namesOf(source)).toEqual(['Datum', 'Datum_2'])
+    expect(renameOf(source)).toMatchObject({
+      severity: 'warning',
+      values: { renamed: [{ from: 'Datum', to: 'Datum_2', at: 2 }] },
+    })
+  })
+
+  it('says nothing at all where every name was already unique', async () => {
+    const { source } = await withColumns([GERMAN, AMBIGUOUS])
+    expect(renameOf(source)).toBeNull()
+  })
+
+  it('keeps the cells with their column — only the name moves', async () => {
+    const { source } = await withColumns([
+      { name: 'Datum', cells: ['31.12.2025'] },
+      { name: 'Datum', cells: ['03.04.2025'] },
+    ])
+
+    expect(source.table.columns.map((c) => c.cells[0])).toEqual(['31.12.2025', '03.04.2025'])
+    expect(source.table.columns.map((c) => c.name)).toEqual(['Datum', 'Datum_2'])
+  })
+
+  it('gives the same name on a re-read, so an annotation and a type survive it', async () => {
+    const twice = [
+      { name: 'Datum', cells: ['31.12.2025', '01.01.2026'] },
+      { name: 'Datum', cells: ['03.04.2025', '05.06.2025'] },
+    ]
+    const { store, source } = await withColumns(twice)
+    store.annotateColumn(source.id, 1, 'Lieferdatum')
+    store.setColumnTyping(source.id, 1, { type: 'date', format: DD })
+
+    const after = await store.overrideEncoding(source.id, 'windows-1252')
+
+    expect(after.typing.columns.map((c) => c.name)).toEqual(['Datum', 'Datum_2'])
+    expect(after.typing.columns[1].annotation).toBe('Lieferdatum')
+    expect(after.typing.columns[1].chosen.type).toBe('date')
   })
 })

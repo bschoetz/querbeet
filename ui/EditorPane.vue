@@ -8,17 +8,27 @@
 // word has to cross into `adapters/`.
 
 import { computed, shallowRef, watch } from 'vue'
+import { executeGraph } from '@core/exec/execute.js'
 import { CODE } from '@core/graph/graph.js'
 import StepCard from '@ui/StepCard.vue'
+import StepPanel from '@ui/StepPanel.vue'
 import { addableKindLabels, graphText, kindLabel, SEVERITY, stepLabel } from '@ui/graph-labels.js'
 
 const props = defineProps({
   /** The graph store's command surface (`createGraphStore`). */
   graph: { type: Object, required: true },
-  /** `[{ id, name }]` — the Sources as the Source store holds them. */
+  /** The Sources as the Source store holds them — whole entries, because the
+   *  Editor needs both their names (to reconcile the nodes) and their typing (to
+   *  ask Step zero for a converted Table). */
   sources: { type: Array, default: () => [] },
   /** The `GraphView` implementation, named by `app/` and passed down. */
   canvas: { type: [Object, Function], required: true },
+  /** The `TableEngine` implementation. `app/` is the only place that names one
+   *  (AD-1); this pane hands it to the executor and never calls it directly. */
+  engine: { type: Object, required: true },
+  /** Step zero's cache, created in `ui/App.vue` and shared with the Sources pane
+   *  (decided 2026-08-04) — one converted Table per Source, whoever reads it. */
+  stepZero: { type: Object, required: true },
 })
 
 // shallowRef and an explicit refresh, the shape `ui/SourcesPane.vue` set: the
@@ -53,6 +63,28 @@ const run = (result, { quiet = false } = {}) => {
   if (!quiet) refusal.value = result.diagnostics
   refresh()
   return result
+}
+
+/**
+ * A command that can change what the Pipeline computes, followed by a recompute.
+ *
+ * **The interim rule, stated where it is enforced.** Until story 7's scheduler
+ * brings AD-29's mode gate and its row threshold, execution recomputes after
+ * every data-affecting change and after nothing else: `connect`, `disconnect`,
+ * `configureStep`, `removeStep`, `setResult` and `syncSources`. A rename and a
+ * move are deliberately absent — they cost 263–446 ms of recomputation at the
+ * design scale and change no number on screen. `addInputSlot` and
+ * `removeInputSlot` are absent too, and that is not an omission: a slot may only
+ * be removed while it is empty, so neither changes which tables reach a Step.
+ *
+ * Every run recomputes from scratch. No cache, no memoization, no cancellation —
+ * those are story 7's, and the licence for recomputing meanwhile is measured
+ * rather than assumed.
+ */
+const runData = (result, options) => {
+  const outcome = run(result, options)
+  recompute()
+  return outcome
 }
 
 const byId = computed(() => new Map(projection.value.steps.map((s) => [s.id, s])))
@@ -98,11 +130,71 @@ const orphanIds = computed(
     ),
 )
 
+// ------------------------------------------------------------- execution
+//
+// AD-6: the run holds `Table` handles, so it lives in a `shallowRef` swapped
+// wholesale and never in a `ref`, a `reactive` or a `computed` return value.
+// `executeGraph` is pure and synchronous — it takes the frozen projection, the
+// engine and a way to ask Step zero for a Source, and it returns one frozen
+// value.
+const execution = shallowRef({ ok: true, results: new Map(), diagnostics: [] })
+
+const sourceEntries = computed(() => new Map(props.sources.map((s) => [s.id, s])))
+
+/**
+ * Step zero's output for a Source node, or `null` while its typing is not
+ * confirmed — which is the only thing `null` means here as of this story, and is
+ * what lets gate 1 name the Source truthfully.
+ *
+ * The cache is `ui/App.vue`'s and is shared with the Sources pane, so a Source
+ * the user just confirmed and looked at is not converted a second time for the
+ * Editor. It is read through a plain function rather than a computed: the value
+ * is a `Table`.
+ */
+const sourceTable = (id) => props.stepZero.of(sourceEntries.value.get(id))?.table ?? null
+
+function recompute() {
+  execution.value = executeGraph({
+    steps: projection.value.steps,
+    resultId: projection.value.resultId,
+    engine: props.engine,
+    sourceTable,
+  })
+}
+
+/** What the *run* said about a Step, as opposed to what the graph did. */
+const resultFor = (id) => execution.value.results.get(id) ?? null
+
+/**
+ * The marks on a Step's **card**, and they are the graph's alone.
+ *
+ * A run's diagnostics are deliberately not here, and the reason is measured
+ * rather than aesthetic: they are full sentences — „7 Zeilen entfernt, 3 Zeilen
+ * übrig", „1 Zeile wurde nicht verglichen, weil …" — and a 256 px card wearing
+ * two of them grows past 280 px, which is taller than any placement pitch the
+ * model can pick without asking the DOM (AD-2 forbids that outright). Cards then
+ * overlap and the upper one swallows the pointer aimed at the lower one's
+ * controls, which was measured on 2026-08-04 and is how this was found.
+ *
+ * So the split follows what each surface is for: the canvas marks what is wrong
+ * with the *graph* — a lost input, a Step contributing to nothing, one upstream
+ * consumed twice — and the panel carries what the *run* said about the selected
+ * Step, beside its counts and its preview, which is where CAP-19 puts it.
+ */
 const marksFor = (id) => projection.value.diagnostics.filter((d) => d.stepId === id)
 
-/** What the graph says about itself rather than about one Step — today that is
- *  the missing Result designation, and nothing else. */
-const status = computed(() => projection.value.diagnostics.filter((d) => d.stepId === undefined))
+/**
+ * What the graph and the run say about themselves rather than about one Step.
+ *
+ * A refused run is here rather than on a card even though its diagnostics name a
+ * Step: a gate refusal is about **the whole run**, and putting it only on the
+ * card of the Source that caused it would let a user with the Editor scrolled
+ * elsewhere see a pipeline that computed nothing and no reason anywhere.
+ */
+const status = computed(() => [
+  ...projection.value.diagnostics.filter((d) => d.stepId === undefined),
+  ...(execution.value.ok ? [] : execution.value.diagnostics),
+])
 
 // ------------------------------------------------------------- the canvas
 
@@ -136,7 +228,46 @@ const canvasEdges = computed(() =>
  */
 const guard = (source, target, slot) => props.graph.check(source, target, slot).ok
 
-const onConnect = (source, target, slot) => run(props.graph.connect(source, target, slot))
+const onConnect = (source, target, slot) => runData(props.graph.connect(source, target, slot))
+
+// ------------------------------------------------------------- the selection
+//
+// The canvas owns the selection *state* and hands back the id; this pane mirrors
+// the id and nothing else (`ports/index.js`). It is a `shallowRef` holding a
+// string, which is not a table — the AD-6 rule is about data, and a Step id is
+// the opposite of data.
+const selectedId = shallowRef(null)
+
+const onSelect = (id) => {
+  selectedId.value = id
+}
+
+/** The selected Step, or `null`. Resolved against the projection on every read
+ *  rather than held: a Step that is removed while selected must stop being the
+ *  panel's subject even in the frame before the canvas reports the change. */
+const selectedStep = computed(() =>
+  selectedId.value === null ? null : (byId.value.get(selectedId.value) ?? null),
+)
+
+/**
+ * The schema of the selected Step's input, or `null`.
+ *
+ * The panel's column controls are built from it, and `null` is what it says when
+ * there is nothing truthful to build them from — an empty slot, an upstream that
+ * produced no table, a run the gates refused. Offering a stale column list would
+ * invite a config the next run refuses by name.
+ *
+ * The **first** slot, because both configurable kinds take exactly one input
+ * (`core/graph/kinds.js`). Stories 8 and 9 own what a two-input config asks of
+ * this.
+ */
+const inputSchema = computed(() => {
+  const step = selectedStep.value
+  if (!step || step.kind === 'source') return null
+  const upstream = step.inputs[0]
+  const produced = upstream ? execution.value.results.get(upstream) : null
+  return produced?.table ? produced.table.schema() : null
+})
 
 /** A drop the guard turned down. The reason is asked of the guard rather than
  *  obtained by re-issuing the mutation — the separation `checkConnect` exists
@@ -154,9 +285,18 @@ const RACE_CODES = new Set([CODE.unknownStep, CODE.noSuchSlot, CODE.slotEmpty])
 const fromCanvas = (result) =>
   run(result, { quiet: result.diagnostics.every((d) => RACE_CODES.has(d.code)) })
 
+// A move changes no number on screen, so it is the one canvas command that does
+// not recompute. The other two do.
 const onMove = (id, x, y) => fromCanvas(props.graph.moveStep(id, x, y))
-const onRemove = (id) => fromCanvas(props.graph.removeStep(id))
-const onDisconnect = (target, slot) => fromCanvas(props.graph.disconnect(target, slot))
+
+const fromCanvasData = (result) => {
+  const outcome = fromCanvas(result)
+  recompute()
+  return outcome
+}
+
+const onRemove = (id) => fromCanvasData(props.graph.removeStep(id))
+const onDisconnect = (target, slot) => fromCanvasData(props.graph.disconnect(target, slot))
 
 // ------------------------------------------------------------- the toolbar
 
@@ -166,7 +306,12 @@ const KINDS = addableKindLabels()
 // the graph. A counter held here would restart at zero on every view switch —
 // this pane is unmounted when the Sources pane shows — and the next Step would
 // land exactly on the first one.
-const addStep = (kind) => run(props.graph.addStep(kind, { name: kindLabel(kind) }))
+// `runData` rather than `run`, and it is the one addition to the interim list:
+// `addNode` designates the *first* Step that could be a Result as one, so adding
+// a Step can change which Pipeline exists — which is the same change `setResult`
+// makes and is on the list for the same reason. An added Step is unconnected, so
+// the frontier is otherwise unchanged and the recompute is a no-op.
+const addStep = (kind) => runData(props.graph.addStep(kind, { name: kindLabel(kind) }))
 
 // ------------------------------------------------------------- the Sources
 
@@ -180,16 +325,20 @@ watch(
   (sources) => {
     props.graph.syncSources(sources.map((s) => ({ id: s.id, name: s.name })))
     refresh()
+    // `syncSources` is data-affecting twice over: a Source may have appeared or
+    // vanished, and — because this list is re-projected whenever the Source store
+    // commits — a typing may just have been confirmed, which is what opens gate 1.
+    recompute()
   },
   { immediate: true },
 )
 </script>
 
 <template>
-  <!-- No height of its own: the canvas below is `flex-1`, so the pane needs a
-       *definite* height from its host or the flex item resolves to zero and the
-       whole Editor renders as a hairline. `ui/App.vue` gives it one. -->
-  <section class="flex min-h-0 flex-col">
+  <!-- The canvas carries its own definite height (see below), so this pane no
+       longer needs one from its host — and it must not have one, or the panel
+       under the canvas would be clipped instead of growing the page. -->
+  <section class="flex flex-col">
     <div class="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
       <h2 class="mr-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
         Pipeline
@@ -205,17 +354,37 @@ watch(
       </button>
     </div>
 
-    <!-- role="status" so a refused command says so out loud. Without it, pressing
-         a button that refuses appears to do nothing at all to a screen reader,
-         which is the one case where it does the most. -->
-    <div
-      role="status"
-      data-testid="editor-refusal"
-      class="min-h-6 py-2"
-    >
+    <!-- **A fixed height, and it is load-bearing rather than tidy.** What the
+         graph and the run say about themselves varies from nothing to several
+         sentences, and this region sits directly above the canvas: measured on
+         2026-08-04, letting it grow shrank the canvas from 405 px to 237 px over
+         three commands, which moved every Step on screen and pushed the ones the
+         user was looking at outside the pane. A canvas that resizes because a
+         sentence appeared is a canvas the user cannot aim at. So the space is
+         reserved once and the region scrolls inside it. -->
+    <div class="h-20 shrink-0 overflow-auto py-2">
+      <!-- role="status" so a refused command says so out loud. Without it,
+           pressing a button that refuses appears to do nothing at all to a screen
+           reader, which is the one case where it does the most. -->
+      <div
+        role="status"
+        data-testid="editor-refusal"
+      >
+        <p
+          v-for="(d, i) in refusal"
+          :key="i"
+          class="text-sm"
+          :class="SEVERITY[d.severity].tone"
+        >
+          <span class="font-semibold">{{ SEVERITY[d.severity].label }}:</span>
+          {{ graphText(d, nameOf) }}
+        </p>
+      </div>
+
       <p
-        v-for="(d, i) in refusal"
+        v-for="(d, i) in status"
         :key="i"
+        data-testid="editor-status"
         class="text-sm"
         :class="SEVERITY[d.severity].tone"
       >
@@ -224,48 +393,79 @@ watch(
       </p>
     </div>
 
-    <p
-      v-for="(d, i) in status"
-      :key="i"
-      data-testid="editor-status"
-      class="pb-2 text-sm"
-      :class="SEVERITY[d.severity].tone"
-    >
-      <span class="font-semibold">{{ SEVERITY[d.severity].label }}:</span>
-      {{ graphText(d, nameOf) }}
-    </p>
+    <!-- **The panel is outside the node body, and it is under the canvas rather
+         than beside it — the second half decided by measurement.**
 
-    <div class="min-h-0 flex-1 rounded border border-slate-200">
-      <component
-        :is="canvas"
-        :nodes="canvasNodes"
-        :edges="canvasEdges"
-        :guard="guard"
-        @connect="onConnect"
-        @refused="onRefused"
-        @move="onMove"
-        @remove="onRemove"
-        @disconnect="onDisconnect"
+         Outside the body is the rule: never a Handle inside a fixed-height
+         scrolling container, because the ResizeObserver that keeps the input
+         anchors aligned watches the node element's box and not its contents, so
+         the edges would drift away from the anchors drawn to them
+         (`adapters/vueflow/StepFrame.vue`).
+
+         Beside the canvas was the first attempt and it was measured on
+         2026-08-04: a 384 px column leaves ~396 px of canvas at this page width,
+         which is narrower than one column of Steps (a 256 px card plus a 320 px
+         column pitch), so every Step added after the fit panned the ones already
+         on screen out of the pane. Under the canvas the pane keeps its full width
+         and the page grows instead — the Editor already scrolls, and a viewport
+         the user can aim at is worth more than a panel they never have to scroll
+         to. -->
+    <div class="flex min-h-0 flex-col gap-3">
+      <div class="h-[62vh] min-h-0 rounded border border-slate-200">
+        <component
+          :is="canvas"
+          :nodes="canvasNodes"
+          :edges="canvasEdges"
+          :guard="guard"
+          @connect="onConnect"
+          @refused="onRefused"
+          @move="onMove"
+          @remove="onRemove"
+          @disconnect="onDisconnect"
+          @select="onSelect"
+        >
+          <template #step="{ node }">
+            <StepCard
+              v-if="byId.get(node.id)"
+              :node="byId.get(node.id)"
+              :label="labels.get(node.id)"
+              :result="projection.resultId === node.id"
+              :diagnostics="marksFor(node.id)"
+              :candidates="graph.candidates"
+              :name-of="nameOf"
+              @rename="(name) => run(graph.renameStep(node.id, name))"
+              @set-result="runData(graph.setResult(node.id))"
+              @connect="(slot, source) => runData(graph.connect(source, node.id, slot))"
+              @disconnect="(slot) => runData(graph.disconnect(node.id, slot))"
+              @add-slot="run(graph.addInputSlot(node.id))"
+              @remove-slot="(slot) => run(graph.removeInputSlot(node.id, slot))"
+              @remove="runData(graph.removeStep(node.id))"
+            />
+          </template>
+        </component>
+      </div>
+
+      <!-- One Step's body and one Step's output. It appears with a selection and
+           disappears without one: a panel about nothing is a paragraph, not a
+           form. Both states occupy the page below the canvas, so the canvas's own
+           geometry never changes with the selection. -->
+      <StepPanel
+        v-if="selectedStep"
+        :key="selectedStep.id"
+        :step="selectedStep"
+        :label="labels.get(selectedStep.id) ?? selectedStep.name"
+        :input-schema="inputSchema"
+        :result="resultFor(selectedStep.id)"
+        :name-of="nameOf"
+        @configure="(config) => runData(graph.configureStep(selectedStep.id, config))"
+      />
+      <p
+        v-else
+        data-testid="step-panel-empty"
+        class="rounded border border-dashed border-slate-200 p-3 text-sm text-slate-500"
       >
-        <template #step="{ node }">
-          <StepCard
-            v-if="byId.get(node.id)"
-            :node="byId.get(node.id)"
-            :label="labels.get(node.id)"
-            :result="projection.resultId === node.id"
-            :diagnostics="marksFor(node.id)"
-            :candidates="graph.candidates"
-            :name-of="nameOf"
-            @rename="(name) => run(graph.renameStep(node.id, name))"
-            @set-result="run(graph.setResult(node.id))"
-            @connect="(slot, source) => run(graph.connect(source, node.id, slot))"
-            @disconnect="(slot) => run(graph.disconnect(node.id, slot))"
-            @add-slot="run(graph.addInputSlot(node.id))"
-            @remove-slot="(slot) => run(graph.removeInputSlot(node.id, slot))"
-            @remove="run(graph.removeStep(node.id))"
-          />
-        </template>
-      </component>
+        Einen Step auswählen, um Einstellungen und Vorschau zu sehen.
+      </p>
     </div>
   </section>
 </template>

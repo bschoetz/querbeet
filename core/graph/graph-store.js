@@ -16,11 +16,13 @@
 // wrong *type* still throws.
 
 import { error } from '../diagnostics/diagnostic.js'
+import { stepKind } from '../steps/index.js'
 import {
   CODE,
   addInputSlot,
   addNode,
   checkConnect,
+  configureStep,
   connect,
   connectableInto,
   disconnect,
@@ -46,6 +48,10 @@ const freezeStep = (node) =>
     x: node.x,
     y: node.y,
     inputs: Object.freeze([...node.inputs]),
+    // Frozen where it was stored, so it needs no copy on the way out. The
+    // projection is what `core/exec` executes from and what `ui/StepPanel.vue`
+    // renders its controls off, and both read the same object the model holds.
+    config: node.config,
   })
 
 export function createGraphStore() {
@@ -140,6 +146,42 @@ export function createGraphStore() {
     return apply(removeNode(graph, id))
   }
 
+  /**
+   * AD-10 command, CAP-15 / CAP-16. The one door a Step's body goes through.
+   *
+   * **The registry validates, the graph stores.** `core/graph/` is opaque to a
+   * configuration by design — `kinds.js` stays arity-only — so the shape check
+   * is asked of `core/steps/`, whose answer is already a list of Diagnostics with
+   * codes `ui/` has German for. A refusal changes nothing: the previous config
+   * stays in force, which is what CAP-16's rename collision asks for.
+   *
+   * **The type agreement is deliberately not checked here.** It cannot be: this
+   * command cannot see the input schema, which exists only once the Steps
+   * upstream have run. That check lives in `apply`, at execution, where the
+   * refusal can name both types truthfully (CAP-15).
+   *
+   * `config: null` is the reset, and it is not a refusal: it puts the Step back
+   * to whatever its kind's `defaultConfig()` is, which is the state a freshly
+   * added one is in.
+   */
+  function configureStepCmd(id, config) {
+    const node = findNode(graph, id)
+    if (!node) return apply({ ok: false, diagnostics: Object.freeze([error(CODE.unknownStep, { id })]) })
+
+    const kind = stepKind(node.kind)
+    if (!kind) {
+      return apply({
+        ok: false,
+        diagnostics: Object.freeze([error(CODE.notConfigurable, { id, kind: node.kind })]),
+      })
+    }
+    if (config !== null) {
+      const checked = kind.validate(config)
+      if (!checked.ok) return apply({ ok: false, diagnostics: checked.diagnostics })
+    }
+    return apply(configureStep(graph, id, config))
+  }
+
   const setResultCmd = (id) => apply(setResult(graph, id))
 
   const addInputSlotCmd = (id) => apply(addInputSlot(graph, id))
@@ -210,6 +252,7 @@ export function createGraphStore() {
     renameStep,
     moveStep,
     removeStep,
+    configureStep: configureStepCmd,
     setResult: setResultCmd,
     addInputSlot: addInputSlotCmd,
     removeInputSlot: removeInputSlotCmd,

@@ -59,6 +59,21 @@ const idOf = (page, label) => card(page, label).getAttribute('data-node')
 
 const wrapper = (page, id) => canvas(page).locator(`.vue-flow__node[data-id="${id}"]`)
 
+/**
+ * Click a Step on the canvas, after bringing it into the pane.
+ *
+ * The focus pull is the product's own affordance for this and is asserted below
+ * on its own terms — the canvas is transformed rather than scrolled, so the
+ * browser's focus-scrolling does nothing. It became load-bearing here in story
+ * 6b: the side panel takes width from the canvas the moment a Step is selected,
+ * so a Step that was comfortably inside the pane a gesture ago may not be.
+ * Without it Playwright clicks where the Step *was* and hits the toolbar.
+ */
+const clickNode = async (page, id, options = {}) => {
+  await wrapper(page, id).evaluate((el) => el.focus())
+  await wrapper(page, id).click({ position: { x: 4, y: 4 }, ...options })
+}
+
 /** The node's position **in the model** — the projection writes the transform,
  *  so this is what the graph holds and not what the pointer did. */
 async function positionOf(page, id) {
@@ -193,9 +208,13 @@ test('a pipeline is built with the slot rows, and the Result Step is designated'
     'true',
   )
   // Everything reaches the Result now, so nothing is marked as contributing to
-  // nothing and nothing is left unresolved.
+  // nothing and the graph has nothing left to say about itself.
   await expect(canvas(page).getByTestId('step-mark')).toHaveCount(0)
-  await expect(page.getByTestId('editor-status')).toHaveCount(0)
+  await expect(page.getByTestId('editor-status').filter({ hasText: 'Ergebnis ausgewiesen' })).toHaveCount(0)
+  // What the region *does* say as of story 6b is about the run rather than about
+  // the graph: these two Sources were never confirmed, so AD-29's first gate
+  // refuses before anything is computed.
+  await expect(page.getByTestId('editor-status').first()).toContainText('noch nicht bestätigt')
 })
 
 test('re-designating the Result marks what no longer reaches it, without removing it', async ({
@@ -286,7 +305,7 @@ test('Delete on a selected Step leaves the consumer broken and naming what it lo
   await buildPipeline(page)
   const union = await idOf(page, 'Union: Halbjahr')
 
-  await wrapper(page, union).click({ position: { x: 4, y: 4 } })
+  await clickNode(page, union)
   await page.keyboard.press('Delete')
 
   await expect(nodes(page)).toHaveCount(3)
@@ -323,7 +342,7 @@ test('Delete pressed outside the canvas leaves the selected Step alone', async (
   await buildPipeline(page)
   const union = await idOf(page, 'Union: Halbjahr')
 
-  await wrapper(page, union).click({ position: { x: 4, y: 4 } })
+  await clickNode(page, union)
   await expect(wrapper(page, union)).toHaveClass(/selected/)
 
   for (const outside of [
@@ -346,7 +365,7 @@ test('Delete on a selected Source is refused, and says where a Source is removed
   await buildPipeline(page)
   const source = await idOf(page, 'Quelle: Umsatz Q1')
 
-  await wrapper(page, source).click({ position: { x: 4, y: 4 } })
+  await clickNode(page, source)
   await page.keyboard.press('Delete')
 
   await expect(refusal(page)).toContainText('ist eine Quelle — Quellen werden unter „Quellen“ entfernt')
@@ -365,8 +384,8 @@ test('two Steps selected together are both deleted — the selection is handed b
   const union = await idOf(page, 'Union: Halbjahr')
   const filter = await idOf(page, 'Filter: Nur Bestand')
 
-  await wrapper(page, union).click({ position: { x: 4, y: 4 } })
-  await wrapper(page, filter).click({ position: { x: 4, y: 4 }, modifiers: ['Control'] })
+  await clickNode(page, union)
+  await clickNode(page, filter, { modifiers: ['Control'] })
 
   await expect(canvas(page).locator('.vue-flow__node.selected')).toHaveCount(2)
 
@@ -387,7 +406,7 @@ test('a Step deleted together with its own edge still comes out named, not merel
   await buildPipeline(page)
   const union = await idOf(page, 'Union: Halbjahr')
 
-  await wrapper(page, union).click({ position: { x: 4, y: 4 } })
+  await clickNode(page, union)
   await canvas(page)
     .locator('.vue-flow__edge-interaction')
     .last()
@@ -428,7 +447,7 @@ test('an arrow key moves a Step — measured before and after the press', async 
   await buildPipeline(page)
   const filter = await idOf(page, 'Filter: Nur Bestand')
 
-  await wrapper(page, filter).click({ position: { x: 4, y: 4 } })
+  await clickNode(page, filter)
   const before = await positionOf(page, filter)
 
   await page.keyboard.press('ArrowRight')

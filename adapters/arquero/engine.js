@@ -32,28 +32,56 @@
 // belongs to `SourceReader` (AD-19), and importing one would also pull `fetch`
 // into a bundle that is asserted to contain none (AD-17).
 //
-// **`Table` rather than `ColumnTable`, measured rather than preferred — and the
-// measurement also says what it does *not* buy.** `ColumnTable` is the subclass
-// carrying the verb methods; building against it costs **58,843 bytes** in the
-// artefact (781,669 against 722,826) for machinery this story's port has no
-// method for. What it does not buy is a bundle without a JavaScript parser:
-// `Table` imports `regroup.js`, which imports `groupby`, `rollup` and `select`,
-// which import the expression parser — so **`acorn` is in the artefact either
-// way**, and the belief that the base class avoids it was measured and is false.
+// **`ColumnTable` rather than the base `Table`, decided 2026-08-04 with the
+// project owner and measured on both sides.** Story 6a built against the base
+// class, which is 58,729 bytes cheaper and had every method that story's port
+// needed. This story's port needs two verbs, and the chain figure is what decided
+// it: CAP-19 shows the row and column count of every Step's **full** output, so
+// no intermediate is transient. Arquero's verbs share the column arrays, which
+// costs ~0.0 MB for a Source → Filter → Columns chain with every Step retained; a
+// hand-written filter materializes twenty fresh column arrays per link and holds
+// them, measured at 19.8 MB for the same chain and ~100 MB across five Sources.
+// The artefact has no stated byte budget — the single-file gate checks structure,
+// not size — while memory has one.
 //
-// That has a consequence worth knowing before the next build goes red: acorn's
-// error message for a trailing comma contains the characters `import(`, and
-// AD-18's gate is a text check on the built file by design, independent of any
-// browser. The gate now names that one occurrence explicitly rather than
-// tolerating a count, so a *real* dynamic import still fails it.
+// **What the base class did not buy either, and it is worth not rediscovering:**
+// a bundle without a JavaScript parser. `Table` imports `regroup.js`, which
+// imports `groupby`, `rollup` and `select`, which import the expression parser —
+// so `acorn` is in the artefact whichever class this file builds on, and the
+// belief that the base class avoids it was measured and is false. Its
+// consequence: acorn's error message for a trailing comma contains the characters
+// `import(`, and AD-18's gate is a text check on the built file by design. The
+// gate names that one occurrence explicitly rather than tolerating a count, so a
+// *real* dynamic import still fails it.
 //
-// Story 6b is where verbs arrive and where the subclass question is properly
-// answered — arquero's verbs are plain functions over a table, and `escape()`
-// exists to hand one a function instead of a string, which is also what AD-30
-// asks for (no formula, expression, query or script anywhere in the MVP). The
-// ledger carries both findings so neither is rediscovered as a surprise.
+// **And the byte figure above has a caveat this file must not hide.** The two
+// verbs below are built from `create` and `BitSet`, both of which the *base*
+// `Table` also has — so the class this file builds on is, measured 2026-08-04,
+// **57,829 bytes** of pure cost with the adapter's full test suite green either
+// way (809,784 against 751,955). The decision to move to `ColumnTable` was taken
+// against the premise that the verbs exist only as its methods, which is true and
+// turned out not to be the constraint: `create` + `BitSet` is what those methods
+// reduce to, and it is public. The class is **not** changed here, because the
+// premise was the project owner's to weigh and reversing an approved decision on
+// a measurement they have not seen would be the wrong way round. The measurement
+// is in the deferred-work ledger with both numbers.
+//
+// **The two verbs are built from `create` and `BitSet` rather than from
+// `table.filter()` and `table.select()`, and that is a decision rather than an
+// oversight.** Both public methods reduce to exactly these two calls internally —
+// `_filter` builds a `BitSet` and calls `table.create({ filter })`, and `_select`
+// builds a column set and calls `table.create({ data, names })` — so the shared-
+// column behaviour the memory measurement licensed is the same behaviour, byte
+// for byte. What is avoided is what sits in front of them. `table.filter()` runs
+// its argument through the expression parser, and even the `escape()` route,
+// which is what AD-30 leaves open, compiles to a call that builds **one row
+// object per row**, at the NFR-3 shape 100,000 objects of twenty keys per
+// condition. And `table.select({ from: to })` resolves its mapping through object
+// key enumeration order, where a column called `1` or `07` sorts itself to the
+// front — the same hazard `fromColumns` below already guards with an explicit
+// `names` array, and a Source's column names are whatever the exporter wrote.
 
-import { Table } from 'arquero'
+import { BitSet, ColumnTable } from 'arquero'
 
 /**
  * A cell that did not parse under its column's confirmed type, carrying the
@@ -182,6 +210,142 @@ function handleFor(t, types) {
   })
 }
 
+// --- the comparison, and the two things only this file may know -----------
+//
+// AD-22: a comparison never matches a box. AD-21: a temporal value is
+// nanoseconds as a `BigInt`, and `core/` may not construct one — so a temporal
+// comparison value crosses the port as an ISO 8601 string and is converted here,
+// **once per condition** rather than once per row.
+
+const NANOS_PER_MILLI = 1_000_000n
+const NANOS_PER_SECOND = 1_000_000_000n
+
+/** `YYYY-MM-DD`, and nothing looser: a canonical machine value is not a display
+ *  form, so a two-digit year or a dotted date is a value this side refuses
+ *  rather than guesses at. */
+const ISO_DATE = /^(-?\d{4,6})-(\d{2})-(\d{2})$/
+/** `YYYY-MM-DDTHH:MM[:SS[.f…]][Z|±HH:MM]`, with a space accepted for the `T`
+ *  because that is what every database export writes. */
+const ISO_DATETIME =
+  /^(-?\d{4,6})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?(Z|[+-]\d{2}:\d{2})?$/
+/** `HH:MM[:SS[.f…]]` — ISO 8601's extended time, bounded to a clock position. */
+const ISO_TIME = /^(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,9}))?)?$/
+/** A duration is a quantity rather than a clock position, so its hours field is
+ *  unbounded and it may be negative — the same shape `core/types` reads out of a
+ *  time-account export. */
+const CLOCK_DURATION = /^(-)?(\d+):([0-5]\d)(?::([0-5]\d))?$/
+
+/** Nine digits is the representation's own resolution (AD-21), and `.5` and
+ *  `.500000000` are the same quantity — so the digits are right-padded rather
+ *  than parsed as a decimal, which is also what keeps this in integer range. */
+const fractionNanos = (fraction) => (fraction ? BigInt(fraction.padEnd(9, '0')) : 0n)
+
+/**
+ * UTC midnight of a calendar day, in epoch milliseconds.
+ *
+ * `Date.UTC` maps years 0–99 onto 1900–1999. The pattern above requires four
+ * digits, so the fast path covers everything it can match; the guard stays
+ * because a year is a number this function is handed, not one it parsed.
+ */
+function utcMidnightMillis(year, month, day) {
+  if (year >= 100 && year <= 9999) return Date.UTC(year, month - 1, day)
+  const d = new Date(0)
+  d.setUTCFullYear(year, month - 1, day)
+  d.setUTCHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+const offsetMinutes = (zone) => {
+  if (!zone || zone === 'Z') return 0
+  const sign = zone[0] === '-' ? -1 : 1
+  return sign * (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4, 6)))
+}
+
+/**
+ * A comparison value as the Table holds it, or `null` where the string is not a
+ * canonical form of that type.
+ *
+ * `null` is a return value rather than a throw: an unreadable comparison value is
+ * a state of the configuration, and the port carries it back as `unreadable` so
+ * `core/steps/` can mint a Diagnostic naming the column and the value.
+ */
+export function comparisonValue(type, value) {
+  if (type === 'date') {
+    const m = ISO_DATE.exec(value)
+    if (!m) return null
+    return BigInt(utcMidnightMillis(Number(m[1]), Number(m[2]), Number(m[3]))) * NANOS_PER_MILLI
+  }
+  if (type === 'datetime') {
+    const m = ISO_DATETIME.exec(value)
+    if (!m) return null
+    const millis =
+      utcMidnightMillis(Number(m[1]), Number(m[2]), Number(m[3])) +
+      ((Number(m[4]) * 60 + Number(m[5])) * 60 + Number(m[6] ?? 0)) * 1000 -
+      offsetMinutes(m[8]) * 60_000
+    return BigInt(millis) * NANOS_PER_MILLI + fractionNanos(m[7])
+  }
+  if (type === 'time') {
+    const m = ISO_TIME.exec(value)
+    if (!m || Number(m[1]) > 23) return null
+    return (
+      BigInt(Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3] ?? 0)) * NANOS_PER_SECOND +
+      fractionNanos(m[4])
+    )
+  }
+  if (type === 'duration') {
+    const m = CLOCK_DURATION.exec(value)
+    if (!m) return null
+    const magnitude =
+      (BigInt(m[2]) * 3600n + BigInt(Number(m[3]) * 60 + Number(m[4] ?? 0))) * NANOS_PER_SECOND
+    return m[1] ? -magnitude : magnitude
+  }
+  // `text`, `number` and `boolean` compare as themselves. The Step kind has
+  // already refused a value whose JavaScript kind disagrees with the column.
+  return value
+}
+
+const TEMPORAL = new Set(['date', 'datetime', 'time', 'duration'])
+
+/**
+ * Is this cell empty?
+ *
+ * `null`, the empty string and a whitespace-only string alike — CAP-15 states it
+ * in as many words and `ui/` says so in German beside the operator. A box is
+ * never asked: it is excluded before this is reached.
+ */
+const isEmptyCell = (value) =>
+  value === null || value === undefined || (typeof value === 'string' && value.trim() === '')
+
+/**
+ * Whether one cell satisfies one operator.
+ *
+ * A `null` matches no ordering or equality operator, and that is a guard rather
+ * than a convention: `null < 5` is `true` in JavaScript, so an absent value would
+ * quietly join every "smaller than" filter in the product.
+ */
+function matches(op, cell, target) {
+  if (op === 'empty') return isEmptyCell(cell)
+  if (op === 'not_empty') return !isEmptyCell(cell)
+  if (cell === null || cell === undefined) return false
+  switch (op) {
+    case 'eq':
+      return cell === target
+    case 'ne':
+      return cell !== target
+    case 'lt':
+      return cell < target
+    case 'lte':
+      return cell <= target
+    case 'gt':
+      return cell > target
+    /* c8 ignore next 2 -- the vocabulary is closed in core/steps/filter.js */
+    case 'gte':
+      return cell >= target
+    default:
+      throw new TypeError(`unknown comparison operator: ${op}`)
+  }
+}
+
 /**
  * The engine `app/` wires into the `TableEngine` port (AD-1).
  *
@@ -189,6 +353,30 @@ function handleFor(t, types) {
  * nothing accumulates across one.
  */
 export function createArqueroEngine() {
+  /**
+   * Handle → the engine table behind it, and the column types beside it.
+   *
+   * A `WeakMap` rather than a field on the handle: AD-5 froze the interface at
+   * four methods, and a fifth reachable property would be a fact about the
+   * representation that a consumer could come to depend on. It is per engine
+   * instance rather than per module for the same reason the factory exists —
+   * a test gets its own, and a handle from another engine is a caller's bug that
+   * is caught rather than silently half-working.
+   */
+  const backing = new WeakMap()
+
+  const wrap = (t, types) => {
+    const handle = handleFor(t, types)
+    backing.set(handle, { t, types })
+    return handle
+  }
+
+  const behind = (table) => {
+    const found = backing.get(table)
+    if (!found) throw new TypeError('this Table was not produced by this engine')
+    return found
+  }
+
   return {
     /**
      * Build a Table from columns — Step zero's one door in.
@@ -237,7 +425,151 @@ export function createArqueroEngine() {
       // `1` or `07` would otherwise sort itself to the front, because an
       // integer-like key is enumerated before every string one — and a Source's
       // column names come from whatever the exporter wrote in the header row.
-      return handleFor(new Table(data, names), types)
+      return wrap(new ColumnTable(data, names), types)
+    },
+
+    /**
+     * Keep the rows the conditions admit (CAP-15).
+     *
+     * **The box is why this returns counts rather than a bare Table.** A value
+     * that did not parse under its confirmed type is held as a box (AD-22) and
+     * this file is the only one that can see one, so it is also the only one that
+     * can say how many rows a box excluded. `core/steps/filter.js` turns the
+     * numbers into Diagnostics; the German is `ui/`'s (AD-13).
+     *
+     * The comparison value is converted **once per condition**: a temporal value
+     * arrives as an ISO 8601 string and becomes a `BigInt` here, before the row
+     * loop, rather than 100,000 times inside it.
+     *
+     * A `BitSet` over the backing rows, and `create({ filter })` to hang it on a
+     * new table: the columns are shared, so a chain of filters costs one
+     * `Uint32Array` per link — ~12.5 kB at the NFR-3 shape — and no column data
+     * at all. An existing filter is honoured by walking the current mask rather
+     * than the full row range, exactly as the engine's own `_filter` does.
+     */
+    filter(table, { conditions = [], combine = 'all' } = {}) {
+      const { t, types } = behind(table)
+
+      // Every condition prepared before the walk, and an unreadable value
+      // reported before a single row is examined — a filter nobody can evaluate
+      // must not produce a table that is merely a different one.
+      const prepared = []
+      const unreadable = []
+      for (const condition of conditions) {
+        const type = types.get(condition.column)
+        if (type === undefined) {
+          // Refused one layer up, against the input schema, where it can be a
+          // Diagnostic. Reaching here is a caller's bug.
+          throw new TypeError(`no column ${condition.column} in this table`)
+        }
+        const valueless = condition.op === 'empty' || condition.op === 'not_empty'
+        const target = valueless ? undefined : comparisonValue(type, condition.value)
+        if (!valueless && TEMPORAL.has(type) && target === null) {
+          unreadable.push(Object.freeze({ column: condition.column, type, value: condition.value }))
+          continue
+        }
+        prepared.push({ op: condition.op, column: t.column(condition.column), target })
+      }
+      if (unreadable.length > 0) {
+        return Object.freeze({
+          table: null,
+          removed: 0,
+          boxed: 0,
+          unreadable: Object.freeze(unreadable),
+        })
+      }
+
+      const total = t.totalRows()
+      const mask = t.mask()
+      const kept = new BitSet(total)
+      let boxed = 0
+
+      const admits = (row) => {
+        let anyMatch = false
+        let sawBox = false
+        for (const { op, column, target } of prepared) {
+          const cell = column.at(row)
+          // AD-22 — a box matches no operator, and it matches none of them
+          // *including* `not_empty`, whose strict complement would otherwise
+          // smuggle every unreadable cell through as non-empty text.
+          if (cell instanceof Unparsed) {
+            sawBox = true
+            if (combine === 'all') return { pass: false, sawBox: true }
+            continue
+          }
+          const ok = matches(op, cell, target)
+          if (combine === 'all') {
+            if (!ok) return { pass: false, sawBox }
+          } else if (ok) {
+            anyMatch = true
+          }
+        }
+        return { pass: combine === 'all' ? true : anyMatch, sawBox }
+      }
+
+      const consider = (row) => {
+        // No condition is the identity, and it is written as a branch rather
+        // than falling out of the loop so a freshly added Filter costs nothing
+        // per row at all.
+        if (prepared.length === 0) {
+          kept.set(row)
+          return
+        }
+        const verdict = admits(row)
+        if (verdict.pass) kept.set(row)
+        // Counted only where the box actually decided the outcome: under `any`,
+        // a row with a box in one column and a match in another is kept, and
+        // reporting it as dropped would be a number about nothing.
+        else if (verdict.sawBox) boxed += 1
+      }
+
+      if (mask) {
+        for (let i = mask.next(0); i >= 0; i = mask.next(i + 1)) consider(i)
+      } else {
+        for (let i = 0; i < total; i += 1) consider(i)
+      }
+
+      const before = t.numRows()
+      const next = wrap(t.create({ filter: kept }), types)
+      return Object.freeze({
+        table: next,
+        removed: before - next.rowCount(),
+        boxed,
+        unreadable: Object.freeze([]),
+      })
+    },
+
+    /**
+     * The columns that leave, under the names they leave with, in the order the
+     * config lists them (CAP-16).
+     *
+     * `create({ data, names })` is what arquero's own `select` reduces to once
+     * its selection helpers have resolved: the column arrays are **shared** with
+     * the input table, so this costs a new names array and nothing else, and the
+     * table's filter is inherited rather than reified. `names` is explicit for
+     * the reason it is explicit in `fromColumns` — a column called `1` would
+     * otherwise sort itself to the front of any key enumeration.
+     *
+     * A repeated `to` and an unknown `from` both throw. Both are refused one
+     * layer up where they can be Diagnostics — the first at configure time, the
+     * second against the input schema — so reaching here is a caller's bug.
+     */
+    selectColumns(table, ordered) {
+      const { t, types } = behind(table)
+
+      const data = Object.create(null)
+      const names = []
+      const nextTypes = new Map()
+
+      for (const { from, to } of ordered) {
+        if (!types.has(from)) throw new TypeError(`no column ${from} in this table`)
+        if (nextTypes.has(to)) throw new TypeError(`a table cannot hold two columns called ${to}`)
+        data[to] = t.column(from)
+        names.push(to)
+        nextTypes.set(to, types.get(from))
+      }
+
+      return wrap(t.create({ data, names }), nextTypes)
     },
   }
 }

@@ -17,6 +17,7 @@
 // improvement.
 
 import { shallowRef } from 'vue'
+import { createStepZeroCache } from '@core/exec/convert.js'
 import SourcesPane from '@ui/SourcesPane.vue'
 import EditorPane from '@ui/EditorPane.vue'
 
@@ -30,6 +31,23 @@ const props = defineProps({
   /** The `GraphView` implementation. `app/` is the only place that names one. */
   canvas: { type: [Object, Function], required: true },
 })
+
+// Step zero's cache, **one of them**, created here and handed to both panes
+// (decided 2026-08-04 with the project owner, measured first).
+//
+// Two caches would be the cheapest edit and the most expensive result: the same
+// Source converted twice at 545–555 ms and retained twice at 39.3 MB, which puts
+// five Sources at ~532 MB against a 550 MB plan — and two answers to "is this
+// Source converted", which is duplicate bookkeeping rather than a cache. A module
+// singleton would avoid the prop and cost more: `createStepZeroCache` takes the
+// engine, so a singleton needs a mutable slot for it and AD-1's "one place names
+// the adapter" gets a second home no test could reset per case. `App.vue` already
+// receives the engine.
+//
+// In `setup`, never in a `ref`: it holds converted Tables, and a table must never
+// enter deep reactivity (AD-6). Release stays what it was — a Source's removal
+// releases its conversion, which the Sources pane still asks for.
+const stepZero = createStepZeroCache(props.engine)
 
 const view = shallowRef('sources')
 
@@ -78,7 +96,7 @@ const TABS = [
       v-show="view === 'sources'"
       :store="props.store"
       :on-changed="onSourcesChanged"
-      :engine="props.engine"
+      :step-zero="stepZero"
       class="mt-8"
     />
 
@@ -87,7 +105,9 @@ const TABS = [
       :graph="props.graph"
       :sources="sources"
       :canvas="props.canvas"
-      class="mt-8 h-[70vh]"
+      :engine="props.engine"
+      :step-zero="stepZero"
+      class="mt-8"
     />
   </main>
 </template>

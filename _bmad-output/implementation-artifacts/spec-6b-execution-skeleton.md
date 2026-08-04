@@ -2,7 +2,8 @@
 title: 'Story 6b — Execution walking skeleton: Filter and Columns Steps, and the per-Step preview'
 type: 'feature'
 created: '2026-08-04'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_commit: '9c8f1f115c263a3cd268d9ca29f7a89b18d3ddc3'
 review_loop_iteration: 0
 context:
   - '_bmad-output/planning-artifacts/architecture/architecture-querbeet-2026-08-02/ARCHITECTURE-SPINE.md'
@@ -94,22 +95,29 @@ context:
 
 **Execution:**
 
-- [ ] `core/graph/graph.js` + `graph-store.js` -- `config` on nodes (frozen, opaque), `configureStep(id, config)` command, duplicate-upstream `warning` in `graphDiagnostics`, new codes in `CODE` -- the model stays the one writer
-- [ ] `core/steps/index.js` (new) + `filter.js` + `columns.js` + tests -- registry `kind → {apply(engine, inputs, config), validate(config), defaultConfig()}` with AD-4's signature; exported `executorGaps()` naming kinds without executors -- the second table keyed by the same codes
-- [ ] `ports/index.js` -- `TableEngine.filter` / `TableEngine.selectColumns` contracts; `GraphView` select event, amending the selection sentence -- ports move before implementations
-- [ ] `adapters/arquero/engine.js` + test -- **switch the table construction from the base `Table` to `ColumnTable`** (decided 2026-08-04, measured — see Design Notes), then implement both ops on it: box-blind comparisons, ISO→`BigInt` once, explicit column handling -- hazards stay absorbed (AD-19)
-- [ ] `adapters/vueflow/GraphCanvas.vue` (+ `canvas-logic.js` if logic splits) -- emit `select` with node id / null -- one new outward event, nothing else widens
-- [ ] `core/exec/execute.js` (new) + test -- frontier walk over `contributingTo`, Step zero via 6a, gate 1, per-Step results `{table, rowCount, columnCount, diagnostics}`, named refusals for unimplemented kinds -- the walking skeleton
-- [ ] `core/exec/source-store.js` + tests -- **make column names unique on ingest** (decided 2026-08-04, see Design Notes): a repeated name takes the lowest free `_<n>` from 2 upward (`Betrag`, `Betrag_2`); an empty name becomes `col_<1-based position>`; the rule runs after both, so a file that itself contains the generated form is still resolved deterministically. One `warning` diagnostic carries the mapping (`{from, to, at}` per renamed column) -- the store is the one writer, so all three readers stop disagreeing
-- [ ] `ui/SourcesPane.vue` -- the German sentence for the rename code in the `GERMAN` map (`:247`), naming what became what -- AD-13: `core/` emits the mapping as values, `ui/` writes the sentence
-- [ ] `ui/App.vue` + `ui/SourcesPane.vue` + `ui/EditorPane.vue` -- move the Step-zero cache to `App.vue` and pass it (with the engine) to both panes; `SourcesPane` stops creating its own -- one converted Table per Source, whoever reads it (decided 2026-08-04)
-- [ ] `ui/EditorPane.vue` -- hold selected id (`shallowRef`), trigger recompute on data-affecting changes only, host the side panel -- the doors stay in one pane
-- [ ] `ui/cell-text.js` (new) + test -- German display projection for preview cells: number → `1.234,56`, temporals from `BigInt` ns → `31.12.2025` / `31.12.2025 14:30` / `14:30`, boolean → `wahr`/`falsch`, text and boxed original text as-is -- story 10 adopts and refines this module, it is written to be its seam
-- [ ] `ui/StepPanel.vue` (new) -- German config forms for Filter (column select, operator select, typed value input, all/any) and Columns (checkbox + rename + reorder), plus the preview: counts, warnings via `runStatus`, `RowWindow` embed rendering through `cell-text` -- CAP-15/16/19 surface
-- [ ] `ui/graph-labels.js` -- German sentences for every new code; gap tests stay `[]` -- NFR-6
-- [ ] `ui/RowWindow.vue` -- `testid` (and label already exists) parameterized -- no collision with page-scoped `preview` assertions
-- [ ] `tests/e2e/execution.spec.js` (new) -- load fixture → confirm → Filter + Columns → per-Step counts, warning visibility, refusal paths -- end to end over the built file
-- [ ] `_bmad-output/implementation-artifacts/deferred-work.md` -- update `:59-62` with the decision (allow + warn), citing this spec; append a new entry: step-output previews render boxes as original text but cannot **mark** them — no positional channel crosses the four-method Table after a filter, and story 10 (CAP-31 "unparsed cells visually marked") needs a channel decision -- ledger hygiene
+- [x] `core/graph/graph.js` + `graph-store.js` -- `config` on nodes (frozen, opaque), `configureStep(id, config)` command, duplicate-upstream `warning` in `graphDiagnostics`, new codes in `CODE` -- the model stays the one writer
+- [x] `core/steps/index.js` (new) + `filter.js` + `columns.js` + tests -- registry `kind → {apply(engine, inputs, config), validate(config), defaultConfig()}` with AD-4's signature; exported `executorGaps()` naming kinds without executors -- the second table keyed by the same codes
+- [x] `ports/index.js` -- `TableEngine.filter` / `TableEngine.selectColumns` contracts; `GraphView` select event, amending the selection sentence -- ports move before implementations
+- [x] `adapters/arquero/engine.js` + test -- **switch the table construction from the base `Table` to `ColumnTable`** (decided 2026-08-04, measured — see Design Notes), then implement both ops on it: box-blind comparisons, ISO→`BigInt` once, explicit column handling -- hazards stay absorbed (AD-19)
+- [x] `adapters/vueflow/GraphCanvas.vue` (+ `canvas-logic.js` if logic splits) -- emit `select` with node id / null -- one new outward event, nothing else widens
+- [x] `core/exec/execute.js` (new) + test -- frontier walk over `contributingTo`, Step zero via 6a, gate 1, per-Step results `{table, rowCount, columnCount, diagnostics}`, named refusals for unimplemented kinds -- the walking skeleton
+- [x] `core/exec/source-store.js` + tests -- **make column names unique on ingest** (decided 2026-08-04, see Design Notes): a repeated name takes the lowest free `_<n>` from 2 upward (`Betrag`, `Betrag_2`); an empty name becomes `col_<1-based position>`; the rule runs after both, so a file that itself contains the generated form is still resolved deterministically. One `warning` diagnostic carries the mapping (`{from, to, at}` per renamed column) -- the store is the one writer, so all three readers stop disagreeing
+- [x] `ui/SourcesPane.vue` -- the German sentence for the rename code in the `GERMAN` map (`:247`), naming what became what -- AD-13: `core/` emits the mapping as values, `ui/` writes the sentence
+- [x] `ui/App.vue` + `ui/SourcesPane.vue` + `ui/EditorPane.vue` -- move the Step-zero cache to `App.vue` and pass it (with the engine) to both panes; `SourcesPane` stops creating its own -- one converted Table per Source, whoever reads it (decided 2026-08-04)
+- [x] `ui/EditorPane.vue` -- hold selected id (`shallowRef`), trigger recompute on data-affecting changes only, host the side panel -- the doors stay in one pane
+- [x] `ui/cell-text.js` (new) + test -- German display projection for preview cells: number → `1.234,56`, temporals from `BigInt` ns → `31.12.2025` / `31.12.2025 14:30` / `14:30`, boolean → `wahr`/`falsch`, text and boxed original text as-is -- story 10 adopts and refines this module, it is written to be its seam
+- [x] `ui/StepPanel.vue` (new) -- German config forms for Filter (column select, operator select, typed value input, all/any) and Columns (checkbox + rename + reorder), plus the preview: counts, warnings via `runStatus`, `RowWindow` embed rendering through `cell-text` -- CAP-15/16/19 surface
+- [x] `ui/graph-labels.js` -- German sentences for every new code; gap tests stay `[]` -- NFR-6
+- [x] `ui/RowWindow.vue` -- `testid` (and label already exists) parameterized -- no collision with page-scoped `preview` assertions
+- [x] `tests/e2e/execution.spec.js` (new) -- load fixture → confirm → Filter + Columns → per-Step counts, warning visibility, refusal paths -- end to end over the built file
+- [x] `_bmad-output/implementation-artifacts/deferred-work.md` -- update `:59-62` with the decision (allow + warn), citing this spec; append a new entry: step-output previews render boxes as original text but cannot **mark** them — no positional channel crosses the four-method Table after a filter, and story 10 (CAP-31 "unparsed cells visually marked") needs a channel decision -- ledger hygiene
+
+**Where the implementation departed from the task list, and why** (2026-08-04, decided alone with the owner away, both measured):
+
+- **The panel is under the canvas rather than beside it.** The Code Map's reason for a panel at all is the Handle rule — never a Handle inside a fixed-height scrolling container — and that is satisfied either way. Beside was built first and measured: a 384 px column leaves ~396 px of canvas at this page width, which is narrower than one column of Steps (a 256 px card plus the 320 px column pitch), so every Step added after the initial fit panned the Steps already on screen out of the pane and thirteen story-5 e2e cases went red on geometry. Under the canvas the pane keeps its full width and the page grows instead.
+- **A run's diagnostics are rendered in the panel and not as card marks.** They are full sentences, and a 256 px card wearing two of them grows past 280 px — taller than any placement pitch the model can pick, since `core/graph/` is browser-free and cannot measure a card. Cards then overlapped and the upper one swallowed the pointer aimed at the lower one's controls. `PLACEMENT.dy` went from 150 to 200 in the same pass (a Filter card is 151 px and a marked card 187 px, so the old pitch overlapped by up to 37 px), and the residual limitation is in the ledger.
+- **`addStep` recomputes**, which the interim list does not name. `addNode` designates the first Step that could be a Result as one, so adding a Step can change which Pipeline exists — the same change `setResult` makes, and on the list for the same reason. `addInputSlot` and `removeInputSlot` do not recompute: a slot may only be removed while it is empty.
+- **The base Arquero `Table` would have worked and is 57,829 bytes cheaper.** The two operations reduce to `create` + `BitSet`, both public on the base class, so the premise behind the `ColumnTable` decision ("the verbs exist only as its methods") is true and was not the constraint. `ColumnTable` shipped as decided; the measurement is filed in the ledger for the owner rather than acted on.
 
 **Acceptance Criteria:**
 

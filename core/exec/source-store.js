@@ -127,6 +127,115 @@ export const typingDiagnostics = (typing) => {
 }
 
 /**
+ * Column names, made unique — the store's own decision and its one rule about a
+ * name (decided 2026-08-04 with the project owner).
+ *
+ * **Why this is the store's business at all.** A Table is keyed by column name —
+ * AD-5's interface says `column(name)` — and Arquero cannot hold two columns of
+ * one name, so uniqueness has to exist *somewhere* regardless. The only real
+ * question was whether the user can see where it happened. And a header is a
+ * **proposal** in this architecture rather than delivered data (`adapters/csv/
+ * csv-reader.js` says so in as many words, and the header row is user-correctable
+ * from the card), so a name is not a value and AD-7 is not in the way.
+ *
+ * **It is wider than a duplicate header, which is why it is not spelled as one.**
+ * Probed 2026-08-04: a CSV whose header row ends in two extra delimiters —
+ * `Kunde,Betrag,,` — yields columns named `["Kunde","Betrag","",""]` with no
+ * diagnostic at all, and the engine's refusal then read ``a table cannot hold two
+ * columns called `` — a sentence that breaks on its own empty name. The three
+ * readers disagreed as well: CSV silent, XLSX warning and keeping both, Parquet
+ * warning and marking the duplicate unreadable.
+ *
+ * THE RULE, in the order it runs:
+ *
+ *   1. An empty name becomes `col_<1-based position>`.
+ *   2. The uniqueness pass runs **after** that, over the resulting list, so a
+ *      file that itself contains `col_3` or `Betrag_2` still resolves.
+ *   3. A repeated name takes the lowest free `_<n>` from 2 upward. "Free" means
+ *      free of every *other* column's name too, not only of the ones already
+ *      placed — so a column whose name was in the file keeps it, and the
+ *      duplicate moves aside rather than the original.
+ *
+ * **Determinism is the load-bearing property, not the spelling.** Annotations and
+ * chosen types are carried across a re-read *by name* (`retype` below), so a rule
+ * that produced a different name on the second read would drop them silently.
+ *
+ * **The generated part is language-free on purpose.** AD-13 puts German in `ui/`,
+ * and `core/` generates no user-visible name anywhere today — a Step's German
+ * label is handed *in* from `ui/EditorPane.vue` and `makeNode` falls back to the
+ * id, which is structural rather than linguistic. `col_3` follows that precedent;
+ * `Spalte 3` would have been the first German string in the core. The mapping
+ * travels as diagnostic values and `ui/SourcesPane.vue` writes the sentence.
+ *
+ * @param {ReadonlyArray<string>} raw the names as the reader delivered them
+ * @returns {{ names: string[], renamed: Array<{ from: string, to: string, at: number }> }}
+ *   `at` is the 1-based column position, which is the coordinate the German
+ *   sentence uses and the one a user can count to on the card.
+ */
+export function uniqueColumnNames(raw) {
+  const given = raw.map((name) => String(name ?? ''))
+  // A name the file actually carries is never taken from it, generated names
+  // included: a header that literally reads `col_1` keeps it, and the nameless
+  // column beside it moves aside instead. That is the same courtesy step 3 shows
+  // a duplicate, and having the two rules disagree would be a distinction with
+  // nothing behind it.
+  const original = new Set(given.filter((name) => name !== ''))
+  const base = given.map((name, at) => {
+    if (name !== '') return name
+    let candidate = `col_${at + 1}`
+    for (let n = 2; original.has(candidate); n += 1) candidate = `col_${at + 1}_${n}`
+    return candidate
+  })
+
+  const taken = new Set(base)
+  const used = new Set()
+  const names = base.map((name) => {
+    if (!used.has(name)) {
+      used.add(name)
+      return name
+    }
+    let n = 2
+    let candidate = `${name}_${n}`
+    while (taken.has(candidate) || used.has(candidate)) {
+      n += 1
+      candidate = `${name}_${n}`
+    }
+    used.add(candidate)
+    taken.add(candidate)
+    return candidate
+  })
+
+  const renamed = []
+  names.forEach((name, at) => {
+    const from = String(raw[at] ?? '')
+    if (name !== from) renamed.push(Object.freeze({ from, to: name, at: at + 1 }))
+  })
+
+  return { names, renamed }
+}
+
+/**
+ * The reader's table with its column names made unique, plus the one diagnostic
+ * that reports the mapping.
+ *
+ * The columns keep their position and their cells — only the name moves — so
+ * every command that addresses a column by index still addresses the same one.
+ */
+const withUniqueColumnNames = (table) => {
+  const { names, renamed } = uniqueColumnNames(table.columns.map((column) => column.name))
+  if (renamed.length === 0) return { table, diagnostics: [] }
+  return {
+    table: Object.freeze({
+      ...table,
+      columns: Object.freeze(
+        table.columns.map((column, at) => Object.freeze({ ...column, name: names[at] })),
+      ),
+    }),
+    diagnostics: [warning('source.columns_renamed', { renamed: Object.freeze(renamed) })],
+  }
+}
+
+/**
  * What a failed read is called.
  *
  * `source.unreadable` says "damaged, password-protected, or not the format its
@@ -380,6 +489,10 @@ export function createSourceStore(readers) {
       } else {
         result = await reader.read(entry.bytes, parseConfig)
       }
+      // The names are made unique before anything reads them — detection, the
+      // typing carry-over and the preview all address columns by name, and the
+      // engine cannot hold two of one name at all.
+      const unique = withUniqueColumnNames(result.table)
       // The entry as it stands *now*, not as it stood when the read began. A
       // read takes seconds on a binary format, and an annotation or a type the
       // user set meanwhile lives on the current entry; committing over the
@@ -389,11 +502,11 @@ export function createSourceStore(readers) {
         ...current,
         encoding,
         parseConfig: effectiveConfig(parseConfig, result.proposal),
-        table: result.table,
-        typing: retype(result.table, current.typing),
+        table: unique.table,
+        typing: retype(unique.table, current.typing),
         proposal: result.proposal,
         damage: result.damage,
-        readDiagnostics: Object.freeze([...extra, ...result.diagnostics]),
+        readDiagnostics: Object.freeze([...extra, ...unique.diagnostics, ...result.diagnostics]),
       })
     } catch (failure) {
       const current = sources.get(entry.id) ?? entry
@@ -444,6 +557,7 @@ export function createSourceStore(readers) {
       return { source: null, diagnostics: [readFailure(failure, fileName)] }
     }
 
+    const unique = withUniqueColumnNames(result.table)
     const name = fileName.replace(/\.[^.]+$/, '')
     const entry = commit({
       id: mintId(name),
@@ -453,11 +567,11 @@ export function createSourceStore(readers) {
       bytes,
       encoding,
       parseConfig: effectiveConfig(parseConfig, result.proposal),
-      table: result.table,
-      typing: retype(result.table, null),
+      table: unique.table,
+      typing: retype(unique.table, null),
       proposal: result.proposal,
       damage: result.damage,
-      readDiagnostics: Object.freeze([...extra, ...result.diagnostics]),
+      readDiagnostics: Object.freeze([...extra, ...unique.diagnostics, ...result.diagnostics]),
     })
     return { source: entry, diagnostics: entry.readDiagnostics }
   }

@@ -15,6 +15,7 @@ import {
   pageCount,
   pageOffset,
   pageRowCount,
+  previewColumns,
   sliceMarks,
   sliceRows,
   windowBounds,
@@ -405,5 +406,94 @@ describe('marks projected alongside the rows', () => {
 
   it('mark nothing on a table with no columns', () => {
     expect(sliceMarks(marksOf([[0]]), 0, 0, 5)).toEqual([])
+  })
+})
+
+// ----------------------------------------- the bridge to a Step's output (6b)
+//
+// `buildWindow` reads a columnar table; a Step's output is a `Table` handle whose
+// only row-shaped door is `rows()`. What is asserted here is the bound: the grid
+// gets a window, the counts stay the Step's own, and nothing materializes what it
+// was not asked for.
+
+describe('previewColumns', () => {
+  /** A `Table` handle that counts how many rows it was actually asked to yield.
+   *  A generator, exactly as the engine's is, so "the first fifty of a hundred
+   *  thousand cost fifty" is a property this fixture can prove rather than a
+   *  claim about the adapter. */
+  const handle = (schema, rowCount, cellAt) => {
+    const asked = { rows: 0 }
+    return {
+      asked,
+      table: {
+        rowCount: () => rowCount,
+        schema: () => schema,
+        column: () => {
+          throw new Error('previewColumns must not copy a whole column')
+        },
+        *rows() {
+          for (let r = 0; r < rowCount; r += 1) {
+            asked.rows += 1
+            const row = {}
+            for (const column of schema) row[column.name] = cellAt(column.name, r)
+            yield row
+          }
+        },
+      },
+    }
+  }
+
+  const NUMBERED = [
+    { name: 'Nr', type: 'number' },
+    { name: 'Tag', type: 'date' },
+  ]
+
+  it('materializes the window it was asked for and not one row more', () => {
+    const { table, asked } = handle(NUMBERED, 100_000, (name, r) => (name === 'Nr' ? r : BigInt(r)))
+
+    const preview = previewColumns(table, 50)
+
+    expect(preview.rowCount).toBe(50)
+    expect(preview.totalRows).toBe(100_000)
+    expect(asked.rows).toBe(50)
+    expect(preview.columns.map((c) => c.name)).toEqual(['Nr', 'Tag'])
+    expect(preview.columns[0].cells[49]).toBe(49)
+  })
+
+  it('carries each column’s type, because the projection to German needs it', () => {
+    const { table } = handle(NUMBERED, 1, () => 0)
+    expect(previewColumns(table, 50).columns.map((c) => c.type)).toEqual(['number', 'date'])
+  })
+
+  it('holds machine values, not text — the German is `ui/`’s (AD-13)', () => {
+    const { table } = handle([{ name: 'Tag', type: 'date' }], 1, () => 1767139200000000000n)
+    expect(previewColumns(table, 50).columns[0].cells[0]).toBe(1767139200000000000n)
+  })
+
+  it('shows every row of a table shorter than the bound', () => {
+    const { table, asked } = handle([{ name: 'Nr', type: 'number' }], 3, (_n, r) => r)
+
+    const preview = previewColumns(table, 50)
+    expect(preview.rowCount).toBe(3)
+    expect(preview.totalRows).toBe(3)
+    expect(asked.rows).toBe(3)
+  })
+
+  it('asks for nothing at all from an empty table', () => {
+    const { table, asked } = handle([{ name: 'Nr', type: 'number' }], 0, () => 0)
+
+    const preview = previewColumns(table, 50)
+    expect(preview.rowCount).toBe(0)
+    expect(preview.columns[0].cells).toEqual([])
+    expect(asked.rows).toBe(0)
+  })
+
+  it('freezes what it hands back, so a caller may hold it as one value (AD-6)', () => {
+    const { table } = handle([{ name: 'Nr', type: 'number' }], 2, (_n, r) => r)
+    const preview = previewColumns(table, 50)
+
+    expect(Object.isFrozen(preview)).toBe(true)
+    expect(Object.isFrozen(preview.columns)).toBe(true)
+    expect(Object.isFrozen(preview.columns[0].cells)).toBe(true)
   })
 })

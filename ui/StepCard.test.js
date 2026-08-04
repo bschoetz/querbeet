@@ -8,7 +8,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { createGraphStore } from '@core/graph/graph-store.js'
-import { graphLabelGaps, kindLabelGaps } from '@ui/graph-labels.js'
+import { graphLabelGaps, kindLabelGaps, operatorLabelGaps } from '@ui/graph-labels.js'
 import StepCard from './StepCard.vue'
 
 const step = (over = {}) => ({
@@ -41,6 +41,11 @@ describe('the German maps', () => {
     // checking an enumeration that has drifted from what is emitted.
     expect(graphLabelGaps()).toEqual([])
     expect(kindLabelGaps()).toEqual([])
+    // Story 6b added two more producers behind the same invariant — the Step
+    // kinds and the executor, both enumerated from their own emit sites — plus
+    // the Filter's closed operator and combination vocabulary, which reaches the
+    // screen as select options rather than as diagnostics.
+    expect(operatorLabelGaps()).toEqual([])
   })
 })
 

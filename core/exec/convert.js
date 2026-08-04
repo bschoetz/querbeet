@@ -169,23 +169,6 @@ function convertColumn(cells, column) {
 }
 
 /**
- * Whether this Source can be converted at all, and the one reason it cannot.
- *
- * A Table is keyed by column name — the `Table` interface's own `column(name)`
- * says so (AD-5) — and a header may repeat a name: a CSV passes header cells
- * through verbatim, XLSX reports `xlsx.duplicate_header`, Parquet reports
- * `parquet.duplicate_column_name`. Two columns called `Datum` cannot both be in
- * one engine table, and marking the preview from a name-keyed `unparsed` would
- * mark the *wrong* cells rather than none — the first `Datum` wearing the
- * second's failures.
- *
- * So a Source with a repeated name is not converted, and the panel's count stays
- * a count for it. That is exactly the state before this story rather than a
- * regression, and it is a ledger entry rather than a silent branch.
- */
-const repeatsAColumnName = (columns) => new Set(columns.map((c) => c.name)).size !== columns.length
-
-/**
  * A confirmed Source as a typed engine Table — `{ table, unparsed }`, or `null`
  * where there is nothing to convert.
  *
@@ -194,10 +177,14 @@ const repeatsAColumnName = (columns) => new Set(columns.map((c) => c.name)).size
  * plain data: a box is the adapter's and is never handed out (AD-22), so the map
  * is how anything outside the engine learns which cells failed.
  *
- * `null` means the entry is not convertible — its typing is unconfirmed (AD-29's
- * first gate: nothing is computed from unconfirmed types), or it repeats a column
- * name. Both are states of the data rather than caller bugs, so both are a return
- * value.
+ * **`null` has exactly one meaning: the typing is not confirmed** (AD-29's first
+ * gate — nothing is computed from types nobody vouches for). It had a second
+ * until 2026-08-04: a Source repeating a column name could not be converted
+ * either, and a caller receiving `null` could not tell the two apart, so the
+ * gate could not name what was wrong without saying something false. That state
+ * no longer exists — `core/exec/source-store.js` makes column names unique on
+ * ingest and reports the mapping — and the adapter's duplicate-name throw is now
+ * an invariant guard nothing reaches rather than a state the UI has to explain.
  *
  * @param {object} entry a frozen registry entry
  * @param {import('../../ports/index.js').TableEngine} engine
@@ -205,7 +192,6 @@ const repeatsAColumnName = (columns) => new Set(columns.map((c) => c.name)).size
 export function convertSource(entry, engine) {
   if (entry?.typing?.confirmed !== true) return null
   const columns = entry.typing.columns
-  if (repeatsAColumnName(columns)) return null
 
   const engineColumns = new Array(columns.length)
   const unparsed = Object.create(null)

@@ -98,7 +98,6 @@ export const readingLabelGaps = () =>
 // would be the core talking to the user.
 
 import { shallowRef } from 'vue'
-import { createStepZeroCache } from '@core/exec/convert.js'
 import { nativeTypeOf } from '@core/types/catalog.js'
 import { ENCODINGS } from '@core/types/encoding.js'
 import { unresolvedColumns } from '@core/types/typing.js'
@@ -112,10 +111,14 @@ const props = defineProps({
    *  has to hear about a file that finishes parsing while it is the pane on
    *  screen — this pane keeps running its own `addFiles` loop either way. */
   onChanged: { type: Function, default: null },
-  /** The `TableEngine` implementation, arriving as a prop because `app/` is the
-   *  only place that names one (AD-1). This pane never sees the engine's tables:
-   *  it asks Step zero which cells did not read and renders that. */
-  engine: { type: Object, required: true },
+  /**
+   * Step zero's cache, created in `ui/App.vue` and shared with the Editor
+   * (decided 2026-08-04). This pane used to create its own from the engine; two
+   * caches would convert the same Source twice and retain it twice, and this pane
+   * never needed the engine for anything else — it asks Step zero which cells did
+   * not read and renders that, and never sees an engine table.
+   */
+  stepZero: { type: Object, required: true },
 })
 
 // shallowRef, never ref/reactive/computed: the entries hold parsed tables, and
@@ -142,14 +145,16 @@ const nf = (n) => n.toLocaleString('de-DE')
 //
 // The Step-zero cache is a plain closure, not a `ref`: it holds converted
 // Tables, and a table must never enter deep reactivity — R2 measured 437–479 MB
-// and an 11–13× read penalty for exactly that. `marks` below is likewise a plain
-// `Map`, and what reaches the template is a small array of `Set`s of row indices,
-// which is neither a table nor a row.
+// and an 11–13× read penalty for exactly that. It now arrives as a prop from
+// `ui/App.vue` rather than being created here, so the Editor reads the same one
+// converted Table this pane marks from. `marks` below is likewise a plain `Map`,
+// and what reaches the template is a small array of `Set`s of row indices, which
+// is neither a table nor a row.
 //
 // The memo is keyed by the frozen entry, like the cache it sits in front of, so
 // re-rendering asks for the same array identity and `RowWindow`'s watcher does
 // not repaint on every keystroke in a neighbouring field.
-const stepZero = createStepZeroCache(props.engine)
+const stepZero = props.stepZero
 
 /** @type {Map<string, { entry: object, marks: ReadonlyArray<Set<number>|null>|null }>} */
 const markMemo = new Map()
@@ -273,6 +278,37 @@ const GERMAN = {
     `Bitte die Kodierung prüfen und gegebenenfalls umstellen.`,
   'source.unsupported_format': (v) =>
     `„${v.fileName}“ hat ein nicht unterstütztes Format — gelesen werden derzeit ${formatList()}.`,
+  // AD-13 exactly: `core/` decided the mapping and emitted it as values, and the
+  // sentence is written here. It names *what became what* rather than reporting
+  // that something was renamed — a user looking for `Betrag` in a Filter's column
+  // select has to be able to find out that it is now `Betrag_2`, and which of the
+  // two it is. The unnamed case reads differently on purpose: nothing "became"
+  // anything there, a column that had no name got one.
+  'source.columns_renamed': (v) => {
+    const named = v.renamed.filter((r) => r.from !== '')
+    const unnamed = v.renamed.filter((r) => r.from === '')
+    const parts = []
+    if (named.length) {
+      parts.push(
+        `Mehrfach vergebene Spaltennamen wurden eindeutig gemacht: ` +
+          named.map((r) => `„${r.from}“ (Spalte ${nf(r.at)}) heißt jetzt „${r.to}“`).join(', ') +
+          `.`,
+      )
+    }
+    if (unnamed.length) {
+      parts.push(
+        unnamed.length === 1
+          ? `Spalte ${nf(unnamed[0].at)} hat in der Kopfzeile keinen Namen und heißt jetzt „${unnamed[0].to}“.`
+          : `Diese Spalten haben in der Kopfzeile keinen Namen und wurden nach ihrer Position ` +
+            `benannt: ${unnamed.map((r) => `Spalte ${nf(r.at)} → „${r.to}“`).join(', ')}.`,
+      )
+    }
+    return (
+      parts.join(' ') +
+      ` Eine Tabelle kann zwei Spalten gleichen Namens nicht auseinanderhalten; die Werte selbst ` +
+      `sind unverändert.`
+    )
+  },
   'source.unreadable': (v) =>
     `„${v.fileName}“ konnte nicht gelesen werden — die Datei ist beschädigt, ` +
     `passwortgeschützt oder in einem anderen Format als ihre Endung angibt.`,

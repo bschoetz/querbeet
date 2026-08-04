@@ -470,16 +470,21 @@ describe('what is not converted at all', () => {
     expect(convertSource(unconfirmed, recordingEngine())).toBeNull()
   })
 
-  it('refuses a Source that repeats a column name rather than marking the wrong cells', () => {
-    // A Table is keyed by name, and marking the preview from a name-keyed map
-    // would give the first `Datum` the second one's failures. The count stays a
-    // count for such a Source, which is exactly the state before this story.
+  it('has exactly one reason to answer null, so the gate can name it truthfully', () => {
+    // It had two until 2026-08-04: a Source repeating a column name was not
+    // converted either, and a caller receiving `null` could not tell that from an
+    // unconfirmed typing — so AD-29's gate could not say which without saying
+    // something false. `core/exec/source-store.js` now makes column names unique
+    // on ingest, so a confirmed entry always converts, and the adapter's
+    // duplicate-name throw is an invariant guard rather than a state to explain.
     const entry = confirmed([
       { name: 'Datum', cells: ['31.12.2025'] },
-      { name: 'Datum', cells: ['nonsense'] },
+      { name: 'Datum_2', cells: ['nonsense'] },
     ])
 
-    expect(convertSource(entry, recordingEngine())).toBeNull()
+    const converted = convertSource(entry, recordingEngine())
+    expect(converted).not.toBeNull()
+    expect(Object.keys(converted.unparsed)).toEqual(['Datum', 'Datum_2'])
   })
 })
 

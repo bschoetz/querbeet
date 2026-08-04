@@ -20,8 +20,12 @@
 // function and renders `[object Object]` instead of the fallback this file exists
 // to guarantee.
 
+import { EXEC_CODES } from '@core/exec/execute.js'
 import { GRAPH_CODES } from '@core/graph/graph.js'
 import { addableKinds, kindCodes } from '@core/graph/kinds.js'
+import { STEP_CODES } from '@core/steps/index.js'
+import { COMBINES, OPERATORS, VALUELESS_OPERATORS } from '@core/steps/filter.js'
+import { typeLabel } from '@ui/type-labels.js'
 
 const KIND = Object.freeze(
   Object.assign(Object.create(null), {
@@ -65,7 +69,65 @@ const q = (text) => `„${text}“`
 const step = (nameOf, id) => q(nameOf(id))
 
 // German counts one of a thing differently, and every count below can be one.
+const nf = (n) => Number(n).toLocaleString('de-DE')
 const inputs = (n) => (n === 1 ? '1 Eingang' : `${n} Eingänge`)
+const rows = (n) => (n === 1 ? '1 Zeile' : `${nf(n)} Zeilen`)
+
+/** `Eingang 1 und Eingang 2`, in German rather than as a comma-joined list. */
+const slotList = (slots) =>
+  slots.length < 2
+    ? `Eingang ${slots[0] + 1}`
+    : `${slots.slice(0, -1).map((s) => `Eingang ${s + 1}`).join(', ')} und Eingang ${slots.at(-1) + 1}`
+
+// --------------------------------------------------------- the Filter's words
+//
+// The operator vocabulary is closed in `core/steps/filter.js` and this is the
+// German for it, keyed off that list rather than restated beside it — the same
+// relationship `ui/type-labels.js` has to the type catalogue, and it is what lets
+// `operatorLabelGaps()` fail instead of a raw `not_empty` appearing in a select.
+
+const OPERATOR = Object.freeze(
+  Object.assign(Object.create(null), {
+    eq: 'ist gleich',
+    ne: 'ist ungleich',
+    lt: 'ist kleiner als',
+    lte: 'ist kleiner oder gleich',
+    gt: 'ist größer als',
+    gte: 'ist größer oder gleich',
+    // The semantics are in the word, because CAP-15 requires the user to know
+    // them: three different cell contents match this one operator and a label
+    // reading only „ist leer" would leave two of them to be discovered.
+    empty: 'ist leer (auch nur Leerzeichen)',
+    not_empty: 'ist nicht leer',
+  }),
+)
+
+export const operatorLabel = (code) => (Object.hasOwn(OPERATOR, code) ? OPERATOR[code] : code)
+
+/** `[code, label]` for every operator a Filter offers, in the core's order. */
+export const operatorLabels = () => OPERATORS.map((code) => [code, operatorLabel(code)])
+
+/** Whether this operator's row renders a value input at all. */
+export const takesValue = (op) => !VALUELESS_OPERATORS.includes(op)
+
+const COMBINE = Object.freeze(
+  Object.assign(Object.create(null), {
+    all: 'Alle Bedingungen müssen zutreffen',
+    any: 'Mindestens eine Bedingung muss zutreffen',
+  }),
+)
+
+export const combineLabel = (code) => (Object.hasOwn(COMBINE, code) ? COMBINE[code] : code)
+
+/** `[code, label]` for the two combination rules, in the core's order. */
+export const combineLabels = () => COMBINES.map((code) => [code, combineLabel(code)])
+
+/** Every operator or combination rule the core offers that this file has no
+ *  German word for. Empty is the rule, and a test asserts it. */
+export const operatorLabelGaps = () => [
+  ...OPERATORS.filter((code) => !Object.hasOwn(OPERATOR, code)),
+  ...COMBINES.filter((code) => !Object.hasOwn(COMBINE, code)),
+]
 
 const GERMAN = Object.freeze(
   Object.assign(Object.create(null), {
@@ -120,8 +182,100 @@ const GERMAN = Object.freeze(
       v.steps === 1
         ? 'Kein Step ist als Ergebnis ausgewiesen — der vorhandene Step trägt zu nichts bei.'
         : `Kein Step ist als Ergebnis ausgewiesen — die ${v.steps} vorhandenen Steps tragen zu nichts bei.`,
+    // Allowed, and said out loud (decided 2026-08-04). A Step consuming the same
+    // upstream twice is a legitimate way to double a dataset; doubling it without
+    // saying so is not. The sentence names the consequence rather than only the
+    // shape, because the shape alone reads as a mistake the user did not make.
+    'graph.duplicate_upstream': (v, nameOf) =>
+      `${step(nameOf, v.id)} nimmt ${step(nameOf, v.upstream)} an ${slotList(v.slots)} — ` +
+      `die Zeilen dieses Steps zählen dadurch mehrfach.`,
+    'graph.not_configurable': (v, nameOf) =>
+      `${step(nameOf, v.id)} hat nichts einzustellen — Quellen werden unter „Quellen“ eingerichtet, ` +
+      `und für diese Step-Art gibt es noch keine Einstellungen.`,
+
+    // ------------------------------------------------------- the Step kinds
+    //
+    // A Step emits its findings as codes with structured values (AD-13); the
+    // sentences are here, beside the graph's, because a Step's mark is rendered
+    // on the same card by the same map. `column` is a name rather than an id —
+    // a column is not a Step and there is nothing to resolve it against.
+    'step.config_invalid': (v) =>
+      `Die Einstellungen dieses Steps sind unvollständig (${v.field}) — die vorherigen bleiben in Kraft.`,
+    'step.rename_collision': (v) =>
+      `Der Name ${q(v.name)} ist in diesem Step bereits vergeben — zwei Spalten können nicht gleich ` +
+      `heißen. Die vorherige Einstellung bleibt in Kraft.`,
+    'step.unknown_column': (v) =>
+      `Es gibt keine Spalte ${q(v.column)} mehr im Eingang dieses Steps — bitte die Einstellungen prüfen.`,
+    // CAP-15's refusal, and it names **both** types: one alone leaves the user
+    // guessing which half to change.
+    'step.type_mismatch': (v) =>
+      `Spalte ${q(v.column)} hat den Typ ${typeLabel(v.columnType)}, der Vergleichswert ist ` +
+      `${valueTypeText(v.valueType)}. querbeet rechnet hier nichts um — bitte den Wert anpassen.`,
+    'step.value_unreadable': (v) =>
+      `Der Vergleichswert ${q(String(v.value))} für Spalte ${q(v.column)} lässt sich nicht als ` +
+      `${typeLabel(v.type)} lesen. Erwartet wird ${temporalFormText(v.type)}.`,
+    // The verb follows the number here too: a Filter that removes nothing over a
+    // one-row table is not an exotic case, it is the first thing a person builds.
+    'step.rows_removed': (v) =>
+      v.removed === 0
+        ? `Keine Zeile entfernt — ${rows(v.kept)} ${v.kept === 1 ? 'bleibt' : 'bleiben'} übrig.`
+        : `${rows(v.removed)} entfernt, ${rows(v.kept)} übrig.`,
+    // The box never silently passes as text, and this is where that promise is
+    // kept in words: the rows are named as dropped and the reason is the type.
+    // German counts one of a thing differently, and the *verb* has to follow the
+    // number as well as the noun — "1 Zeile wurden" is what a plural-only
+    // sentence produces, and one unreadable value is the ordinary case.
+    'step.boxed_rows_dropped': (v) =>
+      v.rows === 1
+        ? `1 Zeile wurde nicht verglichen, weil ihr Wert unter dem bestätigten Typ nicht lesbar ` +
+          `ist — sie ist aus dem Ergebnis dieses Steps ausgeschlossen.`
+        : `${rows(v.rows)} wurden nicht verglichen, weil ihr Wert unter dem bestätigten Typ nicht ` +
+          `lesbar ist — sie sind aus dem Ergebnis dieses Steps ausgeschlossen.`,
+
+    // --------------------------------------------------------- the execution
+    'exec.source_unconfirmed': (v, nameOf) =>
+      `${step(nameOf, v.id)} ist noch nicht bestätigt — ohne Bestätigung rechnet querbeet nicht. ` +
+      `Bitte unter „Quellen“ die Spaltentypen bestätigen.`,
+    'exec.kind_not_executable': (v, nameOf) =>
+      `${step(nameOf, v.id)} ist eine ${kindLabel(v.kind)} — diese Step-Art kann querbeet noch nicht ` +
+      `ausführen. Solange sie zum Ergebnis beiträgt, wird nichts gerechnet.`,
+    'exec.input_missing': (v, nameOf) =>
+      `${step(nameOf, v.id)} hat an Eingang ${v.slot + 1} nichts liegen — dieser Step wurde nicht gerechnet.`,
+    'exec.input_failed': (v, nameOf) =>
+      `${step(nameOf, v.id)} konnte nicht gerechnet werden: ${step(nameOf, v.upstream)} an Eingang ` +
+      `${v.slot + 1} hat kein Ergebnis geliefert.`,
   }),
 )
+
+/** The German for the *kind* of value a comparison carried. Three words, because
+ *  `valueKind` in `core/steps/filter.js` answers in three — and `unknown` is the
+ *  fourth state, where the config holds something that is no comparison value at
+ *  all. */
+const VALUE_TYPE = Object.freeze(
+  Object.assign(Object.create(null), {
+    number: 'eine Zahl',
+    text: 'ein Text',
+    boolean: 'ein Wahrheitswert',
+    unknown: 'kein vergleichbarer Wert',
+  }),
+)
+
+const valueTypeText = (kind) =>
+  Object.hasOwn(VALUE_TYPE, kind) ? VALUE_TYPE[kind] : 'ein Wert anderer Art'
+
+/** What a temporal comparison value has to look like. Named rather than merely
+ *  refused: „lässt sich nicht lesen" without the expected shape is a dead end. */
+const TEMPORAL_FORM = Object.freeze(
+  Object.assign(Object.create(null), {
+    date: 'JJJJ-MM-TT (zum Beispiel 2025-12-31)',
+    datetime: 'JJJJ-MM-TT HH:MM (zum Beispiel 2025-12-31 14:30)',
+    time: 'HH:MM (zum Beispiel 14:30)',
+    duration: 'Stunden:Minuten (zum Beispiel 36:30)',
+  }),
+)
+
+const temporalFormText = (type) =>
+  Object.hasOwn(TEMPORAL_FORM, type) ? TEMPORAL_FORM[type] : 'die kanonische Schreibweise'
 
 /**
  * The German sentence for a Diagnostic out of `core/graph`.
@@ -135,9 +289,18 @@ export const graphText = (diagnostic, nameOf = (id) => id) =>
     ? GERMAN[diagnostic.code](diagnostic.values, nameOf)
     : 'Unbekannte Meldung aus dem Kern.'
 
-/** Every code `core/graph` can emit that this file has no sentence for. Empty is
- *  the rule, and a test asserts it. */
-export const graphLabelGaps = () => GRAPH_CODES.filter((code) => !Object.hasOwn(GERMAN, code))
+/**
+ * Every code the Editor can put on screen that this file has no sentence for.
+ * Empty is the rule, and a test asserts it.
+ *
+ * Three enumerations rather than one, because three modules emit into this map:
+ * the graph model, the Step kinds and the executor. Each builds its list out of
+ * the constants its own emit sites use, so none of them can drift from what it
+ * actually emits — and adding a fourth producer means adding it here, which is a
+ * visible edit rather than a silent gap.
+ */
+export const graphLabelGaps = () =>
+  [...GRAPH_CODES, ...STEP_CODES, ...EXEC_CODES].filter((code) => !Object.hasOwn(GERMAN, code))
 
 /** Every severity gets a German label and its own colour: CAP-34 requires a
  *  glance-level distinction, and an enum rendered raw is the core talking to the

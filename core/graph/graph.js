@@ -52,6 +52,7 @@ export const CODE = Object.freeze({
   unknownKind: 'graph.unknown_kind',
   duplicateId: 'graph.duplicate_id',
   sourceNotRemovable: 'graph.source_not_removable',
+  notConfigurable: 'graph.not_configurable',
 
   // reports — what the graph says about itself after a change
   inputLost: 'graph.input_lost',
@@ -59,6 +60,7 @@ export const CODE = Object.freeze({
   inputReplaced: 'graph.input_replaced',
   orphan: 'graph.orphan',
   noResult: 'graph.no_result',
+  duplicateUpstream: 'graph.duplicate_upstream',
 })
 
 /** The enumeration `ui/graph-labels.js` checks itself against. */
@@ -81,7 +83,7 @@ export const findNode = (graph, id) => graph.nodes.find((n) => n.id === id) ?? n
  * `minInputs` and not `maxInputs`: a Union starts at two and grows, and a kind
  * whose maximum is `Infinity` has no number to start from anyway.
  */
-export function makeNode(kind, { id, name, x = 0, y = 0, inputs } = {}) {
+export function makeNode(kind, { id, name, x = 0, y = 0, inputs, config = null } = {}) {
   const spec = kindSpec(kind)
   const slots = inputs ? inputs.length : (spec?.minInputs ?? 0)
   return {
@@ -91,6 +93,12 @@ export function makeNode(kind, { id, name, x = 0, y = 0, inputs } = {}) {
     x,
     y,
     inputs: inputs ? [...inputs] : new Array(slots).fill(null),
+    // A Step's body, and this file's one opaque field. `null` is "nothing chosen
+    // yet"; every executor reads its own `defaultConfig()` for that, so a Step
+    // added from the toolbar is immediately runnable rather than a hole in the
+    // chain. What is *in* the object is `core/steps/`'s business — the graph
+    // stores it, freezes it and hands it back, and never looks inside.
+    config,
   }
 }
 
@@ -282,6 +290,24 @@ export function moveNode(graph, id, x, y) {
   return done()
 }
 
+/**
+ * Store a Step's configuration. **Opaque**: this file neither reads nor
+ * understands the object, it freezes it and puts it on the node.
+ *
+ * The validation that decides whether an object is a configuration at all lives
+ * in `core/steps/`, and the store asks it before calling here — which is what
+ * keeps `core/graph/` free of every Step body and keeps `kinds.js` arity-only.
+ * A Source is refused: its body is its typing, which the Source store owns, and a
+ * second place to configure one would be a second owner of Step zero.
+ */
+export function configureStep(graph, id, config) {
+  const node = findNode(graph, id)
+  if (!node) return refused(error(CODE.unknownStep, { id }))
+  if (node.kind === 'source') return refused(error(CODE.notConfigurable, { id, kind: node.kind }))
+  node.config = config === null ? null : Object.freeze(config)
+  return done()
+}
+
 export function setResult(graph, id) {
   const node = findNode(graph, id)
   if (!node) return refused(error(CODE.unknownStep, { id }))
@@ -418,6 +444,32 @@ export function graphDiagnostics(graph) {
       )
     }
   }
+  // One upstream Step consumed in two or more slots. **Decided 2026-08-04 with
+  // the project owner: allowed, with a warning.** A Union of a table with itself
+  // is a legitimate way to double a dataset — and refusing it here would also
+  // have to decide what a Join of a Step with itself means — but silent
+  // duplication is not something anybody meant. It is derived like every other
+  // mark, so it is visible on the card *before* a run rather than only at the
+  // moment of execution.
+  for (const node of graph.nodes) {
+    const slotsOf = new Map()
+    node.inputs.forEach((sourceId, slot) => {
+      if (!sourceId) return
+      const slots = slotsOf.get(sourceId)
+      if (slots) slots.push(slot)
+      else slotsOf.set(sourceId, [slot])
+    })
+    for (const [upstream, slots] of slotsOf) {
+      if (slots.length < 2) continue
+      out.push(
+        warning(
+          CODE.duplicateUpstream,
+          { id: node.id, upstream, slots: Object.freeze(slots) },
+          { stepId: node.id },
+        ),
+      )
+    }
+  }
   for (const id of orphans(graph)) {
     out.push(info(CODE.orphan, { id }, { stepId: id }))
   }
@@ -464,6 +516,9 @@ export function findCycle(graph) {
   return found
 }
 
+// `config` is carried by the spread and is deliberately *not* copied: it is
+// frozen at the point `configureStep` stores it, so sharing the reference is what
+// makes a clone cheap without making it a second writer.
 export const cloneGraph = (graph) => ({
   nodes: graph.nodes.map((n) => ({ ...n, inputs: [...n.inputs] })),
   resultId: graph.resultId,
@@ -472,9 +527,26 @@ export const cloneGraph = (graph) => ({
 
 // --- placement ------------------------------------------------------------
 
-/** The grid a new Step is placed on. Wide enough that two cards do not touch at
- *  the zoom the canvas opens at. */
-export const PLACEMENT = Object.freeze({ x0: 40, y0: 40, dx: 320, dy: 150, near: 140 })
+/**
+ * The grid a new Step is placed on. Wide enough that two cards do not touch at
+ * the zoom the canvas opens at.
+ *
+ * **The row pitch was 150 px and a card is taller than that**, which is a measured
+ * overlap rather than a theoretical one: a Filter card renders at 151 px with one
+ * slot row and a card carrying a slot row and a mark at 187 px, so two Steps in
+ * one column overlapped by up to ~37 px — and the upper card then swallowed the
+ * pointer aimed at the lower one's Ergebnis button. It went unnoticed until story
+ * 6b because nothing had ever needed to click a Step rather than a control inside
+ * it; the side panel takes its subject from the canvas's selection, so something
+ * finally did. 200 clears the tallest card this build renders, and `near` follows
+ * it so the free-cell scan and the pitch agree about what "occupied" means.
+ *
+ * It is a pitch rather than a measurement, and that is the standing limitation: a
+ * card taller than 200 px — several marks at once — would overlap again. Measuring
+ * the rendered height would mean the model asking the DOM, which AD-2 forbids
+ * outright, so the honest fix is a layout pass in `ui/` and it is in the ledger.
+ */
+export const PLACEMENT = Object.freeze({ x0: 40, y0: 40, dx: 320, dy: 200, near: 180 })
 
 /**
  * Where a new node goes, **derived from the nodes already in the graph**.

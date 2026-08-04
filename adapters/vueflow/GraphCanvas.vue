@@ -52,7 +52,7 @@ const props = defineProps({
   guard: { type: Function, required: true },
 })
 
-const emit = defineEmits(['move', 'remove', 'disconnect', 'connect', 'refused'])
+const emit = defineEmits(['move', 'remove', 'disconnect', 'connect', 'refused', 'select'])
 
 // Resolved here, in setup, and nowhere else (rule 4).
 const vf = useVueFlow()
@@ -71,6 +71,28 @@ const {
   getSelectedNodes,
   getSelectedEdges,
 } = vf
+
+// ---------------------------------------------------------------- selection
+//
+// What the host is told after a selection change, and it is an **id**, never a
+// node: selection state stays the library's (the `select` change is handed back
+// below and this file remains its only owner), and the host mirrors the id so its
+// side panel has a subject. The last selected wins, because the panel shows one
+// Step and a multi-selection has no single answer — and an empty selection is
+// `null` rather than an absent report, so a click on the background closes the
+// panel.
+//
+// Declared above the projection watcher on purpose: that watcher is `immediate`,
+// so it runs during `setup` and a `const` declared below it would be in its
+// temporal dead zone.
+let reportedSelection = null
+
+const reportSelection = () => {
+  const id = getSelectedNodes.value.at(-1)?.id ?? null
+  if (id === reportedSelection) return
+  reportedSelection = id
+  emit('select', id)
+}
 
 // ---------------------------------------------------------------- projection
 
@@ -102,6 +124,11 @@ watch(
   ([nodes, edges]) => {
     setNodes(nodes)
     setEdges(edges)
+    // A removed Step reports a `remove` change, never a `select` one, so nothing
+    // else would tell the host that what its panel is showing has ceased to
+    // exist. Re-reading the selection after every projection covers that without
+    // a second rule about removals.
+    reportSelection()
   },
   { immediate: true, flush: 'post' },
 )
@@ -121,7 +148,10 @@ onNodesChange((changes) => {
   for (const at of positionChanges(changes)) emit('move', at.id, at.x, at.y)
   router.nodeRemovals(changes)
   const view = viewStateChanges(changes)
-  if (view.length) applyNodeChanges(view)
+  if (view.length) {
+    applyNodeChanges(view)
+    reportSelection()
+  }
 })
 
 onEdgesChange((changes) => {

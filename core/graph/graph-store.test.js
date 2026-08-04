@@ -384,3 +384,113 @@ describe('leaving and re-entering the Editor', () => {
     expect(store.resultId()).toBe(union)
   })
 })
+
+// ------------------------------------------------------- story 6b: the body
+//
+// `configureStep` is the one door a Step's body goes through. What is asserted
+// here is the division of labour: the registry decides whether an object is a
+// configuration, the graph stores it opaquely, and a refusal changes nothing.
+
+describe('configureStep', () => {
+  const store = () => createGraphStore()
+
+  it('stores a validated config, frozen, and hands the same object back', () => {
+    const graph = store()
+    const filter = graph.addStep('filter', { name: 'Nur Große' }).id
+    const config = { combine: 'all', conditions: [{ column: 'Betrag', op: 'gt', value: 1000 }] }
+
+    expect(graph.configureStep(filter, config).ok).toBe(true)
+    expect(graph.get(filter).config).toBe(config)
+    expect(Object.isFrozen(graph.get(filter).config)).toBe(true)
+  })
+
+  it('opens with no config at all, so a kind can supply its own default', () => {
+    const graph = store()
+    expect(graph.get(graph.addStep('filter').id).config).toBeNull()
+  })
+
+  it('refuses through the registry, and the previous config stays in force', () => {
+    const graph = store()
+    const columns = graph.addStep('columns', { name: 'Spalten' }).id
+    const good = { columns: [{ from: 'a', to: 'a' }] }
+    graph.configureStep(columns, good)
+
+    const refused = graph.configureStep(columns, {
+      columns: [
+        { from: 'a', to: 'x' },
+        { from: 'b', to: 'x' },
+      ],
+    })
+
+    expect(refused.ok).toBe(false)
+    expect(refused.diagnostics[0]).toMatchObject({
+      code: 'step.rename_collision',
+      values: { name: 'x' },
+    })
+    expect(graph.get(columns).config).toBe(good)
+  })
+
+  it('refuses a kind with no executor and a Source, naming what has nothing to set', () => {
+    const graph = store()
+    graph.syncSources([{ id: 'src:a', name: 'A' }])
+    const union = graph.addStep('union', { name: 'Halbjahr' }).id
+
+    expect(graph.configureStep(union, {}).diagnostics[0]).toMatchObject({
+      code: CODE.notConfigurable,
+      values: { id: union, kind: 'union' },
+    })
+    expect(graph.configureStep('src:a', {}).diagnostics[0]).toMatchObject({
+      code: CODE.notConfigurable,
+    })
+  })
+
+  it('refuses an unknown id rather than throwing, like every other command', () => {
+    expect(store().configureStep('ghost', {}).diagnostics[0]).toMatchObject({
+      code: CODE.unknownStep,
+    })
+  })
+
+  it('takes null as the reset, back to whatever the kind proposes', () => {
+    const graph = store()
+    const filter = graph.addStep('filter').id
+    graph.configureStep(filter, { combine: 'any', conditions: [] })
+
+    expect(graph.configureStep(filter, null).ok).toBe(true)
+    expect(graph.get(filter).config).toBeNull()
+  })
+})
+
+describe('one upstream in two slots', () => {
+  it('is allowed, and the graph warns before anything is executed', () => {
+    // Decided 2026-08-04 with the project owner: a Union of a table with itself
+    // is a legitimate way to double a dataset, and silent duplication is not.
+    // The mark is derived per commit like every other, so it is on the card
+    // before a run rather than only at the moment of execution.
+    const graph = createGraphStore()
+    graph.syncSources([{ id: 'src:q1', name: 'Umsatz Q1' }])
+    const union = graph.addStep('union', { name: 'Halbjahr' }).id
+
+    expect(graph.connect('src:q1', union, 0).ok).toBe(true)
+    expect(graph.connect('src:q1', union, 1).ok).toBe(true)
+
+    const mark = graph.diagnostics().find((d) => d.code === CODE.duplicateUpstream)
+    expect(mark).toMatchObject({
+      severity: 'warning',
+      values: { id: union, upstream: 'src:q1', slots: [0, 1] },
+      stepId: union,
+    })
+  })
+
+  it('says nothing where two slots hold two different Steps', () => {
+    const graph = createGraphStore()
+    graph.syncSources([
+      { id: 'src:a', name: 'A' },
+      { id: 'src:b', name: 'B' },
+    ])
+    const union = graph.addStep('union', { name: 'Halbjahr' }).id
+    graph.connect('src:a', union, 0)
+    graph.connect('src:b', union, 1)
+
+    expect(graph.diagnostics().some((d) => d.code === CODE.duplicateUpstream)).toBe(false)
+  })
+})

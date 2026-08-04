@@ -87,8 +87,14 @@ describe('a new node', () => {
     expect(makeNode('source', { id: 's' }).inputs).toEqual([])
   })
 
-  it('carries ids and positions and nothing else — no table, no row, no handle', () => {
+  it('carries ids, positions and an opaque config — no table, no row, no handle', () => {
+    // `config` joined the list in story 6b and it is the one field this module
+    // never looks inside: `core/steps/` decides what a Filter's conditions are,
+    // the graph stores the object frozen and hands it back. What may *not* be
+    // here is a table, a row or a `Table` handle (AD-6), which is what makes "a
+    // Recipe contains no data" structural rather than a stripping step.
     expect(Object.keys(makeNode('filter', { id: 'f' })).sort()).toEqual([
+      'config',
       'id',
       'inputs',
       'kind',
@@ -96,6 +102,7 @@ describe('a new node', () => {
       'x',
       'y',
     ])
+    expect(makeNode('filter', { id: 'f' }).config).toBeNull()
   })
 })
 

@@ -211,6 +211,61 @@ export function sliceMarks(marks, columnCount, start, end) {
 }
 
 /**
+ * A bounded columnar view of an engine `Table`, for a Step's own preview.
+ *
+ * `buildWindow` above reads a **columnar** table — `{ columns: [{ name, cells }],
+ * rowCount }` — which is what a `SourceReader` delivers and what the Sources pane
+ * has always handed it. A Step's output is a `Table` handle instead (AD-5), whose
+ * only row-shaped door is `rows()`, so something has to bridge the two.
+ *
+ * **It is bounded, and the bound is the whole design.** `column(name)` re-extracts
+ * and re-copies a whole column on every call, so building a columnar view of a
+ * 100,000-row output would copy the entire table once per Step per render; and
+ * `rows()` is a generator, so reading the first `limit` rows of a hundred thousand
+ * costs `limit` rows. The counts CAP-19 asks for are the Step's **full** output
+ * and are read off `rowCount()` and `schema()` without materializing anything —
+ * so the numbers are complete while the grid shows a window, which is exactly the
+ * split AD-5 puts on the interface.
+ *
+ * Values are machine values, not text: a temporal cell is a `BigInt` and a box has
+ * already materialized as its original text at the handle's edge. `ui/cell-text.js`
+ * is what turns either into German — the projection is a `ui/` concern, and a
+ * German string produced here would be the core talking to the user (AD-13).
+ *
+ * @param {import('../../ports/index.js').Table} table
+ * @param {number} limit how many rows to materialize
+ * @returns {{ columns: ReadonlyArray<{ name: string, type: string, cells: ReadonlyArray<unknown> }>,
+ *            rowCount: number, totalRows: number }}
+ *   `rowCount` is what the grid may address — the rows actually here — while
+ *   `totalRows` is the Step's own count, so a caller can say which is which.
+ */
+export function previewColumns(table, limit = WINDOW_SIZE) {
+  const schema = table.schema()
+  const total = count(table.rowCount())
+  const wanted = Math.min(count(limit), total)
+
+  const cells = schema.map(() => new Array(wanted))
+  let r = 0
+  if (wanted > 0) {
+    for (const row of table.rows()) {
+      for (let c = 0; c < schema.length; c += 1) cells[c][r] = row[schema[c].name]
+      r += 1
+      if (r >= wanted) break
+    }
+  }
+
+  return Object.freeze({
+    columns: Object.freeze(
+      schema.map((column, c) =>
+        Object.freeze({ name: column.name, type: column.type, cells: Object.freeze(cells[c]) }),
+      ),
+    ),
+    rowCount: r,
+    totalRows: total,
+  })
+}
+
+/**
  * The whole projection in one pure step: everything a view needs to render
  * `table` at `page` and `scrollTop`.
  *

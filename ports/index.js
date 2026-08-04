@@ -125,7 +125,48 @@
  * is what keeps the converted column at one copy rather than two — the registry's
  * raw text (AD-7) is the only other one, and nothing ever holds a third.
  *
+ * **`filter` and `selectColumns` are the two operations story 6b added, and they
+ * exist so that a Step kind never touches a cell.** Both take a `Table` this
+ * engine produced — a handle from another engine is a caller's bug and throws.
+ *
+ *   filter(table, { conditions, combine })
+ *     `conditions` is `[{ column, op, value }]` in **canonical machine form**
+ *     (CAP-15): a number is a `number`, a text value a string, a boolean a
+ *     boolean, and a temporal value an ISO 8601 **string** — never a display
+ *     form and never a `BigInt`, because `core/` may not construct one. The
+ *     adapter converts a temporal comparison value to nanoseconds **once** per
+ *     condition, on this side of the port. `combine` is `'all'` or `'any'`.
+ *
+ *     `op` is one of `eq ne lt lte gt gte empty not_empty`. `empty` matches
+ *     `null`, the empty string and a whitespace-only string alike; `not_empty`
+ *     is its exact complement **over non-boxed values**. A `null` cell matches
+ *     no ordering or equality operator — `null < 5` is `true` in JavaScript and
+ *     that is not a comparison anybody asked for.
+ *
+ *     **A box matches no operator** (AD-22), which is why the return value is
+ *     not a bare Table: only this side of the port can see a box, so only it can
+ *     count the rows a box excluded. The return is
+ *
+ *       { table, removed, boxed, unreadable }
+ *
+ *     `removed` is how many rows the filter took out, `boxed` how many of those
+ *     were excluded with a box in one of the compared columns, and `unreadable`
+ *     names the conditions whose temporal value could not be read as ISO 8601
+ *     (`[{ column, type, value }]`). When `unreadable` is non-empty `table` is
+ *     `null` — a filter nobody can evaluate produces no table rather than a
+ *     silently different one. The three counters are plain numbers and plain
+ *     data: `core/` mints the Diagnostics from them (AD-13).
+ *
+ *   selectColumns(table, ordered)
+ *     `ordered` is `[{ from, to }]` and **its order is the output column order**
+ *     (CAP-16). A `to` that repeats, or a `from` no column answers to, is a
+ *     caller's bug and throws: both are refused one layer up, at configure time
+ *     and at execution respectively, where the refusal can be a Diagnostic.
+ *     Columns are shared with the input table rather than copied.
+ *
  * @property {(columns: ReadonlyArray<EngineColumn>) => Table} fromColumns
+ * @property {(table: Table, spec: { conditions: ReadonlyArray<{ column: string, op: string, value?: unknown }>, combine: 'all' | 'any' }) => { table: Table|null, removed: number, boxed: number, unreadable: ReadonlyArray<{ column: string, type: string, value: unknown }> }} filter
+ * @property {(table: Table, ordered: ReadonlyArray<{ from: string, to: string }>) => Table} selectColumns
  */
 
 /**
@@ -180,14 +221,16 @@
  * a German word: the view renders a per-node body from a scoped slot the host
  * supplies, so no prose reaches the adapter (AD-13).
  *
- * **What the host receives.** Five reports, each already interpreted — three
- * about what changed and two about the pointer gesture that connects:
+ * **What the host receives.** Six reports, each already interpreted — three
+ * about what changed, two about the pointer gesture that connects, and one about
+ * where the user is looking:
  *
  *   move        (id, x, y)                 a Step was dragged or arrow-keyed
  *   remove      (id)                       a Step was deleted
  *   disconnect  (target, slot)             an edge was deleted *by the user*
  *   connect     (source, target, slot)     a drop the guard accepted
  *   refused     (source, target, slot)     a drop the guard turned down
+ *   select      (id | null)                the selected Step, or none
  *
  * `refused` exists because a refused drop never reaches `connect`, and the
  * gesture is where the user finds out. It carries the connection that was
@@ -217,8 +260,14 @@
  * where a cycle guard evaluates edges that already exist and silently drops the
  * whole graph. And the per-node body, as a scoped slot receiving the node.
  *
- * Selection is view state and stays the library's; it is the one thing the host
- * hands back, and only that.
+ * **Selection state stays the library's, and the host is told which Step it is.**
+ * The `select` change is still the one thing handed back to the library, so the
+ * adapter remains the only owner of what is highlighted — but story 6b's per-Step
+ * configuration and preview live in a side panel outside the canvas, and a panel
+ * that cannot learn which Step the user selected is a panel with no subject. So
+ * the id crosses outward as one report and nothing else does: the host mirrors
+ * the id, never a node, and it never pushes a selection back in. A deselection —
+ * a click on the background, the selected Step removed — reports `null`.
  */
 
 /**
