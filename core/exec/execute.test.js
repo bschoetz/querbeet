@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { CODE, executeGraph } from './execute.js'
+import { createRunCache } from './cache.js'
 import { createGraphStore } from '../graph/graph-store.js'
 
 const { createArqueroEngine } = await import('../../adapters/arquero/engine.js')
@@ -427,5 +428,260 @@ describe('what the run carries out of a Step', () => {
     // being built.
     expect(out.results.get(columns).rowCount).toBe(4)
     expect(out.results.get(columns).columnCount).toBe(2)
+  })
+})
+
+// ------------------------------------------------ AD-8's per-Step cache (7a)
+//
+// A cached run and an uncached run must be indistinguishable except in time, so
+// every case below is either "nothing was computed" — counted at the engine,
+// because a cache that cannot be observed to hit is a cache nobody can trust —
+// or "what came back is what came back the first time", diagnostics included.
+
+describe('the per-Step cache', () => {
+  /** The real engine with its two verbs counted. A stub would be a second
+   *  opinion about what a Step produces; what is under test is how often. */
+  const countingEngine = () => {
+    const calls = { filter: 0, selectColumns: 0 }
+    return {
+      ...engine,
+      calls,
+      filter: (...args) => {
+        calls.filter += 1
+        return engine.filter(...args)
+      },
+      selectColumns: (...args) => {
+        calls.selectColumns += 1
+        return engine.selectColumns(...args)
+      },
+    }
+  }
+
+  /**
+   * A run against a cache, with the Source's key handed in as a plain string.
+   *
+   * The key is a *parameter of the test* rather than something derived here, and
+   * that is the point of the seam: `executeGraph` asks what a Source is and does
+   * not know how the answer is computed. Changing `sourceKey` between two runs is
+   * exactly what a re-parse looks like from in here.
+   */
+  const runCached = (graph, { cache, engine: e, sourceKey = () => 'src-key-1', table }) =>
+    executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine: e,
+      sourceTable: () => table ?? REPORT(),
+      cache,
+      sourceKey,
+    })
+
+  /** The chain, configured, so both Steps do real work worth not repeating. */
+  const configured = (value = 1000) => {
+    const { graph, filter, columns } = chain()
+    graph.configureStep(filter, {
+      combine: 'all',
+      conditions: [{ column: 'Betrag', op: 'eq', value }],
+    })
+    graph.configureStep(columns, { columns: [{ from: 'Kunde', to: 'Name' }] })
+    return { graph, filter, columns }
+  }
+
+  it('computes nothing on a repeat run with nothing changed', () => {
+    const { graph } = configured()
+    const cache = createRunCache()
+    const e = countingEngine()
+
+    runCached(graph, { cache, engine: e })
+    expect(e.calls).toEqual({ filter: 1, selectColumns: 1 })
+
+    runCached(graph, { cache, engine: e })
+    expect(e.calls).toEqual({ filter: 1, selectColumns: 1 })
+  })
+
+  it('gives the repeat run the same rows, counts and diagnostics — in order and stamped', () => {
+    // The acceptance criterion this whole story exists for: a repeat run must
+    // never report clean over a warning it did not re-emit (C-10). The Filter
+    // removes rows and says so, and that sentence has to be in the second run's
+    // stream exactly as it was in the first's.
+    const { graph, filter } = configured()
+    const cache = createRunCache()
+    const e = countingEngine()
+
+    const first = runCached(graph, { cache, engine: e })
+    const second = runCached(graph, { cache, engine: e })
+
+    expect(first.results.get(filter).diagnostics.length).toBeGreaterThan(0)
+    expect(second.diagnostics).toEqual(first.diagnostics)
+    expect(second.results.get(filter).diagnostics).toEqual(first.results.get(filter).diagnostics)
+    for (const d of second.results.get(filter).diagnostics) expect(d.stepId).toBe(filter)
+    expect([...second.results.get(filter).table.rows()]).toEqual([
+      ...first.results.get(filter).table.rows(),
+    ])
+    expect(second.results.get(filter).rowCount).toBe(first.results.get(filter).rowCount)
+  })
+
+  it('hits again when a config comes back to a value it already had', () => {
+    const { graph, filter } = configured(1000)
+    const cache = createRunCache()
+    const e = countingEngine()
+
+    runCached(graph, { cache, engine: e })
+    graph.configureStep(filter, {
+      combine: 'all',
+      conditions: [{ column: 'Betrag', op: 'eq', value: 500 }],
+    })
+    runCached(graph, { cache, engine: e })
+    expect(e.calls.filter).toBe(2)
+
+    graph.configureStep(filter, {
+      combine: 'all',
+      conditions: [{ column: 'Betrag', op: 'eq', value: 1000 }],
+    })
+    const back = runCached(graph, { cache, engine: e })
+
+    expect(e.calls.filter).toBe(2) // the third state is the first state
+    expect(back.results.get(filter).rowCount).toBe(2)
+  })
+
+  it('computes nothing at all after a rename and a move', () => {
+    // The interim recompute rule already refuses to run for either
+    // (`ui/EditorPane.test.js`), and the cache must not weaken that from
+    // underneath: a name and a position are not in a key, so a run issued for
+    // any other reason still finds every Step waiting for it.
+    const { graph, filter, columns } = configured()
+    const cache = createRunCache()
+    const e = countingEngine()
+
+    runCached(graph, { cache, engine: e })
+    graph.renameStep(filter, 'Ganz andere Zeilen')
+    graph.moveStep(columns, 640, 480)
+    runCached(graph, { cache, engine: e })
+
+    expect(e.calls).toEqual({ filter: 1, selectColumns: 1 })
+  })
+
+  it('misses at every Step downstream when the Source was re-parsed', () => {
+    // The id did not change and must not decide. A delimiter correction changes
+    // what `key(source)` is, and every key below it is built out of that one.
+    const { graph, columns } = configured()
+    const cache = createRunCache()
+    const e = countingEngine()
+
+    runCached(graph, { cache, engine: e, sourceKey: () => 'before-the-delimiter-was-fixed' })
+    const after = runCached(graph, {
+      cache,
+      engine: e,
+      sourceKey: () => 'after-the-delimiter-was-fixed',
+    })
+
+    expect(e.calls).toEqual({ filter: 2, selectColumns: 2 })
+    expect(after.results.get(columns).rowCount).toBe(2)
+  })
+
+  it('treats a Step configured to its kind’s own default as unchanged', () => {
+    // `node.config ?? kind.defaultConfig()` is the trap: keying the raw field
+    // would make the first `configureStep` that writes the default look like a
+    // change and recompute a Step whose output is provably identical.
+    const { graph, filter } = chain()
+    const cache = createRunCache()
+    const e = countingEngine()
+
+    expect(graph.get(filter).config).toBeNull()
+    runCached(graph, { cache, engine: e })
+    expect(e.calls.filter).toBe(1)
+
+    graph.configureStep(filter, { combine: 'all', conditions: [] })
+    runCached(graph, { cache, engine: e })
+
+    expect(e.calls.filter).toBe(1)
+  })
+
+  it('recomputes an evicted Step to an identical result', () => {
+    // An eviction is a miss and never a wrong answer, which is the property that
+    // makes a bound safe to pick without knowing the graph.
+    const { graph, filter, columns } = configured()
+    const tiny = createRunCache({ maxRows: 1 })
+    const e = countingEngine()
+
+    const first = runCached(graph, { cache: tiny, engine: e })
+    expect(tiny.size()).toBe(1) // the Filter's 2 rows already pushed it over
+    const second = runCached(graph, { cache: tiny, engine: e })
+
+    expect(e.calls.filter).toBe(2) // evicted, so recomputed
+    expect(second.results.get(filter).rowCount).toBe(first.results.get(filter).rowCount)
+    expect(second.results.get(filter).diagnostics).toEqual(first.results.get(filter).diagnostics)
+    expect([...second.results.get(columns).table.rows()]).toEqual([
+      ...first.results.get(columns).table.rows(),
+    ])
+  })
+
+  it('stores nothing for a Step that threw, so the next run says the same thing', () => {
+    const { graph, filter } = configured()
+    const cache = createRunCache()
+    let thrown = 0
+    const throwing = {
+      ...engine,
+      filter: () => {
+        thrown += 1
+        throw new TypeError('a table cannot hold two columns called Betrag')
+      },
+    }
+
+    const first = runCached(graph, { cache, engine: throwing })
+    const second = runCached(graph, { cache, engine: throwing })
+
+    expect(thrown).toBe(2)
+    expect(cache.size()).toBe(0)
+    expect(codesOf(second.results.get(filter).diagnostics)).toEqual([CODE.stepThrew])
+    expect(second.results.get(filter).diagnostics).toEqual(first.results.get(filter).diagnostics)
+  })
+
+  it('neither reads nor writes when a gate refuses the run', () => {
+    const { graph } = configured()
+    const cache = createRunCache()
+
+    const out = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => null, // unconfirmed: gate 1 refuses
+      cache,
+      sourceKey: () => 'src-key-1',
+    })
+
+    expect(out.ok).toBe(false)
+    expect(cache.size()).toBe(0)
+  })
+
+  it('caches nothing below a Source it cannot key, rather than guessing one', () => {
+    const { graph } = configured()
+    const cache = createRunCache()
+    const e = countingEngine()
+
+    runCached(graph, { cache, engine: e, sourceKey: () => null })
+    runCached(graph, { cache, engine: e, sourceKey: () => null })
+
+    expect(cache.size()).toBe(0)
+    expect(e.calls).toEqual({ filter: 2, selectColumns: 2 })
+  })
+
+  it('computes every Step when there is no cache — the parameter is a door, not a mode', () => {
+    const { graph } = configured()
+    const e = countingEngine()
+
+    executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine: e,
+      sourceTable: () => REPORT(),
+    })
+    executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine: e,
+      sourceTable: () => REPORT(),
+    })
+
+    expect(e.calls).toEqual({ filter: 2, selectColumns: 2 })
   })
 })

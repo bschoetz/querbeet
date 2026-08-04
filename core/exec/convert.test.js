@@ -21,7 +21,8 @@
 import { describe, expect, it } from 'vitest'
 import { BOOLEAN, DATE, DATETIME, DURATION, NUMBER, TEXT, TIME } from '../types/catalog.js'
 import { bestFormat, detectColumn, scoreColumn } from '../types/typing.js'
-import { convertSource, createStepZeroCache } from './convert.js'
+import { digest } from './cache-key.js'
+import { convertSource, createStepZeroCache, stepZeroKey } from './convert.js'
 
 /** An engine that hands the columns straight back, so a test can read what the
  *  conversion actually built rather than what a table lets it see again. */
@@ -51,8 +52,16 @@ const recordingEngine = () => {
  * % readable and is proposed as `text`, so a fixture that short would be testing
  * the text path under a number column's name.
  */
-const confirmed = (columns, { id = 'src:daten' } = {}) => ({
+const confirmed = (columns, { id = 'src:daten', parseConfig, encoding } = {}) => ({
   id,
+  // The three fields story 7a's `key(source)` is built out of, and the digest is
+  // **derived from the cells** rather than being a constant: in the store the
+  // cells *are* the bytes parsed, so a fixture holding one digest over two
+  // different tables would be a state the product cannot produce and would let a
+  // cache case pass on a collision the real thing never has.
+  byteDigest: digest(JSON.stringify(columns)),
+  parseConfig: parseConfig ?? { delimiter: ',', headerRow: 1, sheet: null },
+  encoding: encoding ?? { chosen: 'utf-8', source: 'probe', override: null },
   table: {
     columns: columns.map((c) => ({ name: c.name, domain: c.domain ?? TEXT, cells: c.cells })),
     rowCount: columns[0]?.cells.length ?? 0,
@@ -489,7 +498,7 @@ describe('what is not converted at all', () => {
 })
 
 describe('the Step-zero cache', () => {
-  it('converts once per frozen entry', () => {
+  it('converts once per Source content', () => {
     const engine = recordingEngine()
     const cache = createStepZeroCache(engine)
     const entry = confirmed([{ name: 'Betrag', cells: ['1,5', 'abc'] }])
@@ -501,10 +510,11 @@ describe('the Step-zero cache', () => {
     expect(engine.seen).toHaveLength(1)
   })
 
-  it('converts again when the registry hands out a different entry', () => {
-    // Entry identity *is* the invalidation rule: `commit` freezes and mints a new
-    // entry for every change, so a different object is a different answer and
-    // nothing has to be told when a type or an encoding moved.
+  it('answers a copy of the same entry from the cache — identity no longer decides', () => {
+    // Until story 7a the key *was* the frozen entry object, so `{...entry}` — the
+    // same Source, spread — converted a second time. `commit` mints a new entry
+    // for every change, which made that sound and narrow: it could never be
+    // lifted to Steps, where `freezeStep` mints a new object for a rename too.
     const engine = recordingEngine()
     const cache = createStepZeroCache(engine)
     const entry = confirmed([{ name: 'Betrag', cells: ['1,5', 'abc'] }])
@@ -512,8 +522,76 @@ describe('the Step-zero cache', () => {
     cache.of(entry)
     cache.of({ ...entry })
 
-    expect(engine.seen).toHaveLength(2)
+    expect(engine.seen).toHaveLength(1)
     expect(cache.size()).toBe(1)
+  })
+
+  it('converts again when the typing moved, and answers from one slot per Source', () => {
+    const engine = recordingEngine()
+    const cache = createStepZeroCache(engine)
+    const entry = confirmed([{ name: 'Betrag', cells: ['1,5', 'abc'] }])
+
+    cache.of(entry)
+    // A missing token declared: part of the typing, and it changes which cells
+    // become `null` — so it is exactly the kind of edit that must not be served
+    // from the conversion made before it.
+    const retyped = {
+      ...entry,
+      typing: {
+        ...entry.typing,
+        columns: [{ ...entry.typing.columns[0], missingTokens: ['abc'] }],
+      },
+    }
+    cache.of(retyped)
+
+    expect(engine.seen).toHaveLength(2)
+    expect(cache.size()).toBe(1) // replaced, not accumulated
+  })
+
+  it('converts again when the same table was re-parsed under another encoding', () => {
+    // The case a `parseConfig`-only key would get wrong: identical bytes,
+    // identical delimiter and header row, a different decoding — and therefore a
+    // different table from the same everything else.
+    const engine = recordingEngine()
+    const cache = createStepZeroCache(engine)
+    const entry = confirmed([{ name: 'Betrag', cells: ['1,5', 'abc'] }])
+
+    cache.of(entry)
+    cache.of({ ...entry, encoding: { chosen: 'windows-1252', source: 'override', override: 'windows-1252' } })
+
+    expect(engine.seen).toHaveLength(2)
+  })
+
+  it('has no key for an entry whose bytes nobody digested, and never serves one', () => {
+    // Not a state the store can produce — every entry it mints carries a digest
+    // — and the answer is a miss rather than a guess: two undigested Sources
+    // would otherwise share a key and one would be served as the other.
+    const engine = recordingEngine()
+    const cache = createStepZeroCache(engine)
+    const entry = confirmed([{ name: 'Betrag', cells: ['1,5', 'abc'] }])
+    const undigested = { ...entry, byteDigest: undefined }
+
+    expect(stepZeroKey(undigested)).toBeNull()
+    cache.of(undigested)
+    cache.of(undigested)
+    expect(engine.seen).toHaveLength(2)
+  })
+
+  it('never lets a Source id decide, so two Sources of one content stay two', () => {
+    // AD-8's rule from the other side: the id is not in the key, and it is also
+    // not what a hit is decided by. Two Sources holding the very same bytes and
+    // the very same typing share a key and still hold a slot each, because a
+    // slot belongs to a Source and a key describes a value.
+    const cache = createStepZeroCache(recordingEngine())
+    const columns = [{ name: 'a', cells: ['1'] }]
+
+    expect(stepZeroKey(confirmed(columns, { id: 'src:eins' }))).toBe(
+      stepZeroKey(confirmed(columns, { id: 'src:zwei' })),
+    )
+    cache.of(confirmed(columns, { id: 'src:eins' }))
+    cache.of(confirmed(columns, { id: 'src:zwei' }))
+
+    expect(cache.size()).toBe(2)
   })
 
   it('releases the conversion when the Source is unconfirmed', () => {

@@ -10,6 +10,7 @@
 // by app/ as `{ extension → SourceReader }` — this file names no adapter (AD-1).
 
 import { error, unresolved, warning } from '../diagnostics/diagnostic.js'
+import { digestBytes } from './cache-key.js'
 import { isSettableType, nativeTypeOf } from '../types/catalog.js'
 import { ENCODINGS, decode, decodeBytes } from '../types/encoding.js'
 import {
@@ -565,6 +566,14 @@ export function createSourceStore(readers) {
       fileName,
       extension,
       bytes,
+      // The base case of every cache key (AD-8), taken **once, here** — the only
+      // place bytes ever arrive. A re-read starts from `entry.bytes` and never
+      // from a file (AD-7), so a re-parse changes the parse half of
+      // `key(source)` and can never change this half; every other `commit` call
+      // site spreads `...entry` or `...current` and carries it over for free. A
+      // run never hashes bytes: 25 ms at the 20 MB design shape belongs to the
+      // ingest that is already awaiting a reader, not to a keystroke.
+      byteDigest: digestBytes(bytes),
       encoding,
       parseConfig: effectiveConfig(parseConfig, result.proposal),
       table: unique.table,

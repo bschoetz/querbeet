@@ -237,6 +237,80 @@ describe('overrideEncoding', () => {
   })
 })
 
+// ------------------------------------------ the base case of every cache key
+//
+// AD-8: `key(source) = hash(byteDigest + parseConfig + encoding)`, and the
+// digest half is taken here — once, when the bytes arrive, because `addSource`
+// is the only place bytes ever do (AD-7 makes every re-read start from
+// `entry.bytes`). The two halves have to move independently or the key is not
+// telling the truth about what changed: a re-parse must move the parse half and
+// leave the digest exactly where it was.
+
+describe('the byte digest', () => {
+  it('rides on the entry as 128 bits of hex, taken from the bytes themselves', async () => {
+    const store = createSourceStore({ csv: lineReader })
+    const { source } = await store.addSource({ bytes: utf8('a\nb'), fileName: 'umsatz.csv' })
+
+    expect(source.byteDigest).toMatch(/^[0-9a-f]{32}$/)
+  })
+
+  it('differs for two different files, which is the whole reason it exists', async () => {
+    const store = createSourceStore({ csv: lineReader })
+    const one = await store.addSource({ bytes: utf8('a\nb'), fileName: 'eins.csv' })
+    const two = await store.addSource({ bytes: utf8('a\nc'), fileName: 'zwei.csv' })
+
+    expect(two.source.byteDigest).not.toBe(one.source.byteDigest)
+  })
+
+  it('is identical for two files that happen to hold identical bytes', async () => {
+    // The ids differ (AD-14 mints a fresh one) and the digest does not, which is
+    // AD-8's rule from the other side: the key describes the value, not the name.
+    const store = createSourceStore({ csv: lineReader })
+    const one = await store.addSource({ bytes: utf8('a\nb'), fileName: 'eins.csv' })
+    const two = await store.addSource({ bytes: utf8('a\nb'), fileName: 'zwei.csv' })
+
+    expect(two.source.id).not.toBe(one.source.id)
+    expect(two.source.byteDigest).toBe(one.source.byteDigest)
+  })
+
+  it('survives a re-parse untouched while the parse config moves under it', async () => {
+    const store = createSourceStore({ csv: lineReader })
+    const { source } = await store.addSource({ bytes: utf8('a\nb'), fileName: 'umsatz.csv' })
+
+    const reparsed = await store.reconfigureParse(source.id, { delimiter: ';', headerRow: 2 })
+
+    expect(reparsed.parseConfig).toMatchObject({ delimiter: ';', headerRow: 2 })
+    expect(reparsed.byteDigest).toBe(source.byteDigest)
+  })
+
+  it('survives an encoding override untouched while the encoding moves under it', async () => {
+    const store = createSourceStore({ csv: lineReader })
+    const { source } = await store.addSource({ bytes: utf8('ä'), fileName: 'umsatz.csv' })
+
+    const redecoded = await store.overrideEncoding(source.id, 'windows-1252')
+
+    expect(redecoded.encoding.chosen).toBe('windows-1252')
+    expect(redecoded.byteDigest).toBe(source.byteDigest)
+  })
+
+  it('is carried by every other command, which spreads the entry rather than rebuilding it', async () => {
+    const store = createSourceStore({ csv: lineReader })
+    const { source } = await store.addSource({ bytes: utf8('1\n2'), fileName: 'umsatz.csv' })
+
+    const renamed = store.renameSource(source.id, 'Umsatz Q1')
+    expect(renamed.byteDigest).toBe(source.byteDigest)
+
+    const annotated = store.annotateColumn(source.id, 0, 'in Euro')
+    expect(annotated.byteDigest).toBe(source.byteDigest)
+
+    const retyped = store.setColumnTyping(source.id, 0, { type: 'text' })
+    expect(retyped.byteDigest).toBe(source.byteDigest)
+
+    const confirmed = store.confirmTyping(source.id).source
+    expect(confirmed.byteDigest).toBe(source.byteDigest)
+  })
+})
+
 describe('re-read failure isolation', () => {
   /** Reads fine until told to throw — the addSource path must stay intact. */
   const flakyReader = () => {

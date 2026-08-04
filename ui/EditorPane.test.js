@@ -8,6 +8,7 @@
 import { mount } from '@vue/test-utils'
 import { h, nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
+import { createRunCache } from '@core/exec/cache.js'
 import { createStepZeroCache } from '@core/exec/convert.js'
 import { createGraphStore } from '@core/graph/graph-store.js'
 import EditorPane from './EditorPane.vue'
@@ -408,6 +409,86 @@ describe('what recomputes and what does not', () => {
 
     expect(graph.get(filter).name).toBe('Nur Bestand')
     expect(graph.get(filter).x).toBe(120)
+    expect(engine.calls.filter).toBe(before)
+  })
+
+  // ------------------------------------------------ the cache, as the pane wires it
+  //
+  // What is under test here is the *wiring*, not the cache: that the pane hands
+  // `executeGraph` a cache it does not own and a Source key derived in `core/`
+  // from the registry entry. The cache's own semantics are
+  // `core/exec/cache.test.js`'s and the executor's are
+  // `core/exec/execute.test.js`'s.
+
+  /** A registry entry as the store mints one, cut down to the fields a key is
+   *  made of. `byteDigest` is what makes it keyable at all. */
+  const entry = (over = {}) => ({
+    id: 'src:a',
+    name: 'Umsatz Q1',
+    byteDigest: '0123456789abcdef0123456789abcdef',
+    parseConfig: { delimiter: ',', headerRow: 1, sheet: null },
+    encoding: { chosen: 'utf-8', source: 'probe', override: null },
+    typing: { columns: [], confirmed: true },
+    ...over,
+  })
+
+  const withCache = (graph, engine, sources, cache) =>
+    mount(EditorPane, {
+      props: {
+        graph,
+        sources,
+        canvas: StubCanvas,
+        engine,
+        stepZero: { of: (e) => (e ? { table: handle(['Kunde', 'Betrag']) } : null) },
+        cache,
+      },
+    })
+
+  it('answers a configuration returned to a previous value from the cache', async () => {
+    const { graph, filter } = wired()
+    const engine = countingEngine()
+    const w = withCache(graph, engine, [entry()], createRunCache())
+
+    w.findComponent(StubCanvas).vm.$emit('select', filter)
+    await nextTick()
+    const panel = w.findComponent(StepPanel)
+    const before = engine.calls.filter
+
+    panel.vm.$emit('configure', { combine: 'any', conditions: [] })
+    await nextTick()
+    expect(engine.calls.filter).toBe(before + 1)
+
+    // Back to the default the first run already computed. Nothing to do.
+    panel.vm.$emit('configure', { combine: 'all', conditions: [] })
+    await nextTick()
+    expect(engine.calls.filter).toBe(before + 1)
+  })
+
+  it('misses when the Source behind it was re-read, id unchanged', async () => {
+    // The key is derived from the entry in `core/`, so a re-parse — same Source,
+    // same id, different bytes or a different parse — invalidates the whole
+    // chain below it without anything here having to be told.
+    const { graph } = wired()
+    const engine = countingEngine()
+    const cache = createRunCache()
+    const w = withCache(graph, engine, [entry()], cache)
+    const before = engine.calls.filter
+
+    await w.setProps({ sources: [entry({ byteDigest: 'ffffffffffffffffffffffffffffffff' })] })
+    await nextTick()
+
+    expect(engine.calls.filter).toBe(before + 1)
+  })
+
+  it('serves the same Source unchanged, so a re-projection computes nothing', async () => {
+    const { graph } = wired()
+    const engine = countingEngine()
+    const w = withCache(graph, engine, [entry()], createRunCache())
+    const before = engine.calls.filter
+
+    await w.setProps({ sources: [entry()] }) // a fresh object, the same Source
+    await nextTick()
+
     expect(engine.calls.filter).toBe(before)
   })
 })

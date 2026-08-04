@@ -8,6 +8,7 @@
 // word has to cross into `adapters/`.
 
 import { computed, nextTick, shallowRef, watch } from 'vue'
+import { stepZeroKey } from '@core/exec/convert.js'
 import { executeGraph } from '@core/exec/execute.js'
 import { CODE } from '@core/graph/graph.js'
 import StepCard from '@ui/StepCard.vue'
@@ -29,6 +30,11 @@ const props = defineProps({
   /** Step zero's cache, created in `ui/App.vue` and shared with the Sources pane
    *  (decided 2026-08-04) — one converted Table per Source, whoever reads it. */
   stepZero: { type: Object, required: true },
+  /** AD-8's per-Step cache, also `ui/App.vue`'s, so it survives this pane being
+   *  unmounted by a view switch. Optional and defaulting to nothing: without it
+   *  every Step computes exactly as it did before story 7a, which is what lets a
+   *  test that is about something else say nothing about caching. */
+  cache: { type: Object, default: null },
 })
 
 // shallowRef and an explicit refresh, the shape `ui/SourcesPane.vue` set: the
@@ -77,9 +83,13 @@ const run = (result, { quiet = false } = {}) => {
  * `removeInputSlot` are absent too, and that is not an omission: a slot may only
  * be removed while it is empty, so neither changes which tables reach a Step.
  *
- * Every run recomputes from scratch. No cache, no memoization, no cancellation —
- * those are story 7's, and the licence for recomputing meanwhile is measured
- * rather than assumed.
+ * **The rule is unchanged by story 7a and that is deliberate.** The cache made
+ * `recompute()` cheap where nothing changed; it did not make it free, and which
+ * commands are worth running it after is a question about the *command*, not
+ * about the cache. A rename still recomputes nothing because a rename changes no
+ * number on screen — the cache would now answer every Step of that run from a
+ * hit, but the walk, the gates and the projection swap are still work with no
+ * result. Cancellation and the mode switch are still 7b's and 7c's.
  */
 const runData = (result, options) => {
   const outcome = run(result, options)
@@ -153,12 +163,28 @@ const sourceEntries = computed(() => new Map(props.sources.map((s) => [s.id, s])
  */
 const sourceTable = (id) => props.stepZero.of(sourceEntries.value.get(id))?.table ?? null
 
+/**
+ * What that Source's Step zero *is*, as a cache key — the base case every Step
+ * key downstream is built out of (AD-8).
+ *
+ * Derived in `core/`, not here: `stepZeroKey` is the same function the Step-zero
+ * cache keys itself with, so the two cannot part company about when a Source has
+ * gone stale. This pane only knows which entry a node id names.
+ *
+ * `null` for a Source the store never digested — a hand-built fixture, nothing
+ * the product produces — and `null` means the run simply does not cache that
+ * branch. A miss, never a wrong answer.
+ */
+const keyOfSource = (id) => stepZeroKey(sourceEntries.value.get(id))
+
 function recompute() {
   execution.value = executeGraph({
     steps: projection.value.steps,
     resultId: projection.value.resultId,
     engine: props.engine,
     sourceTable,
+    cache: props.cache,
+    sourceKey: keyOfSource,
   })
 }
 

@@ -34,6 +34,12 @@ const source = (columns, over = {}) => ({
   id: 'src:daten',
   name: 'daten',
   fileName: 'daten.csv',
+  // The digest the store takes when bytes arrive (story 7a). It is on the
+  // fixture because it is on every entry the store mints, and because Step
+  // zero's cache is keyed through it: an entry without one is deliberately not
+  // keyable, so a fixture missing it would silently convert on every render and
+  // the release case below would stop being about the release.
+  byteDigest: '0123456789abcdef0123456789abcdef',
   encoding: { chosen: 'utf-8', source: 'probe', override: null },
   parseConfig: { delimiter: ',', headerRow: 1 },
   proposal: { delimiter: ',', headerRow: 1 },

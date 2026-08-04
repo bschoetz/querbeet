@@ -43,6 +43,7 @@
 
 import { BOOLEAN, DATE, DATETIME, DURATION, NUMBER, TIME } from '../types/catalog.js'
 import { partsFor } from '../types/typing.js'
+import { sourceKey, stepKey } from './cache-key.js'
 
 const NANOS_PER_MILLI = 1_000_000n
 const NANOS_PER_SECOND = 1_000_000_000n
@@ -215,29 +216,56 @@ export function convertSource(entry, engine) {
 }
 
 /**
- * The Step-zero cache — one conversion per Source, keyed by the frozen entry
- * itself.
+ * **What Step zero is, as a key** — `stepKey('typing', typing, [key(source)])`,
+ * or `null` for an entry that cannot be keyed.
  *
- * AD-7: Step zero "caches like any other Step". What makes the key sound here is
- * that `commit` freezes every entry and mints a new one for every change, so
- * **entry identity is the invalidation rule** and nothing has to be told when a
- * type, a missing token or an encoding moved: a different object is a different
- * answer. A Source id alone would not do — CAP-2, CAP-3 and CAP-7 all re-parse
- * without changing the id, which is the same argument AD-8 makes for the general
- * cache.
+ * AD-7 says the per-column type record "is applied by the engine as Step zero of
+ * every Source and caches like any other Step", and that makes the shape
+ * obvious: `key(source)` is the raw parse — bytes plus how they were read — and
+ * Step zero is a Step over it whose config is the typing. So this is not a
+ * second key scheme beside `core/exec/execute.js`'s; it is the same one, and the
+ * key this returns is *the* key of the Source node in a run. There is exactly
+ * one answer anywhere to "is this stale", which is what AD-8's *Prevents* clause
+ * asks for — the clause is about two invalidation schemes disagreeing, not about
+ * the number of `Map`s.
+ *
+ * **This replaced entry identity on 2026-08-04, and the interim is worth
+ * remembering rather than deleting.** Until this story the key was the frozen
+ * entry object itself, which worked only because `commit` mints a new entry for
+ * every change — a different object is a different answer, and nothing had to be
+ * told when a type or an encoding moved. It was sound and it was narrow: it
+ * could not be lifted to Steps, because `freezeStep` also mints a new object on
+ * every commit, so a rename would have evicted the whole graph. A content key
+ * has neither limitation, and it is also what makes `{...entry}` — the same
+ * Source, spread — a hit rather than a second conversion of the same values.
+ *
+ * `null` where the entry carries no `byteDigest`: a Source whose bytes nobody
+ * digested has nothing that distinguishes it from another such Source, and
+ * inventing a key for it would let two of them collide. Not caching is a miss;
+ * a collision is a wrong answer. Every entry the store mints has one.
+ */
+export function stepZeroKey(entry) {
+  if (!entry || typeof entry.byteDigest !== 'string') return null
+  return stepKey('typing', entry.typing, [sourceKey(entry)])
+}
+
+/**
+ * The Step-zero cache — one conversion per Source, keyed by what the Source *is*.
  *
  * It is a plain `Map` in a closure, deliberately: the converted Table must not
  * enter `ref`, `reactive` or a `computed` return value (AD-6), and the only way
  * to be sure of that is for it never to be reachable from reactive state at all.
  * `ui/` holds at most a `shallowRef` to swap.
  *
- * Bounded by the number of loaded Sources rather than by rows: there is exactly
- * one entry per Source and it is replaced, never accumulated. An unconfirmed or
- * removed Source releases its conversion, which is what AD-29 asks for — a table
- * computed from types nobody vouches for must not survive the withdrawal.
+ * Bounded by the number of loaded Sources rather than by rows, which is tighter
+ * than the run cache's row budget and matches this cache's lifecycle: there is
+ * exactly one entry per Source and it is replaced, never accumulated. An
+ * unconfirmed or removed Source releases its conversion, which is what AD-29
+ * asks for — a table computed from types nobody vouches for must not survive the
+ * withdrawal.
  */
 export function createStepZeroCache(engine) {
-  /** @type {Map<string, { entry: object, conversion: object|null }>} */
+  /** @type {Map<string, { key: string, conversion: object|null }>} */
   const cached = new Map()
 
   const release = (id) => {
@@ -245,18 +273,25 @@ export function createStepZeroCache(engine) {
   }
 
   return {
-    /** The conversion of `entry`, computed once per frozen entry. */
+    /** The conversion of `entry`, computed once per distinct Source content. */
     of(entry) {
       if (!entry) return null
       if (entry.typing?.confirmed !== true) {
         release(entry.id)
         return null
       }
+      const key = stepZeroKey(entry)
       const hit = cached.get(entry.id)
-      if (hit !== undefined && hit.entry === entry) return hit.conversion
+      if (key !== null && hit !== undefined && hit.key === key) return hit.conversion
 
       const conversion = convertSource(entry, engine)
-      cached.set(entry.id, { entry, conversion })
+      // Held under the id and *checked* against the key: one slot per Source, so
+      // a re-parse replaces its predecessor instead of retaining both — the same
+      // bound this cache always had, with the identity test swapped for a
+      // content test. An unkeyable entry is stored under a key nothing matches,
+      // so it converts every time rather than serving something it cannot vouch
+      // for.
+      cached.set(entry.id, { key, conversion })
       return conversion
     },
     /** Drop a Source's conversion — on removal, where no entry arrives again. */

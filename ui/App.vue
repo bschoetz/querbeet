@@ -17,6 +17,7 @@
 // improvement.
 
 import { shallowRef } from 'vue'
+import { createRunCache } from '@core/exec/cache.js'
 import { createStepZeroCache } from '@core/exec/convert.js'
 import SourcesPane from '@ui/SourcesPane.vue'
 import EditorPane from '@ui/EditorPane.vue'
@@ -48,6 +49,19 @@ const props = defineProps({
 // enter deep reactivity (AD-6). Release stays what it was — a Source's removal
 // releases its conversion, which the Sources pane still asks for.
 const stepZero = createStepZeroCache(props.engine)
+
+// AD-8's per-Step cache, and it is created **here** for the same two reasons the
+// line above it is. It must outlive the Editor: `EditorPane` is `v-if`, so it is
+// genuinely unmounted on every trip to the Sources pane, and a cache owned there
+// would be thrown away by a view switch — which is exactly the moment a user
+// comes back to a graph they have not changed. And it holds `Table` handles, so
+// it may not enter `ref`, `reactive` or a `computed` (AD-6); `setup` is where a
+// value can be held without becoming reactive.
+//
+// The bound is the default 15,000,000 retained rows (`core/exec/cache.js` says
+// where that number comes from). It is not a prop and not configurable: a memory
+// plan the interface can dial is a memory plan nobody can reason about.
+const runCache = createRunCache()
 
 const view = shallowRef('sources')
 
@@ -107,6 +121,7 @@ const TABS = [
       :canvas="props.canvas"
       :engine="props.engine"
       :step-zero="stepZero"
+      :cache="runCache"
       class="mt-8"
     />
   </main>
