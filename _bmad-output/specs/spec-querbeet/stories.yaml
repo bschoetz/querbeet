@@ -285,6 +285,78 @@
     Source in two slots, which duplicates every row of it once a pipeline
     executes — refuse it in the graph guard, allow it with a warning, or leave
     it silent as a legitimate operation. Decide it against a real Recipe.
+- id: "6c"
+  title: The Columns Step at the width a report actually has
+  description: >-
+    STUB — from the first hand test of the Editor after 6b. The Columns form is
+    a flat list whose only verbs are check, type and move-by-one, built when the
+    fixture had four columns. At the shape this product targets it is O(n)
+    clicks with no bulk verb and no memory: keeping 3 of 30 columns costs 27
+    clicks, a deselected column loses its position, and there is no way to find
+    a column in the list. Bulk select and deselect, stable positions for
+    unselected columns, and a search over the list. No new capability — CAP-16
+    is unchanged and this is the form that operates it.
+  invoke_dev_with: >-
+    Findings and the reasoning are in
+    _bmad-output/implementation-artifacts/findings-columns-step-ui-2026-08-04.md
+    — read it first, every claim in it is anchored to a line. All three fixes
+    live in ui/StepPanel.vue and all three consist of making the Columns branch
+    behave like the Filter branch beside it; core/ and ports/ are untouched. An
+    empty selection is an unfinished edit and is not committed, exactly as an
+    incomplete Filter condition is withheld today (ui/StepPanel.vue:156-169,
+    "An entry that has not finished is not a change to the config") — that is
+    what keeps the empty list meaning identity in core/steps/columns.js and
+    keeps a zero-column table out of the model. The disabled last checkbox
+    exists only to prevent that flip and goes with the same change. A deselected
+    column keeps its input-schema position rather than being appended by
+    readDraft. A search box filters visibility only: the list order IS the
+    config order, so nothing may reorder the list as a side effect of finding
+    something in it.
+- id: "6d"
+  title: Sort and First-N Steps — a row order that is data
+  description: >-
+    STUB — a row order can be looked at today and never handed over. Story 11
+    sorts the view transiently, and no Step makes a row order part of the data,
+    so CAP-16 puts column order in every export with no equivalent for rows.
+    Two Steps, because sorting alone only reorders: Sortieren (order by a
+    column) and Erste N (keep the first N rows). The case that decided it — take
+    the 10 newest records and carry them on — is ordinary and is currently
+    inexpressible; Top-N exists only as a Dashboard Tile (CAP-35), and a Tile
+    cannot feed a Step. Needs a new capability entry; CAP-32 covers the view
+    only.
+  invoke_dev_with: >-
+    Decisions and open points are in
+    _bmad-output/implementation-artifacts/stub-sort-and-limit-steps.md. Decided
+    with the project owner 2026-08-04: two Steps rather than one, and NO
+    promotion from the view into a Step — the header click in story 11 stays
+    looking, the Step is added by hand, because viewing and transformation stay
+    separated. That rule contradicts CAP-32 as written, which promises a single
+    action turning active view filters into a Filter Step; either the rule is
+    about sorting only or that promotion goes too, and story 11 meets this
+    either way. Not settled before cutting: the Arquero cost of orderby and
+    slice measured against C-3 the way the two existing verbs were, single
+    versus multi-column sort, where a box and a null sort (AD-22 speaks about
+    comparison, not ordering, so it does not answer this), whether stability is
+    promised, arity and German labels, and whether Erste N has a last-N twin.
+- id: "6e"
+  title: Node layout from measured cards, not from a constant
+  description: >-
+    STUB — PLACEMENT.dy is a fixed pitch and a Step card has no fixed height, so
+    two Steps in one column can still overlap once a card grows past it, and an
+    overlapping card swallows the pointer aimed at the one beneath. Story 6b
+    raised the pitch from 150 to 200 and cleared every card this build renders,
+    but by arithmetic over the tallest card that exists today rather than by
+    measurement — nothing fails if a later card is taller. It also shaped 6b's
+    own design: run diagnostics were kept off the cards partly for this reason.
+  invoke_dev_with: >-
+    The ledger entry carries the measurements (deferred-work.md, the
+    PLACEMENT entry). core/graph/ cannot fix this: it is browser-free by AD-2,
+    so freePosition can only ever pick from numbers handed to it. The fix is a
+    layout pass in ui/ or adapters/vueflow/ reflowing overlapping nodes from
+    dimensions the library already collects for its own anchor arithmetic, which
+    is the same seam the architecture's Deferred list calls graph auto-layout.
+    Take it with whatever story first meets a graph too big to untangle by
+    dragging.
 - id: "7"
   title: Execution full build — cache, cancellation, execution modes
   description: >-
