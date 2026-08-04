@@ -84,10 +84,20 @@ const stubEngine = () => ({ fromColumns: (columns) => ({ columns }) })
 // created once in `ui/App.vue` and shared with the Editor, so both panes mark and
 // execute from the same converted Table. Counting engine calls through the real
 // cache is still what the release case below asserts.
-const render = async (store, engine = stubEngine()) => {
-  const w = mount(SourcesPane, { props: { store, stepZero: createStepZeroCache(engine) } })
+const render = async (store, engine = stubEngine(), runCache = null) => {
+  const w = mount(SourcesPane, {
+    props: { store, stepZero: createStepZeroCache(engine), runCache },
+  })
   await nextTick()
   return w
+}
+
+/** A run cache reduced to the one method this pane may call. Story 7a's cache is
+ *  content-keyed and has no Source id to release by, so `clear()` is the whole
+ *  of the pane's business with it. */
+const clearRecorder = () => {
+  const cleared = { count: 0 }
+  return { cleared, clear: () => (cleared.count += 1) }
 }
 
 const panel = (w) => w.find('[data-testid="typing"]')
@@ -1493,5 +1503,64 @@ describe('a Source removed lets go of its conversion', () => {
     expect(w.findAll('[data-testid="source-card"]')).toHaveLength(1)
     expect(engine.calls).toBe(2)
     expect(w.findAll('[data-testid="preview-mark"]')).toHaveLength(1)
+  })
+})
+
+// ------------------------------ what a withdrawn Source withdraws (7a review r1)
+//
+// AD-29: a table computed from types nobody vouches for must not survive the
+// withdrawal. The Step-zero store honours that per Source id, above. Story 7a's
+// run cache holds every *Step's* table computed from the same Source and cannot:
+// it is content-keyed on purpose and has no id to release by, so `clear()` is
+// the honest primitive and this pane owns the two commands that need it.
+//
+// Coarse — it throws away entries belonging to Sources nobody touched — and
+// correct, which is the trade the frozen "an eviction is a miss, never a wrong
+// answer" rule licenses.
+
+describe('a withdrawn Source withdraws the run cache', () => {
+  const confirmedSource = () => {
+    const columns = [column('Betrag')]
+    return source(columns, { typing: { columns, confirmed: true } })
+  }
+
+  it('clears it when the Source is removed', async () => {
+    const runCache = clearRecorder()
+    const w = await render(stubStore(source([column('Betrag')])), stubEngine(), runCache)
+
+    await w.find('[aria-label="Entfernen: daten"]').trigger('click')
+
+    expect(runCache.cleared.count).toBe(1)
+  })
+
+  it('clears it when the confirmation is withdrawn', async () => {
+    const runCache = clearRecorder()
+    const store = stubStore(confirmedSource())
+    const w = await render(store, stubEngine(), runCache)
+
+    await w.find('[aria-label="Bestätigung aufheben: daten"]').trigger('click')
+
+    expect(store.calls).toContainEqual(['unconfirmTyping', 'src:daten'])
+    expect(runCache.cleared.count).toBe(1)
+  })
+
+  it('leaves it alone for every command that withdraws nothing', async () => {
+    // A rename, an annotation and a confirmation all change what the pane shows
+    // and none of them takes a vouched-for typing back. Clearing on those would
+    // make the cache useless without making anything safer.
+    const runCache = clearRecorder()
+    const w = await render(stubStore(source([column('Betrag')])), stubEngine(), runCache)
+
+    const name = w.find('input[aria-label="Name"]')
+    name.element.value = 'Umsatz'
+    await name.trigger('change')
+    await w.find('[aria-label="Typen bestätigen: daten"]').trigger('click')
+
+    expect(runCache.cleared.count).toBe(0)
+  })
+
+  it('does not require a cache at all — the prop is optional', async () => {
+    const w = await render(stubStore(source([column('Betrag')])))
+    await expect(w.find('[aria-label="Entfernen: daten"]').trigger('click')).resolves.not.toThrow()
   })
 })

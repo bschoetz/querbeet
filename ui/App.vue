@@ -58,9 +58,14 @@ const stepZero = createStepZeroCache(props.engine)
 // it may not enter `ref`, `reactive` or a `computed` (AD-6); `setup` is where a
 // value can be held without becoming reactive.
 //
-// The bound is the default 15,000,000 retained rows (`core/exec/cache.js` says
-// where that number comes from). It is not a prop and not configurable: a memory
-// plan the interface can dial is a memory plan nobody can reason about.
+// The bounds are the defaults (`core/exec/cache.js` says where each number comes
+// from). They are not props and not configurable: a memory plan the interface
+// can dial is a memory plan nobody can reason about.
+//
+// It goes to **both** panes, and the second one is not a symmetry. `EditorPane`
+// reads and writes it; `SourcesPane` only ever clears it, because removing a
+// Source or unconfirming its typing has to withdraw the tables computed from it
+// (AD-29) and a content-keyed store has no id to release by.
 const runCache = createRunCache()
 
 const view = shallowRef('sources')
@@ -111,6 +116,7 @@ const TABS = [
       :store="props.store"
       :on-changed="onSourcesChanged"
       :step-zero="stepZero"
+      :run-cache="runCache"
       class="mt-8"
     />
 

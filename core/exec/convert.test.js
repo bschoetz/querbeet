@@ -18,7 +18,7 @@
 // columns, and asserting on the columns is more precise than asserting through a
 // table. `adapters/arquero/engine.test.js` is where the real one is exercised.
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { BOOLEAN, DATE, DATETIME, DURATION, NUMBER, TEXT, TIME } from '../types/catalog.js'
 import { bestFormat, detectColumn, scoreColumn } from '../types/typing.js'
 import { digest } from './cache-key.js'
@@ -577,6 +577,21 @@ describe('the Step-zero cache', () => {
     expect(engine.seen).toHaveLength(2)
   })
 
+  it('retains nothing it can never serve — an unkeyable conversion is not stored', () => {
+    // Storing under `key: null` would hold a converted Table at design scale for
+    // the life of the page, against a lookup that cannot match it. The release
+    // covers the transition: a Source that *was* keyable and stopped being one
+    // must not go on being served out of a slot nobody will overwrite.
+    const cache = createStepZeroCache(recordingEngine())
+    const entry = confirmed([{ name: 'Betrag', cells: ['1,5', 'abc'] }])
+
+    cache.of(entry)
+    expect(cache.size()).toBe(1)
+
+    cache.of({ ...entry, byteDigest: undefined })
+    expect(cache.size()).toBe(0)
+  })
+
   it('never lets a Source id decide, so two Sources of one content stay two', () => {
     // AD-8's rule from the other side: the id is not in the key, and it is also
     // not what a hit is decided by. Two Sources holding the very same bytes and
@@ -629,6 +644,81 @@ describe('the Step-zero cache', () => {
 
   it('answers null for nothing at all', () => {
     expect(createStepZeroCache(recordingEngine()).of(null)).toBeNull()
+  })
+})
+
+// -------------------------------------------- the key's guard (7a review r1)
+//
+// `stepZeroKey` is called from `ui/SourcesPane.vue`'s template, through
+// `marksFor`. A throw there is an uncaught render error and a blank pane, so the
+// function answers `null` for everything it cannot key and never for a reason
+// that reaches the user.
+
+describe('what stepZeroKey refuses to key', () => {
+  const entry = () => confirmed([{ name: 'Betrag', cells: ['1,5', 'abc'] }])
+
+  it('answers null, symmetrically and silently, for every field a key is made of', () => {
+    // The first version checked `byteDigest` alone: a missing `encoding`,
+    // `parseConfig` or `typing` went straight to `canonical`, which throws. The
+    // same bug wearing two faces.
+    //
+    // **The silence is the assertion that makes this case bite.** `keyOrNull`
+    // would catch those throws now, so returning `null` proves nothing on its
+    // own. The two states are genuinely different: an entry that has not got a
+    // field yet is *not keyable*, which is ordinary, while a `canonical` refusal
+    // means a config exists that no key can describe, which a developer has to
+    // see. Warning about the first would bury the second.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(stepZeroKey(null)).toBeNull()
+      expect(stepZeroKey(undefined)).toBeNull()
+      expect(stepZeroKey({ ...entry(), byteDigest: undefined })).toBeNull()
+      expect(stepZeroKey({ ...entry(), encoding: undefined })).toBeNull()
+      expect(stepZeroKey({ ...entry(), parseConfig: undefined })).toBeNull()
+      expect(stepZeroKey({ ...entry(), typing: undefined })).toBeNull()
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('answers null rather than throwing when a typing holds what no key can encode', () => {
+    // The case no field check can see, and the one that gets real: `core/types/
+    // typing.js` owns the column record's shape and story 14 restores one from a
+    // file. A `Date` on a column is a miss, not a blank pane.
+    const hostile = {
+      ...entry(),
+      typing: { columns: [{ name: 'Betrag', detectedAt: new Date(0) }], confirmed: true },
+    }
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(stepZeroKey(hostile)).toBeNull()
+      expect(warn.mock.calls[0][0]).toMatch(/cannot serialize a Date at/)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('still converts a Source it cannot key — the pane shows the data either way', () => {
+    const engine = recordingEngine()
+    const cache = createStepZeroCache(engine)
+    const hostile = {
+      ...entry(),
+      typing: {
+        columns: [{ ...entry().typing.columns[0], detectedAt: new Date(0) }],
+        confirmed: true,
+      },
+    }
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(() => cache.of(hostile)).not.toThrow()
+      expect(cache.of(hostile)).not.toBeNull()
+      expect(engine.seen).toHaveLength(2) // converted twice: unkeyable is uncached
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 

@@ -119,6 +119,22 @@ const props = defineProps({
    * not read and renders that, and never sees an engine table.
    */
   stepZero: { type: Object, required: true },
+  /**
+   * AD-8's per-Step cache, also `ui/App.vue`'s — held here for exactly one
+   * reason: **a withdrawn Source has to withdraw the tables computed from it**
+   * (AD-29), and this pane owns the two commands that withdraw one.
+   *
+   * The Step-zero store does that per Source id. The run cache cannot: it is
+   * content-keyed on purpose and has no id to release by, so the honest
+   * primitive is `clear()`. That is coarse — it throws away entries belonging to
+   * Sources nobody touched — and it is correct, which a reverse index from
+   * Source id to key would be only as long as somebody maintained it. The frozen
+   * rule that an eviction is a miss and never a wrong answer is what makes coarse
+   * acceptable: the next run recomputes and produces the same answer.
+   *
+   * Optional, so a test about something else can leave it out.
+   */
+  runCache: { type: Object, default: null },
 })
 
 // shallowRef, never ref/reactive/computed: the entries hold parsed tables, and
@@ -667,6 +683,9 @@ const remove = (id) => {
   // hold a converted Table for a Source that no longer exists.
   stepZero.release(id)
   markMemo.delete(id)
+  // And every Step's table computed from it, which the run cache has no id to
+  // release by (see the `runCache` prop).
+  props.runCache?.clear()
   refresh()
 }
 // The three commands that re-parse are awaited: a binary reader cannot be
@@ -802,6 +821,12 @@ const confirm = (id) => {
 
 const unconfirm = (id) => {
   props.store.unconfirmTyping(id)
+  // AD-29's gate closing again. `stepZero.of` releases its own conversion on the
+  // next read, because an unconfirmed entry is one it refuses to convert; the run
+  // cache is content-keyed and would simply go on holding every Step's table
+  // until the row bound pushed it out. Withdrawing the confirmation withdraws
+  // them now.
+  props.runCache?.clear()
   refresh()
 }
 </script>

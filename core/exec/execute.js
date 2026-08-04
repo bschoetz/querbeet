@@ -67,7 +67,7 @@ import { error } from '../diagnostics/diagnostic.js'
 import { contributingTo, findNode } from '../graph/graph.js'
 import { SOURCE } from '../graph/kinds.js'
 import { stepKind } from '../steps/index.js'
-import { stepKey } from './cache-key.js'
+import { keyOrNull, stepKey } from './cache-key.js'
 
 /**
  * Every code this file emits, built out of the constants its own emit sites use
@@ -299,10 +299,17 @@ export function executeGraph({
     // Every slot has a result by now (the missing-input branch above `continue`s
     // before this line), so an input without a key is an input that was itself
     // not cacheable, and this Step inherits that.
+    //
+    // Through `keyOrNull`, so a config the kind's own `validate` admits and
+    // `canonical` refuses costs this Step its cache entry and costs the run
+    // nothing. The frozen rule is that a cached run and an uncached run are
+    // indistinguishable except in time, and a throw escaping here would be the
+    // loudest possible way to break it — `executeGraph` is called from a Vue
+    // `watch`, so it would reach the user as a blank Editor.
     const inputKeys = node.inputs.map((upstream) => keys.get(upstream))
     const key =
       caching && inputKeys.every((k) => typeof k === 'string')
-        ? stepKey(node.kind, config, inputKeys)
+        ? keyOrNull(() => stepKey(node.kind, config, inputKeys))
         : null
     if (key !== null) {
       keys.set(node.id, key)
@@ -372,7 +379,15 @@ export function executeGraph({
     // together, which is exactly AD-8's rule and needs nothing designed for it.
     // It is stored **after** the stamping, so a replay is already stamped and
     // nothing stamps it twice.
-    if (key !== null) cache.set(key, results.get(node.id))
+    //
+    // **`table !== null` is the whole condition, and it is about the entry
+    // rather than about which failure produced it.** A Step that *throws* is not
+    // stored because the `catch` above `continue`s; a Step that *returns*
+    // `{ table: null }` — `columns`' unknown column, `filter`'s type mismatch —
+    // is the same nothing to replay and was being stored until review round 1.
+    // The next run calls it again and records the same diagnostic, which is what
+    // a user correcting the cause needs to see happen.
+    if (key !== null && outcome.table !== null) cache.set(key, results.get(node.id))
   }
 
   // **One sentence about the run as a whole, and it is here because the cards

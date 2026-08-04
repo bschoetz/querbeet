@@ -30,6 +30,25 @@
 export const DEFAULT_MAX_ROWS = 15_000_000
 
 /**
+ * **The second ceiling, and why rows alone were not a bound (review round 1).**
+ *
+ * Rows are what memory costs when a table is real, and they are the frozen rule.
+ * They are not a bound on the `Map`: an entry retaining a table of zero rows
+ * costs nothing against `maxRows`, so the eviction loop never runs for it and
+ * `held` grows one permanent slot per distinct config a user types. An empty
+ * Filter result is an ordinary state — the user narrowed a condition too far —
+ * and at a keystroke's frequency it is a leak.
+ *
+ * 1,000 because it must not bind before the row ceiling does in any shape the
+ * research describes: at the design scale the row bound holds 30 entries of half
+ * a million rows, and the Editor's own geometry makes a graph of hundreds of
+ * Steps something nobody has built. So this ceiling only ever binds on entries
+ * that cost no rows, which is exactly the class it exists for, and a thousand of
+ * those is far more than a session of editing produces.
+ */
+export const DEFAULT_MAX_ENTRIES = 1_000
+
+/**
  * A run cache: `{ get, set, rows, size, clear }`.
  *
  * Insertion- and access-ordered, which a `Map` gives for free — iteration order
@@ -38,11 +57,23 @@ export const DEFAULT_MAX_ROWS = 15_000_000
  * and eviction is one `keys().next()` rather than a second structure to keep in
  * step with this one.
  *
- * @param {{ maxRows?: number }} [options]
+ * @param {{ maxRows?: number, maxEntries?: number }} [options]
  */
-export function createRunCache({ maxRows = DEFAULT_MAX_ROWS } = {}) {
-  if (!Number.isFinite(maxRows) || maxRows < 0) {
-    throw new TypeError('createRunCache needs a finite, non-negative maxRows') // programming error
+export function createRunCache({
+  maxRows = DEFAULT_MAX_ROWS,
+  maxEntries = DEFAULT_MAX_ENTRIES,
+} = {}) {
+  // Both ceilings are refused at zero as well as below it, and that is not
+  // pedantry: a cache of zero is a cache that stores an entry and evicts it
+  // before anything can read it — the shape below keeps the last entry standing
+  // rather than emptying itself — so a caller who wrote `0` meaning "off" would
+  // get a cache that costs every store and returns every miss. Passing no cache
+  // at all is how this is turned off (`executeGraph`'s parameter is a door).
+  if (!Number.isFinite(maxRows) || maxRows <= 0) {
+    throw new TypeError('createRunCache needs a finite, positive maxRows') // programming error
+  }
+  if (!Number.isFinite(maxEntries) || maxEntries <= 0) {
+    throw new TypeError('createRunCache needs a finite, positive maxEntries') // programming error
   }
 
   /** @type {Map<string, { entry: object, rows: number }>} */
@@ -79,7 +110,7 @@ export function createRunCache({ maxRows = DEFAULT_MAX_ROWS } = {}) {
     },
 
     /**
-     * Store an entry under its key, then evict until the bound holds.
+     * Store an entry under its key, then evict until **both** bounds hold.
      *
      * **A single entry larger than the whole bound is stored and becomes the
      * only entry, rather than being refused.** Refusing it would mean a table
@@ -98,7 +129,9 @@ export function createRunCache({ maxRows = DEFAULT_MAX_ROWS } = {}) {
       held.set(key, { entry, rows: cost })
       rows += cost
 
-      while (rows > maxRows && held.size > 1) evictOldest()
+      // `||`, not `&&`: whichever ceiling is exceeded is exceeded, and a bound a
+      // whole class of entries is invisible to is not one.
+      while ((rows > maxRows || held.size > maxEntries) && held.size > 1) evictOldest()
       return entry
     },
 

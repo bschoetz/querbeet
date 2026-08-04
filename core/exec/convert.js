@@ -43,7 +43,7 @@
 
 import { BOOLEAN, DATE, DATETIME, DURATION, NUMBER, TIME } from '../types/catalog.js'
 import { partsFor } from '../types/typing.js'
-import { sourceKey, stepKey } from './cache-key.js'
+import { keyOrNull, sourceKey, stepKey } from './cache-key.js'
 
 const NANOS_PER_MILLI = 1_000_000n
 const NANOS_PER_SECOND = 1_000_000_000n
@@ -239,14 +239,26 @@ export function convertSource(entry, engine) {
  * has neither limitation, and it is also what makes `{...entry}` — the same
  * Source, spread — a hit rather than a second conversion of the same values.
  *
- * `null` where the entry carries no `byteDigest`: a Source whose bytes nobody
- * digested has nothing that distinguishes it from another such Source, and
- * inventing a key for it would let two of them collide. Not caching is a miss;
- * a collision is a wrong answer. Every entry the store mints has one.
+ * **`null` where any of the four fields a key is made of is missing, and the
+ * guard is symmetric on purpose.** A Source whose bytes nobody digested has
+ * nothing that distinguishes it from another such Source, and inventing a key
+ * for it would let two of them collide — not caching is a miss, a collision is a
+ * wrong answer. The first version of this function checked `byteDigest` alone
+ * and let a missing `encoding`, `parseConfig` or `typing` reach `canonical`,
+ * which throws: the same bug wearing two faces, and the second face threw out of
+ * `ui/SourcesPane.vue`'s template (review round 1). Every entry the store mints
+ * carries all four.
+ *
+ * Wrapped in `keyOrNull` beyond that, for the case no field check can see: a
+ * `typing` that is present and holds something the serializer refuses. That is
+ * not hypothetical for long — `core/types/typing.js` owns the column record's
+ * shape and story 14 restores one from a file.
  */
 export function stepZeroKey(entry) {
-  if (!entry || typeof entry.byteDigest !== 'string') return null
-  return stepKey('typing', entry.typing, [sourceKey(entry)])
+  if (!entry) return null
+  if (typeof entry.byteDigest !== 'string') return null
+  if (!entry.parseConfig || !entry.encoding || !entry.typing) return null
+  return keyOrNull(() => stepKey('typing', entry.typing, [sourceKey(entry)]))
 }
 
 /**
@@ -288,9 +300,18 @@ export function createStepZeroCache(engine) {
       // Held under the id and *checked* against the key: one slot per Source, so
       // a re-parse replaces its predecessor instead of retaining both — the same
       // bound this cache always had, with the identity test swapped for a
-      // content test. An unkeyable entry is stored under a key nothing matches,
-      // so it converts every time rather than serving something it cannot vouch
-      // for.
+      // content test.
+      //
+      // **An unkeyable entry is returned unstored**, and the release before it is
+      // deliberate. Storing it under `key: null` retains a converted Table that
+      // no lookup can ever match — a table at design scale, held for the life of
+      // the page, for a hit that cannot happen. The release covers the transition:
+      // a Source that *was* keyable and stopped being one must not keep serving
+      // its old conversion out of the slot nobody will overwrite.
+      if (key === null) {
+        release(entry.id)
+        return conversion
+      }
       cached.set(entry.id, { key, conversion })
       return conversion
     },

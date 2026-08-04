@@ -7,7 +7,7 @@
 // MB, against ~550 MB).
 
 import { describe, expect, it } from 'vitest'
-import { createRunCache, DEFAULT_MAX_ROWS } from './cache.js'
+import { createRunCache, DEFAULT_MAX_ENTRIES, DEFAULT_MAX_ROWS } from './cache.js'
 
 /** What `record()` in `core/exec/execute.js` builds — the whole entry, because
  *  the table and its diagnostics travel together or the cache is not AD-8's. */
@@ -93,6 +93,21 @@ describe('the run cache', () => {
     expect(cache.rows()).toBe(100)
   })
 
+  it('evicts only as far as it has to, so the entries under the bound survive', () => {
+    // The partial case, which the all-or-one cases either side of it do not
+    // cover: three entries in, one out, two still answering.
+    const cache = createRunCache({ maxRows: 100 })
+    cache.set('a', entry(40))
+    cache.set('b', entry(40))
+    cache.set('c', entry(40)) // 120 > 100 — one eviction is enough
+
+    expect(cache.size()).toBe(2)
+    expect(cache.rows()).toBe(80)
+    expect(cache.get('a')).toBeUndefined()
+    expect(cache.get('b')).toBeDefined()
+    expect(cache.get('c')).toBeDefined()
+  })
+
   it('keeps a single entry larger than the whole bound, as the only entry', () => {
     // Refusing it would mean a table that never caches while every eviction pass
     // around it still ran — all of the bookkeeping and none of the hit. The bound
@@ -128,8 +143,69 @@ describe('the run cache', () => {
     expect(cache.size()).toBe(2)
   })
 
-  it('refuses a bound that is not a number — a programming error', () => {
+  it('refuses a bound that is not a positive number — a programming error', () => {
     expect(() => createRunCache({ maxRows: -1 })).toThrow(TypeError)
     expect(() => createRunCache({ maxRows: 'viel' })).toThrow(TypeError)
+    // Zero is refused with the rest: eviction keeps the last entry standing, so a
+    // cache of zero would store every entry and evict it before anything could
+    // read it — all of the cost and none of the hit. Passing no cache at all is
+    // how this is turned off.
+    expect(() => createRunCache({ maxRows: 0 })).toThrow(TypeError)
+    expect(() => createRunCache({ maxEntries: 0 })).toThrow(TypeError)
+    expect(() => createRunCache({ maxEntries: -1 })).toThrow(TypeError)
+    expect(() => createRunCache({ maxEntries: Infinity })).toThrow(TypeError)
+  })
+})
+
+// ------------------------------------------------- the second ceiling (7a r1)
+//
+// Rows bound what memory costs when a table is real. They bound nothing about
+// the `Map`: an entry retaining zero rows never pushes `rows()` past `maxRows`,
+// so before review round 1 the eviction loop never ran for one and `held` grew a
+// permanent slot per distinct config a user typed. An empty Filter result is an
+// ordinary state, and at a keystroke's frequency it was a leak.
+
+describe('the entry ceiling', () => {
+  it('evicts on entry count even when every entry retains no rows at all', () => {
+    const cache = createRunCache({ maxEntries: 3 })
+    for (let i = 0; i < 50; i += 1) cache.set(`k${i}`, entry(0))
+
+    expect(cache.rows()).toBe(0) // the row ceiling never noticed a thing
+    expect(cache.size()).toBe(3)
+    expect(cache.get('k0')).toBeUndefined()
+    expect(cache.get('k49')).toBeDefined()
+  })
+
+  it('evicts the least recently used, on this ceiling as on the other', () => {
+    const cache = createRunCache({ maxEntries: 2 })
+    cache.set('a', entry(0))
+    cache.set('b', entry(0))
+    cache.get('a')
+    cache.set('c', entry(0))
+
+    expect(cache.get('a')).toBeDefined()
+    expect(cache.get('b')).toBeUndefined()
+  })
+
+  it('honours whichever ceiling is exceeded, not both at once', () => {
+    // Rows alone would hold all four; entries alone would hold two of any size.
+    const cache = createRunCache({ maxRows: 1_000_000, maxEntries: 2 })
+    cache.set('a', entry(10))
+    cache.set('b', entry(10))
+    cache.set('c', entry(10))
+
+    expect(cache.size()).toBe(2)
+    expect(cache.rows()).toBe(20)
+  })
+
+  it('does not bind before the row ceiling in any shape the research describes', () => {
+    // 30 retained intermediates at half a million rows is the design scale (R4)
+    // and is 15 million rows — the row bound exactly, at 30 entries. This
+    // ceiling only ever binds on entries that cost no rows.
+    expect(DEFAULT_MAX_ENTRIES).toBe(1_000)
+    const cache = createRunCache()
+    for (let i = 0; i < 30; i += 1) cache.set(`k${i}`, entry(500_000))
+    expect(cache.size()).toBe(30)
+    expect(cache.rows()).toBe(15_000_000)
   })
 })

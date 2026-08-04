@@ -464,17 +464,24 @@ describe('what recomputes and what does not', () => {
     expect(engine.calls.filter).toBe(before + 1)
   })
 
-  it('misses when the Source behind it was re-read, id unchanged', async () => {
-    // The key is derived from the entry in `core/`, so a re-parse — same Source,
-    // same id, different bytes or a different parse — invalidates the whole
-    // chain below it without anything here having to be told.
+  it('misses when the delimiter was corrected and the Source re-parsed', async () => {
+    // **A re-parse, which is a state the store actually produces** —
+    // `reconfigureParse` re-reads the retained bytes under a new delimiter and
+    // commits a new entry under the same id. The earlier version of this case
+    // changed the *byte digest* under a fixed id instead, which no store command
+    // can do (a new file is a new `addSource` with a newly minted id, AD-14), so
+    // it named a state the Code Map rules out. The digest half of that key is
+    // covered where it belongs, as a `sourceKey` property in
+    // `core/exec/cache-key.test.js`.
     const { graph } = wired()
     const engine = countingEngine()
     const cache = createRunCache()
     const w = withCache(graph, engine, [entry()], cache)
     const before = engine.calls.filter
 
-    await w.setProps({ sources: [entry({ byteDigest: 'ffffffffffffffffffffffffffffffff' })] })
+    await w.setProps({
+      sources: [entry({ parseConfig: { delimiter: ';', headerRow: 1, sheet: null } })],
+    })
     await nextTick()
 
     expect(engine.calls.filter).toBe(before + 1)

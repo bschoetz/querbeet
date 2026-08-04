@@ -188,6 +188,24 @@ export default [
     },
   },
 
+  // The one file under core/ that may name `console`, and the allowance is
+  // scoped to it so the door does not open everywhere.
+  //
+  // The consistency table says diagnostics are the only reporting channel and
+  // that there is no logging framework — both still hold. `keyOrNull` contains a
+  // `canonical` refusal so it cannot escape onto a render path, and a refusal is
+  // the one thing the cache may not silently swallow: it means a config exists
+  // that no key can describe, which is a programming or Recipe-format error the
+  // user can do nothing about and a developer must not have to guess at. A
+  // Diagnostic would be the wrong shape — it would put a German sentence on a
+  // card about a cache the product does not otherwise mention (story 7a, review
+  // round 1). Like TextDecoder/TextEncoder above, `console` is present in Node
+  // and in every engine, so this costs the core none of its testability.
+  {
+    files: ['core/exec/cache-key.js'],
+    languageOptions: { globals: { console: 'readonly' } },
+  },
+
   // -------------------------------------------------------------------- ui/
   {
     files: ['ui/**/*.{js,vue}'],

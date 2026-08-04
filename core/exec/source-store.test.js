@@ -6,6 +6,7 @@
 // by tests/e2e/csv-sources.spec.js.
 
 import { describe, expect, it } from 'vitest'
+import { stepZeroKey } from './convert.js'
 import { createSourceStore, typingDiagnostics, uniqueColumnNames } from './source-store.js'
 
 const utf8 = (s) => new TextEncoder().encode(s)
@@ -1131,6 +1132,53 @@ describe('the questions story 4a added, as diagnostics and as a gate', () => {
 
     expect(source.typing.columns[0]).toMatchObject({ type: 'text', counts: { unparsed: 0 } })
     expect(codes(store.confirmTyping(source.id).source)).toEqual([])
+  })
+})
+
+// ------------------------------------------- the key an actual ingest produces
+//
+// Every other key test in this project hand-builds the typing object it keys,
+// which means none of them can see the failure that matters: `core/types/
+// typing.js` owns the column record's shape, and the day it puts a `Date`, a
+// `Set` or an explicit `undefined` on one, `canonical` refuses every real
+// Source's key. Before review round 1 that was a throw out of the Sources pane's
+// template; it is a silent total cache miss now, and either way the suite would
+// have stayed green. This case runs a real ingest through the real store and
+// keys what comes out.
+
+describe('what a real entry keys to', () => {
+  it('keys to a string once a real ingest has been confirmed', async () => {
+    const { store, source } = await withColumns([GERMAN, AMBIGUOUS])
+    store.setColumnTyping(source.id, 1, { type: 'date', format: DD })
+    const confirmed = store.confirmTyping(source.id).source
+
+    expect(confirmed.typing.confirmed).toBe(true)
+    expect(stepZeroKey(confirmed)).toMatch(/^[0-9a-f]{32}$/)
+  })
+
+  it('keys an unconfirmed entry too — the key describes the typing, not the gate', async () => {
+    // `of()` refuses to convert an unconfirmed Source, which is AD-29's job and
+    // not the key's. The key exists for both states because `confirmed` is part
+    // of the typing and therefore part of what the Source *is*.
+    const { source } = await withColumns([GERMAN])
+    expect(stepZeroKey(source)).toMatch(/^[0-9a-f]{32}$/)
+  })
+
+  it('keys every column shape detection can produce, not only the settled ones', async () => {
+    // An unresolved verdict carries `evidence`, a chosen type carries `chosen`,
+    // a refused native declaration carries `refusedNativeType`, and a mixed
+    // column carries `mixedAffixes` — four fields the hand-built fixtures never
+    // populate together.
+    const { store, source } = await withColumns([
+      AMBIGUOUS,
+      { name: 'Gemischt', cells: ['12 €', '13 $', '14 €'] },
+      { name: 'Fremd', domain: 'native:interval', cells: ['P1D', 'P2D'] },
+    ])
+    store.setColumnTyping(source.id, 0, { type: 'text' })
+    const entry = store.get(source.id)
+
+    expect(entry.typing.columns[0].chosen).not.toBeNull()
+    expect(stepZeroKey(entry)).toMatch(/^[0-9a-f]{32}$/)
   })
 })
 

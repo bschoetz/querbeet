@@ -277,3 +277,52 @@ export function stepKey(kind, config, inputKeys) {
   }
   return digest(`step${canonical({ kind, config, inputs }, '$step')}`)
 }
+
+/**
+ * A key, or `null` where one could not be minted — **the only form the two
+ * callers use.**
+ *
+ * `canonical` throwing is correct and is what the I/O matrix specifies: a silent
+ * key collision would serve one Step's table as another's. What must not happen
+ * is the throw *leaving the module that asked for a key*. Both callers sit on a
+ * render path — `executeGraph` runs inside a `watch` in `ui/EditorPane.vue` and
+ * `createStepZeroCache.of` inside `ui/SourcesPane.vue`'s template — so an escape
+ * reaches the user as a blank pane, and it would break the frozen rule that a
+ * cached run and an uncached run are indistinguishable except in time: without a
+ * cache the graph runs, with one it throws.
+ *
+ * **The family is wider than any one field, which is why this is contained here
+ * rather than fixed in a validator.** A kind's `validate` is a check on what that
+ * kind can execute, not on what a serializer can encode, and the two do not have
+ * to agree: `configureStep(id, { count: 3, end: undefined })` is accepted by
+ * `core/steps/first.js` by construction, and `{ combine: 'all', conditions: [],
+ * note: new Date(0) }` is accepted by `core/steps/filter.js` because extra fields
+ * are stored verbatim. Reproduced 2026-08-05: the first of those returns 3 rows
+ * without a cache and threw `canonical: cannot serialize undefined at
+ * $step.config.end` with one. Tightening the validators would make `canonical`'s
+ * refusal unreachable *today* and leave it reachable the moment story 14 loads a
+ * Recipe somebody else wrote.
+ *
+ * **The refusal is reported, not swallowed.** It is the one signal in this cache
+ * that means a programming or format error rather than a cold entry, and a
+ * developer who never sees it will conclude the cache works and wonder why it
+ * never hits. It goes to `console.warn` and nowhere else: no Diagnostic is minted
+ * (the frozen Never — no new code, no new German sentence), because the user has
+ * nothing to do about it and the run they get is correct. That is the whole of
+ * the exception to "diagnostics are the only reporting channel"; this file is the
+ * only one in `core/` that names `console`, and the lint config says so.
+ *
+ * @param {() => string} mint the key computation to contain
+ * @returns {string|null}
+ */
+export function keyOrNull(mint) {
+  try {
+    return mint()
+  } catch (refusal) {
+    // Not de-duplicated, deliberately: a run repeats the refusal because the
+    // state repeats, and a warning that appears once and then goes quiet is one
+    // a developer scrolls past. The path is unreachable through the shipped UI.
+    console.warn(`querbeet: not cacheable — ${refusal?.message ?? refusal}`)
+    return null
+  }
+}

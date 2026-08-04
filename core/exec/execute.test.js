@@ -5,7 +5,7 @@
 // engine, reached the way `convert.test.js` reaches it, through a dynamic import
 // so no static import points from `core/` outward (AD-1).
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { CODE, executeGraph } from './execute.js'
 import { createRunCache } from './cache.js'
 import { createGraphStore } from '../graph/graph-store.js'
@@ -604,7 +604,11 @@ describe('the per-Step cache', () => {
     const e = countingEngine()
 
     const first = runCached(graph, { cache: tiny, engine: e })
-    expect(tiny.size()).toBe(1) // the Filter's 2 rows already pushed it over
+    // The Filter's insert evicts **nothing** — eviction stops at one entry, so an
+    // entry over the bound stands alone rather than being refused. It is the
+    // Columns insert that pushes the size to two and evicts the Filter, and the
+    // survivor counted here is therefore Columns.
+    expect(tiny.size()).toBe(1)
     const second = runCached(graph, { cache: tiny, engine: e })
 
     expect(e.calls.filter).toBe(2) // evicted, so recomputed
@@ -663,6 +667,67 @@ describe('the per-Step cache', () => {
 
     expect(cache.size()).toBe(0)
     expect(e.calls).toEqual({ filter: 2, selectColumns: 2 })
+  })
+
+  it('stores nothing for a Step that returned no table, exactly as for one that threw', () => {
+    // The rule is about the entry, not about which failure path produced it: an
+    // entry with no table is not a result to replay. `columns` naming a column
+    // its input does not have returns `{ table: null }` rather than throwing, and
+    // it was being stored until review round 1.
+    const { graph, filter, columns } = configured()
+    graph.configureStep(columns, { columns: [{ from: 'Gibtsnicht', to: 'X' }] })
+    const cache = createRunCache()
+    const e = countingEngine()
+
+    const first = runCached(graph, { cache, engine: e })
+    const second = runCached(graph, { cache, engine: e })
+
+    expect(first.results.get(columns).table).toBeNull()
+    expect(cache.size()).toBe(1) // the Filter's entry, and only that
+    expect(e.calls.selectColumns).toBe(0) // it refused before reaching the engine
+    expect(second.results.get(columns).diagnostics).toEqual(
+      first.results.get(columns).diagnostics,
+    )
+    expect(second.results.get(filter).rowCount).toBe(2) // the Step above it still hits
+  })
+
+  it('runs a config the serializer refuses exactly as it runs without a cache', () => {
+    // **The frozen rule, at its sharpest.** `core/steps/first.js` admits an
+    // explicitly-`undefined` `end` by construction, and `canonical` refuses
+    // `undefined` by construction — both correct, and until review round 1 the
+    // disagreement threw `TypeError` out of `executeGraph` and, through the
+    // `watch` that calls it, out of the Editor's render. A cached run and an
+    // uncached run must be indistinguishable except in time.
+    const graph = createGraphStore()
+    graph.syncSources([{ id: 'src:umsatz', name: 'Umsatz' }])
+    const first = graph.addStep('first', { name: 'Die ersten drei' }).id
+    graph.connect('src:umsatz', first, 0)
+    graph.setResult(first)
+    expect(graph.configureStep(first, { count: 3, end: undefined }).ok).toBe(true)
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const uncached = executeGraph({
+        steps: graph.list(),
+        resultId: graph.resultId(),
+        engine,
+        sourceTable: () => REPORT(),
+      })
+      const cache = createRunCache()
+      const cached = runCached(graph, { cache, engine })
+
+      expect(uncached.results.get(first).rowCount).toBe(3)
+      expect(cached.results.get(first).rowCount).toBe(3)
+      expect(cached.diagnostics).toEqual(uncached.diagnostics)
+      expect(cache.size()).toBe(0) // unkeyable, so uncached — and not wrong
+
+      // Not swallowed: the one signal here that means a programming or format
+      // error rather than a cold entry, and it names the path.
+      expect(warn).toHaveBeenCalled()
+      expect(warn.mock.calls[0][0]).toMatch(/cannot serialize undefined at \$step\.config\.end/)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('computes every Step when there is no cache — the parameter is a door, not a mode', () => {
