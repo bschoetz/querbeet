@@ -29,8 +29,8 @@ context:
 - **Columns:** renaming to a name already in use is refused naming the collision; config order is output column order (CAP-16).
 - **Config lives on the graph node, opaque to `core/graph/`:** new command `configureStep(id, config)` validates structural shape through the kind registry and stores a frozen config; `kinds.js` stays arity-only. Every new diagnostic code gets a German entry and the gap tests stay green.
 - **Execution** (`core/exec/`): topological walk over `contributingTo(graph, resultId)`; Step zero converts each contributing Source through story 6a's cache. **Gate 1 (AD-29): any contributing Source unconfirmed → the run is refused naming the Source; nothing executes.** Gates 2 and 3 arrive with story 7's scheduler. A frontier containing a kind without an executor (Union, Join, Computed, Aggregate — stories 8/9) refuses the run naming the Step and its kind, never crashes.
-- **Interim execution mode, stated:** until story 7's threshold and mode switch, execution recomputes after every graph or config change. Measured affordable: full 100k pipeline 263/446 ms, earliest edit of a 30-Step graph 578/1156 ms, and no Editor-vs-table frame contention across 2,800 swaps.
-- **Per-Step preview** shows the row and column count of that Step's **full** output and that Step's warnings alongside it (CAP-19), plus a windowed row view. Results are held outside reactivity (AD-6), swapped through `shallowRef`.
+- **Interim execution mode, stated:** until story 7's threshold and mode switch, execution recomputes after every **data-affecting** change — `connect`, `disconnect`, `configureStep`, `removeStep`, `setResult`, `syncSources` — never after a rename or a move. Measured affordable: full 100k pipeline 263/446 ms, earliest edit of a 30-Step graph 578/1156 ms, and no Editor-vs-table frame contention across 2,800 swaps.
+- **Per-Step preview** shows the row and column count of that Step's **full** output and that Step's warnings alongside it (CAP-19), plus a windowed row view. **Cells render through a German display projection** (`ui/cell-text.js`): a typed Table holds machine values, and bare interpolation would show a date as a raw nanosecond `BigInt` and a box as `[object Object]`. Numbers and temporals render in German convention; a boxed cell renders as its original text, **unmarked** — no positional box channel crosses the four-method Table after a filter, story 10 owns CAP-31's marking and the gap is filed in the ledger. Results are held outside reactivity (AD-6), swapped through `shallowRef`.
 - **Selection crosses the port as one outward event** (selected node id or null). Selection *state* stays the library's; `EditorPane` only mirrors the id.
 - **Union consuming the same upstream in two slots — decided: allow with a warning.** The graph emits a `warning` diagnostic when one Step consumes the same upstream node in ≥2 slots (self-union stays a legitimate way to double a dataset; silent duplication does not). Visible as a step mark before execution, satisfying "not only at the moment of execution". Ledger entry updated with the decision.
 
@@ -92,12 +92,13 @@ context:
 - [ ] `adapters/arquero/engine.js` + test -- implement both ops: box-blind comparisons, ISO→`BigInt` once, explicit column handling -- hazards stay absorbed (AD-19)
 - [ ] `adapters/vueflow/GraphCanvas.vue` (+ `canvas-logic.js` if logic splits) -- emit `select` with node id / null -- one new outward event, nothing else widens
 - [ ] `core/exec/execute.js` (new) + test -- frontier walk over `contributingTo`, Step zero via 6a, gate 1, per-Step results `{table, rowCount, columnCount, diagnostics}`, named refusals for unimplemented kinds -- the walking skeleton
-- [ ] `ui/EditorPane.vue` -- hold selected id (`shallowRef`), trigger recompute on graph/config change, host the side panel -- the doors stay in one pane
-- [ ] `ui/StepPanel.vue` (new) -- German config forms for Filter (column select, operator select, typed value input, all/any) and Columns (checkbox + rename + reorder), plus the preview: counts, warnings via `runStatus`, `RowWindow` embed -- CAP-15/16/19 surface
+- [ ] `ui/EditorPane.vue` -- hold selected id (`shallowRef`), trigger recompute on data-affecting changes only, host the side panel -- the doors stay in one pane
+- [ ] `ui/cell-text.js` (new) + test -- German display projection for preview cells: number → `1.234,56`, temporals from `BigInt` ns → `31.12.2025` / `31.12.2025 14:30` / `14:30`, boolean → `wahr`/`falsch`, text and boxed original text as-is -- story 10 adopts and refines this module, it is written to be its seam
+- [ ] `ui/StepPanel.vue` (new) -- German config forms for Filter (column select, operator select, typed value input, all/any) and Columns (checkbox + rename + reorder), plus the preview: counts, warnings via `runStatus`, `RowWindow` embed rendering through `cell-text` -- CAP-15/16/19 surface
 - [ ] `ui/graph-labels.js` -- German sentences for every new code; gap tests stay `[]` -- NFR-6
 - [ ] `ui/RowWindow.vue` -- `testid` (and label already exists) parameterized -- no collision with page-scoped `preview` assertions
 - [ ] `tests/e2e/execution.spec.js` (new) -- load fixture → confirm → Filter + Columns → per-Step counts, warning visibility, refusal paths -- end to end over the built file
-- [ ] `_bmad-output/implementation-artifacts/deferred-work.md` -- update `:59-62` with the decision (allow + warn), citing this spec -- ledger hygiene
+- [ ] `_bmad-output/implementation-artifacts/deferred-work.md` -- update `:59-62` with the decision (allow + warn), citing this spec; append a new entry: step-output previews render boxes as original text but cannot **mark** them — no positional channel crosses the four-method Table after a filter, and story 10 (CAP-31 "unparsed cells visually marked") needs a channel decision -- ledger hygiene
 
 **Acceptance Criteria:**
 
@@ -108,8 +109,11 @@ context:
 - Given a Columns rename to an existing name, when configured, then the rename is refused naming the collision and the previous config stays in force.
 - Given a frontier containing a Union (or an unconfirmed Source), when a run is requested, then the run is refused naming the Step and kind (or the Source), and no Step executes.
 - Given one Source connected to both slots of a Union, when the graph renders, then the Union carries a visible warning before any run.
+- Given a date column in a Step's preview, when the rows render, then the cell shows the German form (e.g. `31.12.2025`), never a raw nanosecond value — and renaming or moving a Step triggers no recomputation.
 
 ## Spec Change Log
+
+- 2026-08-04 (pre-dev seam review, owner-approved): added `ui/cell-text.js` — a typed Table renders machine values, and bare `{{ cell }}` would show raw `BigInt`s and `[object Object]` boxes; recompute narrowed to data-affecting changes (a rename cost 263–446 ms as written); a ledger entry is filed for the missing box-marking channel in step previews (story 10's CAP-31). KEEP: the Union decision (allow + warn) and both taken Ask-Firsts are unchanged.
 
 ## Design Notes
 
