@@ -5,10 +5,10 @@
 // engine, reached the way `convert.test.js` reaches it, through a dynamic import
 // so no static import points from `core/` outward (AD-1).
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { CODE, executeGraph } from './execute.js'
 import { createRunCache } from './cache.js'
-import { canonical, forgetRefusals } from './cache-key.js'
+import { canonical, forgetRefusals, keyOrNull, sourceKey, stepKey } from './cache-key.js'
 import { createGraphStore } from '../graph/graph-store.js'
 
 const { createArqueroEngine } = await import('../../adapters/arquero/engine.js')
@@ -440,6 +440,13 @@ describe('what the run carries out of a Step', () => {
 // or "what came back is what came back the first time", diagnostics included.
 
 describe('the per-Step cache', () => {
+  // A refusal is warned about once per distinct message and the log is module
+  // state, so a case that counts warnings must not depend on which case ran
+  // before it. In a hook rather than in the cases that happen to need it today:
+  // five hand-written calls were the round-2 shape, and the sixth case to need
+  // one would have passed on its position in the file (review round 3).
+  beforeEach(forgetRefusals)
+
   /** The real engine with its two verbs counted. A stub would be a second
    *  opinion about what a Step produces; what is under test is how often. */
   const countingEngine = () => {
@@ -666,25 +673,32 @@ describe('the per-Step cache', () => {
     expect(cache.size()).toBe(0)
   })
 
-  it('contains a refusal from the `sourceKey` door as it does from its own key', () => {
-    // `sourceKey` is a **door**: `executeGraph` does not know what is behind it.
-    // `ui/EditorPane.vue`'s implementation contains its own refusals because
-    // `stepZeroKey` does, so this was a hole in the contract rather than a live
-    // defect — and a hole a second caller would have found on a render path
-    // (review round 2). The two doors now behave alike.
+  it.each([
+    ['a serializer refusal', () => canonical({ at: new Date(0) })],
+    ['its own documented guard', () => sourceKey({ parseConfig: null, encoding: null })],
+    ['a plain Error', () => { throw new Error('the door had its own opinion') }],
+    ['a RangeError', () => { throw new RangeError('out of range') }],
+    ['something that is not an Error at all', () => { throw { why: 'a bare object' } }],
+  ])('contains a `sourceKey` door that throws %s', (_what, door) => {
+    // **A door is foreign code on a render path, so everything it throws is
+    // contained** — which is a different rule from the one the `stepKey` call
+    // beside it follows, and rounds 1 and 2 pushed the same site both ways.
+    // Round 1 wrapped it; round 2 narrowed the wrapper to `CanonicalRefusal`
+    // only, which reopened the crash for every class except the one the case
+    // was written with. This is that case, widened to the classes that were
+    // actually escaping.
     const { graph, columns } = configured()
     const cache = createRunCache()
     const e = countingEngine()
 
-    forgetRefusals()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
-      const out = runCached(graph, {
-        cache,
-        engine: e,
-        sourceKey: () => canonical({ at: new Date(0) }), // a door that throws
-      })
+      let out
+      expect(() => {
+        out = runCached(graph, { cache, engine: e, sourceKey: door })
+      }).not.toThrow()
 
+      // The run is the run it would have been with no cache at all.
       expect(out.ok).toBe(true)
       expect(out.results.get(columns).rowCount).toBe(2)
       expect(cache.size()).toBe(0)
@@ -692,6 +706,13 @@ describe('the per-Step cache', () => {
     } finally {
       warn.mockRestore()
     }
+  })
+
+  it('still lets an internal caller bug propagate — the other boundary', () => {
+    // The narrow rule, which the door rule must not have replaced: inside this
+    // repository a non-refusal is a programming error and has to reach whoever
+    // can fix it. `keyOrNull` is what the `stepKey` call uses and it rethrows.
+    expect(() => keyOrNull(() => stepKey('filter', {}, [null]))).toThrow(/key for every input/)
   })
 
   it('caches nothing below a Source it cannot key, rather than guessing one', () => {
@@ -742,7 +763,6 @@ describe('the per-Step cache', () => {
     graph.setResult(first)
     expect(graph.configureStep(first, { count: 3, end: undefined }).ok).toBe(true)
 
-    forgetRefusals() // each distinct message is warned once, so start from silence
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const uncached = executeGraph({

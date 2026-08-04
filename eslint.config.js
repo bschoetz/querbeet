@@ -185,6 +185,33 @@ export default [
           message: `AD-2: core/ is browser-free. \`${name}\` belongs behind a port. The domain must run under Vitest with no browser.`,
         })),
       ],
+      // The register the architecture's Cross-cutting — logging row points at is
+      // a gate only if something enforces it. Until review round 3 nothing did:
+      // `globalThis.console.warn` in any core file linted clean, which made both
+      // that row and this config assert an enforcement that did not exist.
+      //
+      // **Two rules, because they catch different spellings and neither catches
+      // the other's.** `no-console` sees a reference to the `console` *global*
+      // and nothing else, so it is blind to every member access on the global
+      // object — which is also how `globalThis.fetch` walks past the
+      // `no-restricted-globals` list above. The selector below closes both, for
+      // `console` and for the whole AD-2 list, in one expression.
+      //
+      // What it does **not** catch is aliasing (`const g = globalThis`) or a
+      // computed key. That is deliberate and is the honest limit of a lint rule:
+      // it gates a mistake, not a determined author, and a determined author is
+      // what review is for. `globalThis` itself stays legal — `core/types/
+      // typing.test.js` reaches `process.versions.icu` through it precisely
+      // because `core/` is linted with neither the browser nor the Node globals.
+      'no-console': 'error',
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: `MemberExpression[object.name='globalThis'][property.name=/^(${[...browserBanned, 'console'].join('|')})$/]`,
+          message:
+            'AD-2: reaching a banned global through `globalThis` is the same import with one extra step. `console` is admitted only in the files eslint.config.js enumerates, which the architecture’s Cross-cutting — logging row points at.',
+        },
+      ],
     },
   },
 
@@ -201,11 +228,19 @@ export default [
   // and is deliberately not restated here, because the first version of this
   // block argued the case afresh while asserting the unamended row still held.
   //
-  // Today there is exactly one file: `keyOrNull` contains a `canonical` refusal
-  // that would otherwise escape onto a render path.
+  // Today there is exactly one file: `keyOrNull` and `keyFromDoor` contain a
+  // refusal that would otherwise escape onto a render path.
+  //
+  // The block above bans `console` in `core/` two ways — as an undeclared global
+  // and through `no-console` — so this one has to lift both, which is what makes
+  // the register a register rather than a comment.
   {
     files: ['core/exec/cache-key.js'],
     languageOptions: { globals: { console: 'readonly' } },
+    rules: { 'no-console': 'off' },
+    // `no-restricted-syntax` is deliberately *not* lifted: this file names
+    // `console` directly, and the `globalThis` route is no more legitimate here
+    // than anywhere else in `core/`.
   },
 
   // -------------------------------------------------------------------- ui/

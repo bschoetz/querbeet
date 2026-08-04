@@ -67,7 +67,7 @@ import { error } from '../diagnostics/diagnostic.js'
 import { contributingTo, findNode } from '../graph/graph.js'
 import { SOURCE } from '../graph/kinds.js'
 import { stepKind } from '../steps/index.js'
-import { keyOrNull, stepKey } from './cache-key.js'
+import { keyFromDoor, keyOrNull, stepKey } from './cache-key.js'
 
 /**
  * Every code this file emits, built out of the constants its own emit sites use
@@ -257,14 +257,15 @@ export function executeGraph({
       // key, and its diagnostics live on the registry entry rather than in the
       // run — so there is nothing here to store and nothing to replay.
       //
-      // Through `keyOrNull` like its neighbour below, because `sourceKey` is a
-      // **door**: `executeGraph` does not know what is on the other side of it,
-      // and `ui/EditorPane.vue`'s implementation happens to contain its own
-      // refusals only because `stepZeroKey` does. A door that throws is not a
-      // door, and the second caller — the one nobody has written yet — would
-      // find that out on a render path (review round 2).
+      // Through `keyFromDoor` and **not** through `keyOrNull`, and the two are
+      // different on purpose (review round 3). `sourceKey` is a door: this file
+      // did not write what is behind it, cannot audit it, and its one caller is a
+      // Vue `watch`, so *whatever* it throws is a cache miss rather than a blank
+      // Editor. The `stepKey` call below is internal and keeps the narrow rule,
+      // so a caller bug in this repository still propagates to whoever can fix
+      // it. Rounds 1 and 2 pushed one site both ways and it could only be one.
       if (caching) {
-        const key = keyOrNull(() => sourceKey(node.id))
+        const key = keyFromDoor(() => sourceKey(node.id))
         if (typeof key === 'string') keys.set(node.id, key)
       }
       record(node, sourceTable(node.id), [])

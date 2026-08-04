@@ -18,7 +18,7 @@
 // columns, and asserting on the columns is more precise than asserting through a
 // table. `adapters/arquero/engine.test.js` is where the real one is exercised.
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { BOOLEAN, DATE, DATETIME, DURATION, NUMBER, TEXT, TIME } from '../types/catalog.js'
 import { bestFormat, detectColumn, scoreColumn } from '../types/typing.js'
 import { digest, forgetRefusals } from './cache-key.js'
@@ -655,6 +655,11 @@ describe('the Step-zero cache', () => {
 // that reaches the user.
 
 describe('what stepZeroKey refuses to key', () => {
+  // A refusal is warned about once per distinct message and the log is module
+  // state, so these cases must not depend on which one ran first. In a hook
+  // rather than as a call inside each case that needs it (review round 3).
+  beforeEach(forgetRefusals)
+
   const entry = () => confirmed([{ name: 'Betrag', cells: ['1,5', 'abc'] }])
 
   it('answers null, symmetrically and silently, for every field a key is made of', () => {
@@ -668,7 +673,6 @@ describe('what stepZeroKey refuses to key', () => {
     // field yet is *not keyable*, which is ordinary, while a `canonical` refusal
     // means a config exists that no key can describe, which a developer has to
     // see. Warning about the first would bury the second.
-    forgetRefusals()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       expect(stepZeroKey(null)).toBeNull()
@@ -692,7 +696,6 @@ describe('what stepZeroKey refuses to key', () => {
       typing: { columns: [{ name: 'Betrag', detectedAt: new Date(0) }], confirmed: true },
     }
 
-    forgetRefusals()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       expect(stepZeroKey(hostile)).toBeNull()
@@ -713,7 +716,6 @@ describe('what stepZeroKey refuses to key', () => {
       },
     }
 
-    forgetRefusals()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       expect(() => cache.of(hostile)).not.toThrow()

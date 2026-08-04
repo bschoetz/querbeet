@@ -299,16 +299,48 @@ export function stepKey(kind, config, inputKeys) {
 }
 
 /**
+ * Is this the refusal `canonical` throws?
+ *
+ * **By tag, not by `instanceof`** (review round 3). A class identity is per
+ * module instance, and this module can be evaluated twice in one graph — two
+ * bundles, a `?worker` import, a test reaching it through two specifiers. An
+ * `instanceof` check across that boundary answers `false` for a genuine refusal
+ * and rethrows it onto a render path: strictly worse than the blanket catch it
+ * replaced, because it fails only in the configuration nobody tests. `name` is
+ * set in the constructor and survives every realm.
+ */
+const isRefusal = (thrown) => thrown?.name === 'CanonicalRefusal'
+
+/**
  * Every refusal message already reported, so each is said once.
  *
  * Module state in `core/`, which this story otherwise refuses — both caches are
  * closures handed in from outside for exactly that reason. It is admitted here
  * because it is not domain state and no answer this module gives depends on it:
- * clearing it changes what a developer sees and nothing else. It is bounded by
- * the number of distinct *messages*, and a message names a path in a config
- * rather than a value, so it cannot grow with the data.
+ * clearing it changes what a developer sees and nothing else.
+ *
+ * **It is capped, and the sentence that said it could not grow with the data was
+ * wrong** (review round 3). A message names a *path*, and `canonical` builds an
+ * array path as `${path}[${i}]` — so one wide typing, or one foreign Recipe with
+ * a bad value in every element, mints a distinct message per index. The cap is
+ * what makes "bounded" true rather than argued. Sixty-four is far past useful: a
+ * developer who has seen sixty-four distinct paths refused is not reading the
+ * sixty-fifth, and the last line says the reporting stopped, so the silence
+ * afterwards cannot be read as the problem having gone away.
  */
 const reported = new Set()
+const REPORT_CAP = 64
+
+/** Say it once, and stop saying anything at all after the cap. */
+const report = (message) => {
+  if (reported.has(message) || reported.size >= REPORT_CAP) return
+  reported.add(message)
+  console.warn(
+    reported.size === REPORT_CAP
+      ? `querbeet: not cacheable — ${message} (and no further key refusals will be reported)`
+      : `querbeet: not cacheable — ${message}`,
+  )
+}
 
 /**
  * Forget which refusals have been reported.
@@ -347,14 +379,15 @@ export function forgetRefusals() {
  * refusal unreachable *today* and leave it reachable the moment story 14 loads a
  * Recipe somebody else wrote.
  *
- * **Only a `CanonicalRefusal` is contained.** `stepKey`'s and `sourceKey`'s own
- * guards are documented caller bugs — a non-string kind, an input with no key, an
- * entry with no digest — and the house rule is that the core throws only on a
- * programming error. Catching those alongside a refusal turned three failure
+ * **Only a `CanonicalRefusal` is contained here.** `stepKey`'s and `sourceKey`'s
+ * own guards are documented caller bugs — a non-string kind, an input with no
+ * key, an entry with no digest — and the house rule is that the core throws only
+ * on a programming error. Catching those alongside a refusal turned three failure
  * classes into one silent miss and left both guards unable to fail; narrowed in
- * review round 2. Neither guard is reachable from either caller (the executor
- * checks every input key is a string, `stepZeroKey` checks all four fields), so
- * narrowing costs nothing and restores what the guards are for.
+ * review round 2. This is the boundary for a call whose whole implementation is
+ * in this repository: `stepKey` in the executor, `stepKey` and `sourceKey` inside
+ * `stepZeroKey`. **A call into code this module did not write is a different
+ * boundary — see `keyFromDoor`.**
  *
  * **The refusal is reported, not swallowed.** It is the one signal in this cache
  * that means a programming or format error rather than a cold entry, and a
@@ -362,10 +395,10 @@ export function forgetRefusals() {
  * never hits. It goes to `console.warn` and nowhere else, under the four
  * conditions the architecture's amended **Cross-cutting — logging** row states
  * (owner decision, 2026-08-05) — including the fourth, **once per distinct
- * message**, which is why the set below exists: `stepZeroKey` runs per Source per
- * run and `executeGraph` runs on every data-affecting command, so an
- * un-deduplicated warning fires at keystroke frequency and buries the errors it
- * sits among. Round 1 argued the opposite and was overruled.
+ * message**, which is why `report` exists: `stepZeroKey` runs per Source per run
+ * and `executeGraph` runs on every data-affecting command, so an un-deduplicated
+ * warning fires at keystroke frequency and buries the errors it sits among.
+ * Round 1 argued the opposite and was overruled.
  *
  * @param {() => string} mint the key computation to contain
  * @returns {string|null}
@@ -374,11 +407,47 @@ export function keyOrNull(mint) {
   try {
     return mint()
   } catch (refusal) {
-    if (!(refusal instanceof CanonicalRefusal)) throw refusal
-    if (!reported.has(refusal.message)) {
-      reported.add(refusal.message)
-      console.warn(`querbeet: not cacheable — ${refusal.message}`)
-    }
+    if (!isRefusal(refusal)) throw refusal
+    report(refusal.message)
     return null
   }
 }
+
+/**
+ * The same, for a key that comes back **through a door** — `executeGraph`'s
+ * injected `sourceKey(id)` — and it contains *everything*.
+ *
+ * **Two boundaries, because there are two kinds of caller** (review round 3;
+ * rounds 1 and 2 conflated them, and the conflation was a real hole). Round 1
+ * wrapped the door so a throw could not reach a render path. Round 2 narrowed
+ * `keyOrNull` so `stepKey`'s guards could fail again. Both are right and they
+ * cannot both hold at one site: narrowing the door reopened round 1's crash for
+ * every class except the one class it happened to be tested with. Probed
+ * 2026-08-05 — an injected `sourceKey` throwing its own documented guard, or a
+ * plain `Error`, escaped `executeGraph`.
+ *
+ * The distinction is **who wrote the code**, not what it threw. Inside this
+ * repository a non-refusal is a programming error and must reach whoever can fix
+ * it. A door is foreign code on a render path: `executeGraph` has no idea what is
+ * behind it, cannot audit it, and its one caller is a Vue `watch` where an escape
+ * is a blank Editor. So everything a door throws is a cache miss — the safe
+ * category the executor already has — and everything a door throws is reported,
+ * including a bare object, which is what `messageOf` is for.
+ *
+ * @param {() => (string|null)} mint the door call to contain
+ * @returns {string|null}
+ */
+export function keyFromDoor(mint) {
+  try {
+    return mint()
+  } catch (thrown) {
+    report(isRefusal(thrown) ? thrown.message : `a sourceKey door threw ${messageOf(thrown)}`)
+    return null
+  }
+}
+
+/** What a door threw, as something a developer can read. An `Error` has a
+ *  message; a thrown string, number or bare object has whatever `String` makes of
+ *  it, which is the honest answer for code this module did not write. */
+const messageOf = (thrown) =>
+  typeof thrown?.message === 'string' ? thrown.message : String(thrown)

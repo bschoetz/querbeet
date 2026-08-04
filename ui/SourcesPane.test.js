@@ -1586,6 +1586,57 @@ describe('a withdrawn Source withdraws the run cache', () => {
     expect(runCache.cleared.count).toBe(1)
   })
 
+  it('clears it for the other two re-parse controls, which round 2 left uncovered', async () => {
+    // Four handlers reach `reparse` and only two had a case. A header row and a
+    // sheet switch re-read the retained bytes exactly as a delimiter does, and
+    // both drop the confirmation with them.
+    const runCache = clearRecorder()
+    const store = stubStore(
+      source([column('Betrag')], { proposal: { delimiter: ',', headerRow: 1, sheets: ['Q1', 'Q2'], sheet: 'Q1' } }),
+    )
+    const w = await render(store, stubEngine(), runCache)
+
+    const headerRow = w.find('input[aria-label="Kopfzeile"]')
+    headerRow.element.value = '3'
+    await headerRow.trigger('change')
+    await flushPromises()
+    expect(store.calls).toContainEqual(['reconfigureParse', 'src:daten', { headerRow: 3 }])
+    expect(runCache.cleared.count).toBe(1)
+
+    await w.find('select[aria-label="Tabellenblatt"]').setValue('Q2')
+    await flushPromises()
+    expect(store.calls).toContainEqual(['reconfigureParse', 'src:daten', { sheet: 'Q2' }])
+    expect(runCache.cleared.count).toBe(2)
+  })
+
+  it('clears nothing when a re-parse control issued no command at all', async () => {
+    // **The performance defect round 3 found, pinned.** Three of the four
+    // handlers have a no-op path — an empty delimiter, an empty sheet, a header
+    // row that is not a positive integer — and all three still go through
+    // `reparse`, because the refresh is what snaps the bound control back to the
+    // state the application holds. Ungated, a keystroke in the Kopfzeile field
+    // discarded the whole cache, on the exact path this story exists to make
+    // fast.
+    const runCache = clearRecorder()
+    const store = stubStore(
+      source([column('Betrag')], { proposal: { delimiter: ',', headerRow: 1, sheets: ['Q1', 'Q2'], sheet: 'Q1' } }),
+    )
+    const w = await render(store, stubEngine(), runCache)
+
+    const headerRow = w.find('input[aria-label="Kopfzeile"]')
+    for (const typed of ['', '0', '-1', '2.5']) {
+      headerRow.element.value = typed
+      await headerRow.trigger('change')
+      await flushPromises()
+    }
+    await w.find('select[aria-label="Trennzeichen"]').setValue('')
+    await w.find('select[aria-label="Tabellenblatt"]').setValue('')
+    await flushPromises()
+
+    expect(store.calls.filter(([name]) => name === 'reconfigureParse')).toEqual([])
+    expect(runCache.cleared.count).toBe(0)
+  })
+
   it('leaves it alone for a rename and a confirmation, which withdraw nothing', async () => {
     // The complement of the rule, and it is narrower than its round-1 name
     // ("every command that withdraws nothing") claimed: these two are the

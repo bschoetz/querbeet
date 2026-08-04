@@ -206,7 +206,16 @@ describe('the entry ceiling', () => {
     // runs at all. That is the intended behaviour and this is what pins it, so a
     // future change to either constant has to face the crossover rather than a
     // sentence about it.
+    // **Both constants pinned, and the ratio is not enough on its own** (review
+    // round 3): a crossover computed from the constants themselves holds at
+    // `maxEntries: 15_000` too — the exact change the comment in `cache.js` says
+    // was deliberately not made. Round 2's charge against round 1 was that the
+    // test re-asserted a constant; re-asserting only the ratio has the same hole
+    // from the other side, so the value and the property are both here.
+    expect(DEFAULT_MAX_ROWS).toBe(15_000_000)
+    expect(DEFAULT_MAX_ENTRIES).toBe(1_000)
     const crossover = DEFAULT_MAX_ROWS / DEFAULT_MAX_ENTRIES
+    expect(crossover).toBe(15_000)
 
     const small = createRunCache()
     for (let i = 0; i < DEFAULT_MAX_ENTRIES + 50; i += 1) small.set(`k${i}`, entry(crossover / 2))

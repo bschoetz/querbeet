@@ -69,7 +69,7 @@ const handle = (names) => ({
 /** An engine that counts the verbs a run asks it for — `ui/EditorPane.test.js`'s
  *  idiom, one level up. */
 const countingEngine = () => {
-  const calls = { fromColumns: 0, filter: 0 }
+  const calls = { fromColumns: 0, filter: 0, selectColumns: 0 }
   return {
     calls,
     fromColumns: (columns) => {
@@ -80,11 +80,22 @@ const countingEngine = () => {
       calls.filter += 1
       return { table, removed: 0, boxed: 0, unreadable: [] }
     },
-    selectColumns: (table) => table,
+    selectColumns: (table) => {
+      calls.selectColumns += 1
+      return table
+    },
   }
 }
 
-/** A confirmed Source in the real store, and a graph that filters it. */
+/**
+ * A confirmed Source in the real store, and a graph of **two** cacheable Steps
+ * over it.
+ *
+ * Two rather than one, and that is what makes the default bounds observable: a
+ * one-entry chain fits inside any `maxEntries`, so a default factory quietly
+ * built with `createRunCache({ maxEntries: 1 })` would still hit. Round 3 mutated
+ * exactly that and the suite stayed green.
+ */
 const wired = async () => {
   const store = createSourceStore({ csv: reader })
   const { source } = await store.addSource({
@@ -96,22 +107,35 @@ const wired = async () => {
   const graph = createGraphStore()
   graph.syncSources([{ id: source.id, name: source.name }])
   const filter = graph.addStep('filter', { name: 'Nur Große' }).id
+  const columns = graph.addStep('columns', { name: 'Nur Kunde' }).id
   graph.connect(source.id, filter, 0)
-  graph.setResult(filter)
+  graph.connect(filter, columns, 0)
+  // Configured, because an empty selection is the identity and `columns.apply`
+  // answers it without asking the engine — an unconfigured Step would be a
+  // second cacheable entry that no counter can see.
+  graph.configureStep(columns, { columns: [{ from: 'Kunde', to: 'Kunde' }] })
+  graph.setResult(columns)
 
-  return { store, graph, sourceId: source.id, filter }
+  return { store, graph, sourceId: source.id, sourceName: source.name, filter, columns }
 }
 
-/** The cache is passed in rather than left to `App`'s own default, so the test
- *  can *observe* it. The withdrawal rule is a statement about what the cache
- *  holds, and counting engine calls cannot see it: after a withdrawal the run
- *  refuses at the frontier and calls the engine zero times whether or not
- *  anything was cleared, which is how the round-1 version of this file passed
- *  with `:run-cache` deleted. */
-const render = async (store, graph, engine, runCache = createRunCache()) => {
-  const w = mount(App, {
-    props: { buildVersion: 'test', store, graph, engine, canvas: StubCanvas, runCache },
-  })
+/**
+ * Mount `App`.
+ *
+ * **With no `runCache` unless a case asks for one**, which is the difference
+ * round 3 turned on. `app/main.js` passes no such prop, so App's own default
+ * factory is the only thing that gives the shipped artefact a cache — and a
+ * helper that defaulted the argument meant every case injected and none
+ * exercised that expression. Mutating the default to `null`, or to a cache too
+ * small to hold the graph, left the whole suite green.
+ *
+ * A case that needs to *read* `size()` still has to hold the cache, and passes
+ * one. The engine is the observation everywhere else.
+ */
+const render = async (store, graph, engine, runCache) => {
+  const props = { buildVersion: 'test', store, graph, engine, canvas: StubCanvas }
+  if (runCache !== undefined) props.runCache = runCache
+  const w = mount(App, { props })
   await flushPromises()
   await nextTick()
   return w
@@ -124,23 +148,29 @@ const show = async (w, label) => {
 }
 
 describe('the caches App owns', () => {
-  it('survives the Editor being unmounted and remounted by a view switch', async () => {
-    // The Editor is genuinely `v-if`, so this is a real unmount — CAP-11's
-    // "leaving and re-entering loses no Step configuration" is asserted that way
-    // deliberately. What must also survive is the work: a graph nobody touched
-    // must not be recomputed because the user looked at their Sources.
+  it('gives the product a working cache with no cache passed to it at all', async () => {
+    // **Mounted the way `app/main.js` mounts it**, which is the whole point of
+    // this case: no `runCache` prop, so what is under test is App's own default
+    // factory — the one expression that gives the shipped artefact a cache, and
+    // the one nothing covered through three review rounds. Every earlier version
+    // of this file injected a cache and then asserted that the injected cache
+    // worked.
+    //
+    // The Editor is genuinely `v-if`, so the view switch is a real unmount —
+    // CAP-11's "leaving and re-entering loses no Step configuration" is asserted
+    // that way deliberately. What must also survive is the work: a graph nobody
+    // touched must not be recomputed because the user looked at their Sources.
     const { store, graph } = await wired()
     const engine = countingEngine()
     const w = await render(store, graph, engine)
 
     await show(w, 'Editor')
-    const afterFirstRun = engine.calls.filter
-    expect(afterFirstRun).toBeGreaterThan(0)
+    expect(engine.calls).toMatchObject({ filter: 1, selectColumns: 1 })
 
     await show(w, 'Quellen')
     await show(w, 'Editor')
 
-    expect(engine.calls.filter).toBe(afterFirstRun)
+    expect(engine.calls).toMatchObject({ filter: 1, selectColumns: 1 })
   })
 
   it('converts each Source once, whichever pane is asking', async () => {
@@ -161,8 +191,12 @@ describe('the caches App owns', () => {
 
   it('lets go of everything derived from a Source that is removed', async () => {
     // AD-29 from the run cache's side: it is content-keyed and has no id to
-    // release by, so `ui/SourcesPane.vue` clears it.
-    const { store, graph, sourceId } = await wired()
+    // release by, so `ui/SourcesPane.vue` clears it. The cache is injected here
+    // because `size()` is the observation — after a removal the run refuses at
+    // the frontier, so the engine is called zero times whether anything was
+    // cleared or not, which is how round 1's version of this case passed with
+    // `:run-cache` deleted.
+    const { store, graph, sourceId, sourceName } = await wired()
     const cache = createRunCache()
     const w = await render(store, graph, countingEngine(), cache)
 
@@ -170,7 +204,9 @@ describe('the caches App owns', () => {
     expect(cache.size()).toBeGreaterThan(0)
 
     await show(w, 'Quellen')
-    await w.find('[aria-label="Entfernen: umsatz"]').trigger('click')
+    // Derived from the fixture, so renaming it fails as a name mismatch rather
+    // than as an empty find three lines later.
+    await w.find(`[aria-label="Entfernen: ${sourceName}"]`).trigger('click')
     await nextTick()
 
     expect(store.get(sourceId)).toBeNull()
@@ -178,7 +214,7 @@ describe('the caches App owns', () => {
   })
 
   it('lets go of everything derived from a typing that was withdrawn', async () => {
-    const { store, graph } = await wired()
+    const { store, graph, sourceId, sourceName } = await wired()
     const cache = createRunCache()
     const w = await render(store, graph, countingEngine(), cache)
 
@@ -186,9 +222,13 @@ describe('the caches App owns', () => {
     expect(cache.size()).toBeGreaterThan(0)
 
     await show(w, 'Quellen')
-    await w.find('[aria-label="Bestätigung aufheben: umsatz"]').trigger('click')
+    await w.find(`[aria-label="Bestätigung aufheben: ${sourceName}"]`).trigger('click')
     await nextTick()
 
+    // Both halves, so the pair is symmetric with its sibling above: the store
+    // really did withdraw, and the cache really did let go. Asserting only the
+    // second would pass over a pane that cleared the cache and forgot the command.
+    expect(store.get(sourceId).typing.confirmed).toBe(false)
     expect(cache.size()).toBe(0)
   })
 })

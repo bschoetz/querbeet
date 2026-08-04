@@ -689,9 +689,14 @@ const remove = (id) => {
   withdraw()
   refresh()
 }
-// The three commands that re-parse are awaited: a binary reader cannot be
-// synchronous, so refreshing before the read has landed would project the
-// previous table (see the note on `createSourceStore`).
+// **Four handlers, two store commands, one helper.** `setEncoding` issues
+// `overrideEncoding`; `setDelimiter`, `setHeaderRow` and `setSheet` all issue
+// `reconfigureParse`. Both commands re-read the retained bytes and both are
+// awaited: a binary reader cannot be synchronous, so refreshing before the read
+// has landed would project the previous table (see the note on
+// `createSourceStore`). Three of the four also have a *no-op* path where they
+// issue nothing at all and only the refresh is wanted, which is what the
+// withdrawal in `reparse` has to distinguish.
 //
 // While one is in flight the control that issued it is disabled and says so. A
 // 2.4 MB workbook takes a third of a second to parse and a slow machine much
@@ -704,8 +709,10 @@ const isParsing = (id, control) => parsing.value[id] === control
 
 const reparse = async (id, control, run) => {
   parsing.value = { ...parsing.value, [id]: control }
+  // `undefined` means no command was issued at all — see the withdrawal below.
+  let committed
   try {
-    await run()
+    committed = await run()
   } catch {
     // A reader that fails is not this path: the store turns that into a
     // Diagnostic on the card. A rejection here is a programming error, and
@@ -724,13 +731,22 @@ const reparse = async (id, control, run) => {
     const rest = { ...parsing.value }
     delete rest[id]
     parsing.value = rest
-    // Both re-parses commit `confirmed: false` through `retype` in the store, so
-    // both withdraw the confirmation and both clear (AD-29). It is in the
-    // `finally` rather than on the success path because a *failed* re-read also
-    // commits — keeping the previous table under the parse config that failed —
-    // and clearing a cache that did not need clearing is a miss, never a wrong
-    // answer.
-    withdraw()
+    // Both re-parses commit `confirmed: false` through the store's `retype`, so
+    // both withdraw the confirmation and both clear (AD-29). In the `finally`
+    // rather than on the success path, because a *failed re-read* commits too —
+    // the store keeps the previous table and turns the failure into a Diagnostic
+    // — and that entry has to withdraw like any other.
+    //
+    // **Gated on something actually having been committed** (review round 3).
+    // Three of the four handlers below hand back `undefined` rather than issuing
+    // a command: an empty delimiter, an empty sheet, and a header row that is not
+    // a positive integer. They still come through here, because the refresh is
+    // what snaps the bound control back to the state the application holds — so
+    // an ungated `withdraw()` meant every keystroke in the Kopfzeile field threw
+    // the whole cache away, on precisely the path this story exists to make fast.
+    // A rejection leaves `committed` undefined too, and nothing was committed
+    // then either.
+    if (committed !== undefined) withdraw()
     refresh()
   }
 }

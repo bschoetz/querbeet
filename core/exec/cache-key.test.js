@@ -22,6 +22,7 @@ import {
   digest,
   digestBytes,
   forgetRefusals,
+  keyFromDoor,
   keyOrNull,
   sourceKey,
   stepKey,
@@ -322,5 +323,99 @@ describe('keyOrNull', () => {
     expect(() => canonical(undefined)).toThrow(CanonicalRefusal)
     expect(() => canonical(undefined)).toThrow(TypeError)
     expect(() => stepKey(undefined, {}, [])).not.toThrow(CanonicalRefusal)
+  })
+
+  it('knows a refusal by its tag, so a second copy of this module is not a crash', () => {
+    // **`instanceof` is per module instance** and this module can be evaluated
+    // twice in one graph — two bundles, a `?worker` import, a test reaching it
+    // through two specifiers. An identity check answers `false` for a refusal
+    // that crossed that boundary and rethrows it onto a render path: worse than
+    // the blanket catch it replaced, because it fails only where nobody looks.
+    // This is that refusal, as another realm would hand it over.
+    const foreign = new TypeError('canonical: cannot serialize a Date at $.somewhere')
+    foreign.name = 'CanonicalRefusal'
+    expect(foreign instanceof CanonicalRefusal).toBe(false)
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(
+        keyOrNull(() => {
+          throw foreign
+        }),
+      ).toBeNull()
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('stops reporting at a cap, and says that it is stopping', () => {
+    // A message names a *path*, and `canonical` writes an array path as
+    // `${path}[${i}]` — so one wide typing or one foreign Recipe mints a distinct
+    // message per index. Round 2's docstring said the set could not grow with the
+    // data; it can, and the cap is what makes "bounded" true rather than argued.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      // One bad value further along the array each time, which is exactly the
+      // shape a wide typing or a foreign Recipe produces: 100 distinct paths and
+      // therefore 100 distinct messages.
+      for (let i = 0; i < 100; i += 1) {
+        keyOrNull(() => canonical({ columns: [...new Array(i).fill(1), undefined] }))
+      }
+
+      expect(warn).toHaveBeenCalledTimes(64)
+      expect(warn.mock.calls[0][0]).toMatch(/\$\.columns\[0\]$/)
+      expect(warn.mock.calls.at(-1)[0]).toMatch(/no further key refusals will be reported/)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+})
+
+// -------------------------------------------------- the other boundary (r3)
+//
+// A door is foreign code on a render path. `keyOrNull` is the boundary for a
+// call this repository wrote; `keyFromDoor` is the boundary for a call it did
+// not, and it contains everything rather than one class. Rounds 1 and 2 asked
+// one site to be both.
+
+describe('keyFromDoor', () => {
+  beforeEach(forgetRefusals)
+
+  it('passes a key straight through, and a `null` too', () => {
+    expect(keyFromDoor(() => 'abc')).toBe('abc')
+    expect(keyFromDoor(() => null)).toBeNull() // "not keyable" is a door's answer
+  })
+
+  it.each([
+    ['a refusal', () => canonical(undefined), /cannot serialize undefined/],
+    ['a caller guard', () => stepKey('filter', {}, [null]), /key for every input/],
+    ['a plain Error', () => { throw new Error('its own opinion') }, /its own opinion/],
+    ['a RangeError', () => { throw new RangeError('out of range') }, /out of range/],
+    ['a bare string', () => { throw 'just a string' }, /just a string/],
+    ['a bare object', () => { throw { why: 'no message' } }, /\[object Object\]/],
+  ])('contains %s and reports it', (_what, door, expected) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(keyFromDoor(door)).toBeNull()
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0][0]).toMatch(expected)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('deduplicates on the same terms as the narrow boundary', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      for (let i = 0; i < 5; i += 1) {
+        keyFromDoor(() => {
+          throw new Error('the same complaint')
+        })
+      }
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
