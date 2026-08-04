@@ -7,7 +7,7 @@
 // canvas below is handed a body per node as a scoped slot precisely so no German
 // word has to cross into `adapters/`.
 
-import { computed, shallowRef, watch } from 'vue'
+import { computed, nextTick, shallowRef, watch } from 'vue'
 import { executeGraph } from '@core/exec/execute.js'
 import { CODE } from '@core/graph/graph.js'
 import StepCard from '@ui/StepCard.vue'
@@ -251,6 +251,45 @@ const selectedId = shallowRef(null)
 
 const onSelect = (id) => {
   selectedId.value = id
+  if (id !== null) bringPanelIntoView()
+}
+
+/**
+ * The panel's element, so the pane can scroll it into view — the one thing this
+ * component does to the *page* rather than to the model.
+ */
+const panelEl = shallowRef(null)
+
+/**
+ * **Why the panel is scrolled to rather than fitted in, and it was measured
+ * rather than argued (2026-08-04, after the first hand test).**
+ *
+ * The panel sits below a canvas of fixed height, so selecting a Step opened a
+ * form outside the viewport that the user had to go looking for. Two layouts that
+ * would have kept it on screen were built and run against the e2e suite, and both
+ * failed for the same underlying reason — the canvas is a window of fixed height
+ * onto a graph that is usually larger, so anything taking vertical space takes
+ * *clickable graph* with it:
+ *
+ *  - Floating the panel over the canvas's lower edge: 13 cases failed with the
+ *    panel's own subtree intercepting the pointer aimed at a Step beneath it. A
+ *    user hits it the same way — select one Step, then try to click the next.
+ *  - Shrinking the canvas to 34vh while a Step is selected: 3 cases failed, and
+ *    both failure classes are real rather than test geometry — an edge cannot be
+ *    dragged to a Step that is no longer visible, and a control on a card lying
+ *    across the fold is intercepted by the panel below it.
+ *
+ * Scrolling costs no canvas at all. `block: 'nearest'` is the load-bearing part:
+ * it scrolls the least that makes the panel visible, so the lower band of the
+ * canvas — with the Step that was just selected in it — stays on screen above the
+ * panel instead of the page jumping past the graph entirely.
+ */
+const bringPanelIntoView = () => {
+  // After the panel has been rendered for the new selection, and only where a DOM
+  // is present: `ui/EditorPane.test.js` mounts this pane without a layout engine.
+  nextTick(() => {
+    panelEl.value?.$el?.scrollIntoView?.({ block: 'nearest' })
+  })
 }
 
 /** The selected Step, or `null`. Resolved against the projection on every read
@@ -462,6 +501,7 @@ watch(
            geometry never changes with the selection. -->
       <StepPanel
         v-if="selectedStep"
+        ref="panelEl"
         :key="selectedStep.id"
         :step="selectedStep"
         :label="labels.get(selectedStep.id) ?? selectedStep.name"

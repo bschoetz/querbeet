@@ -567,6 +567,43 @@ test('the panel takes its subject from the canvas, and lets go of it', async ({ 
   await expect(page.getByTestId('step-panel-empty')).toBeVisible()
 })
 
+test('selecting a Step brings its panel into view without taking canvas away', async ({ page }) => {
+  await pick(page, REPORT)
+  await confirm(page, 'umsatz')
+  await toEditor(page)
+
+  const canvasBefore = await canvas(page).boundingBox()
+
+  await page.getByRole('button', { name: '+ Filter' }).click()
+  await select(page, 'Filter: Filter')
+
+  // The panel is inside the viewport — the whole point. Before this it sat below
+  // a canvas of fixed height and the user had to go looking for it.
+  const viewport = page.viewportSize()
+  const box = await panel(page).boundingBox()
+  expect(box.y, 'the panel starts below the fold').toBeLessThan(viewport.height)
+  expect(box.y + Math.min(box.height, viewport.height)).toBeGreaterThan(0)
+
+  // And it is brought into view by *scrolling*, never by making the canvas
+  // smaller: two layouts that took canvas space instead were built and measured
+  // on 2026-08-04, and both cost the ability to click or drag to a Step.
+  // To one decimal rather than exactly: Firefox reports the same `62vh` box a
+  // few millionths of a pixel apart across two measurements, and the claim here
+  // is about hundreds of pixels — a layout that made room for the panel would
+  // have taken roughly half the canvas.
+  const canvasAfter = await canvas(page).boundingBox()
+  expect(canvasAfter.height, 'the canvas gave up height for the panel').toBeCloseTo(
+    canvasBefore.height,
+    1,
+  )
+
+  // `block: 'nearest'` scrolls the least that works, so the Step that was just
+  // selected is still on screen above its own panel.
+  const cardBox = await card(page, 'Filter: Filter').boundingBox()
+  expect(cardBox.y + cardBox.height, 'the selected Step was scrolled past').toBeGreaterThan(0)
+  expect(cardBox.y).toBeLessThan(viewport.height)
+})
+
 test('no raw core vocabulary reaches the screen while a Step is configured and previewed', async ({
   page,
 }) => {
