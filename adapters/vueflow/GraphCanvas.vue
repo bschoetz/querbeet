@@ -36,9 +36,11 @@ import {
   createFocusGate,
   createRemovalRouter,
   handleOfSlot,
+  hasDimensionChange,
   isTypingTarget,
   panShortfall,
   positionChanges,
+  reflowMoves,
   slotOfHandle,
   viewStateChanges,
 } from './canvas-logic.js'
@@ -68,6 +70,7 @@ const {
   applyEdgeChanges,
   fitView,
   panBy,
+  getNodes,
   getSelectedNodes,
   getSelectedEdges,
 } = vf
@@ -147,6 +150,7 @@ onNodesChange((changes) => {
   // and nothing else in the file changes.
   for (const at of positionChanges(changes)) emit('move', at.id, at.x, at.y)
   router.nodeRemovals(changes)
+  if (hasDimensionChange(changes)) armReflow()
   const view = viewStateChanges(changes)
   if (view.length) {
     applyNodeChanges(view)
@@ -161,6 +165,72 @@ onEdgesChange((changes) => {
   const view = viewStateChanges(changes)
   if (view.length) applyEdgeChanges(view)
 })
+
+// --------------------------------------------------------------- the reflow
+//
+// **What keeps two cards off each other, now that the row pitch cannot.** A Step
+// card has no fixed height — every input slot row and every mark grows it, both
+// from buttons inside the card — so `PLACEMENT.dy` is an opening guess and this
+// is the guarantee. The measurement is the library's own: it observes every node
+// with a ResizeObserver for its anchor arithmetic, and assigns `dimensions`
+// directly on the store node, so it is there under `applyDefault: false` too.
+//
+// The moves leave through `move`, the same event a drag leaves through, so
+// positions stay the model's and `core/graph/` stays browser-free (AD-2). This
+// file writes no position into the library's store — rule 1 stands. **Every node,
+// Sources included:** a Source card grows with its own marks and sits in a column
+// of its own, and `moveStep` takes one (it is `removeStep` that refuses a Source,
+// because the Source store owns which ones exist — not where they sit).
+//
+// **`dimensions` changes alone trigger it, and that is a rule about the trigger
+// rather than a promise about the layout.** A drag reports `position` and resizes
+// nothing, so no gesture can start a pass and nothing moves out from under a
+// pressed pointer; `Eingang hinzufügen` grows a card on `click`, which is after
+// the release. What it does *not* say — and an earlier version of this comment
+// wrongly did, decided with the project owner on 2026-08-04 — is that an overlap
+// the user made by dragging survives. The pass is graph-wide and stateless, so it
+// separates that pair too, at the next measurement anywhere in the graph.
+// Measured: a Filter dropped on a Source at y=63.7 sits at y=157 after three slot
+// rows are added to an unrelated Union, and after a plain view switch. Leaving it
+// would mean remembering the last settled layout in order to tell "the user put
+// it there" from "a card just grew into it" — and the overlap it would preserve
+// is the swallowed pointer this whole file exists to prevent.
+//
+// One pass per microtask: a mounting graph arrives as a burst of single-node
+// measurements, and the pass is over the whole graph either way. It also runs on
+// measurements that changed nothing — the library forces a report from its
+// ResizeObserver and from two watchers — which is why the pass is idempotent
+// rather than merely correct.
+let reflowArmed = false
+let disposed = false
+
+function reflow() {
+  reflowArmed = false
+  if (disposed) return
+  // **Position from the model, size from the library, and the split is the point.**
+  // The library assigns `node.position` itself on its clamp path, so reading a
+  // position out of its store and emitting it as a `move` would make it an
+  // inbound writer of model state — the mirror image of the rule that keeps this
+  // file from writing positions into it. Only the measurement is the library's to
+  // give: `offsetWidth`/`offsetHeight`, layout pixels in the same space as the
+  // position, because the canvas transform lives on an ancestor and does not
+  // scale them. A client rect is in the other space and is deliberately unused.
+  const measured = new Map(getNodes.value.map((node) => [node.id, node.dimensions]))
+  const boxes = props.nodes.map((node) => ({
+    id: node.id,
+    x: node.x,
+    y: node.y,
+    width: measured.get(node.id)?.width,
+    height: measured.get(node.id)?.height,
+  }))
+  for (const at of reflowMoves(boxes)) emit('move', at.id, at.x, at.y)
+}
+
+function armReflow() {
+  if (reflowArmed) return
+  reflowArmed = true
+  queueMicrotask(reflow)
+}
 
 // ------------------------------------------------------------- the pointer
 
@@ -320,6 +390,10 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   window.removeEventListener('pointerup', releasePointer)
   window.removeEventListener('pointercancel', releasePointer)
+  // An armed reflow outlives the component by a microtask, and the graph store
+  // outlives it altogether — so a pass that landed after teardown would move a
+  // Step nobody is looking at.
+  disposed = true
 })
 </script>
 

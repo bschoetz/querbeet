@@ -551,25 +551,27 @@ export const cloneGraph = (graph) => ({
 // --- placement ------------------------------------------------------------
 
 /**
- * The grid a new Step is placed on. Wide enough that two cards do not touch at
- * the zoom the canvas opens at.
+ * The grid a new Step is placed on — **an opening guess, and only that.**
  *
- * **The row pitch was 150 px and a card is taller than that**, which is a measured
- * overlap rather than a theoretical one: a Filter card renders at 151 px with one
- * slot row and a card carrying a slot row and a mark at 187 px, so two Steps in
- * one column overlapped by up to ~37 px — and the upper card then swallowed the
- * pointer aimed at the lower one's Ergebnis button. It went unnoticed until story
- * 6b because nothing had ever needed to click a Step rather than a control inside
- * it; the side panel takes its subject from the canvas's selection, so something
- * finally did. 200 clears the tallest card this build renders, and `near` is the
- * same number so the free-cell scan and the pitch agree about what "occupied"
- * means: a cell exactly one pitch away is free (`200 < 200` is false), and every
+ * A Step card has no fixed height: every input slot row and every Diagnostic mark
+ * grows it, both from buttons inside the card. So no constant here can promise
+ * that two Steps in one column do not overlap, and the overlap is not cosmetic —
+ * the upper card swallows the pointer aimed at the lower one's controls, measured
+ * in story 6b at the old 150 px pitch (a Filter card renders at 151 px with one
+ * slot row and at 187 px with a slot row and a mark, and Playwright reported the
+ * upper card intercepting the lower one's Ergebnis button).
+ *
+ * **The promise lives in `adapters/vueflow/canvas-logic.js`** (`reflowMoves`,
+ * story 6e), where the rendered cards have actually been measured; it reports the
+ * nodes that must move back through the ordinary `move` command. This file cannot
+ * do it and must not try: `core/graph/` is browser-free by AD-2, so `freePosition`
+ * can only ever pick from numbers it was given.
+ *
+ * What the numbers are still for: opening a new Step somewhere sensible rather
+ * than on top of the last one, so the reflow usually has nothing to do. `near` is
+ * the pitch itself, so the free-cell scan and the grid agree about what "occupied"
+ * means — a cell exactly one pitch away is free (`200 < 200` is false), and every
  * cell nearer than that is not.
- *
- * It is a pitch rather than a measurement, and that is the standing limitation: a
- * card taller than 200 px — several marks at once — would overlap again. Measuring
- * the rendered height would mean the model asking the DOM, which AD-2 forbids
- * outright, so the honest fix is a layout pass in `ui/` and it is in the ledger.
  */
 export const PLACEMENT = Object.freeze({ x0: 40, y0: 40, dx: 320, dy: 200, near: 200 })
 

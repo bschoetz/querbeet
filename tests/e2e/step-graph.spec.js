@@ -15,7 +15,10 @@
 //   "the key moved it";
 //   the **focus pull, positively** — an off-screen Step, focused, changes the
 //   viewport transform and ends up inside the pane. Asserting that the viewport
-//   is *unchanged* passes more reliably with the mechanism deleted than with it.
+//   is *unchanged* passes more reliably with the mechanism deleted than with it;
+//   the **reflow** (story 6e) — a card grown past the row pitch and the card
+//   below it measured clear afterwards. happy-dom has no ResizeObserver, so this
+//   is the only envelope in the tree that measures a rendered card at all.
 
 import { existsSync } from 'node:fs'
 import { pathToFileURL } from 'node:url'
@@ -543,6 +546,179 @@ test('a pointer click on a control near the pane edge does not move the canvas o
   // The click landed on the button, and the canvas stayed where it was.
   await expect(badge).toHaveAttribute('aria-pressed', 'true')
   expect(await viewportTransform(page)).toBe(before)
+})
+
+test('a card that grows pushes the one below it clear, and its controls stay clickable', async ({
+  page,
+}) => {
+  // The defect this closes was measured in story 6b: the row pitch is a constant,
+  // a Step card has no fixed height, and the upper card then intercepted the
+  // pointer aimed at the lower one's Ergebnis button.
+  await pick(page, TWO_SOURCES)
+  await toEditor(page)
+
+  // Two Steps in one column — that is where `freePosition` puts them — and a
+  // Union, because it is the one kind whose height a user can raise at will
+  // (`maxInputs: Infinity`).
+  await page.getByRole('button', { name: '+ Union' }).click()
+  await card(page, 'Union: Union').getByLabel('Name').fill('Oben')
+  await card(page, 'Union: Union').getByLabel('Name').blur()
+
+  await page.getByRole('button', { name: '+ Union' }).click()
+  await card(page, 'Union: Union').getByLabel('Name').fill('Unten')
+  await card(page, 'Union: Union').getByLabel('Name').blur()
+
+  const oben = await idOf(page, 'Union: Oben')
+  const unten = await idOf(page, 'Union: Unten')
+  expect((await positionOf(page, oben)).x).toBe((await positionOf(page, unten)).x)
+  const before = await positionOf(page, unten)
+
+  for (let i = 0; i < 3; i += 1) {
+    await card(page, 'Union: Oben').getByRole('button', { name: 'Eingang hinzufügen' }).click()
+  }
+
+  // The model moved it, and it moved *down* — the horizontal position carries the
+  // column and is never touched.
+  await expect.poll(async () => (await positionOf(page, unten)).y).toBeGreaterThan(before.y)
+  expect((await positionOf(page, unten)).x).toBe(before.x)
+
+  // …and the rendered cards are clear of each other. Screen space rather than
+  // flow space, deliberately and with no tolerance: `LAYOUT.gap` is a flow-space
+  // constant and would have to be scaled to be checked here, while "does one card
+  // cover the other" is the same question at any zoom and is the one the pointer
+  // asks. The zoomed case below is where that distinction earns its keep.
+  await expect
+    .poll(async () => {
+      const a = await wrapper(page, oben).boundingBox()
+      const b = await wrapper(page, unten).boundingBox()
+      return b.y >= a.y + a.height
+    })
+    .toBe(true)
+
+  // The proof, rather than the geometry standing in for it: the control the
+  // overlap used to swallow takes an ordinary click. `force` is deliberately not
+  // passed — Playwright's own hit-target check is the assertion.
+  await wrapper(page, unten).evaluate((el) => el.focus())
+  const badge = card(page, 'Union: Unten').getByRole('button', {
+    name: 'Als Ergebnis-Step setzen',
+  })
+  await badge.click()
+  await expect(badge).toHaveAttribute('aria-pressed', 'true')
+})
+
+test('a drag starts nothing, and the next measurement separates what it overlapped', async ({
+  page,
+}) => {
+  // **Both halves, because either one alone passes with the mechanism deleted.**
+  // The trigger is narrow — a drag resizes nothing, so it reports no dimensions
+  // and nothing rearranges itself behind the gesture — but the pass is graph-wide
+  // and stateless, so the overlap a drag made is separated by the next
+  // measurement anywhere in the graph. Decided with the project owner on
+  // 2026-08-04: the operative rule is about the trigger, and an overlap left
+  // standing is the swallowed pointer this story exists to close.
+  await pick(page, TWO_SOURCES)
+  await toEditor(page)
+
+  await page.getByRole('button', { name: '+ Filter' }).click()
+  await card(page, 'Filter: Filter').getByLabel('Name').fill('Beweglich')
+  await card(page, 'Filter: Filter').getByLabel('Name').blur()
+
+  const filter = await idOf(page, 'Filter: Beweglich')
+  const quelle = await idOf(page, 'Quelle: Umsatz Q1')
+
+  // Park the Filter on top of the Source, closing the distance rather than
+  // assuming one gesture covers it — the same reason the pane-edge case below
+  // loops: the library follows only past its drag threshold, and focusing the
+  // node scrolls the page under the pointer, so one drag lands somewhere near.
+  for (let i = 0; i < 8; i += 1) {
+    const a = await wrapper(page, filter).boundingBox()
+    const b = await wrapper(page, quelle).boundingBox()
+    const dx = b.x + 20 - a.x
+    const dy = b.y + 20 - a.y
+    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) break
+    await page.mouse.move(a.x + 6, a.y + 6)
+    await page.mouse.down()
+    await page.mouse.move(a.x + 6 + dx, a.y + 6 + dy, { steps: 10 })
+    await page.mouse.up()
+  }
+
+  const dropped = await positionOf(page, filter)
+  // Two frames, the same wait the adapter uses before it trusts a measurement: an
+  // armed reflow is a microtask and has long since run by the second one.
+  await page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  )
+
+  expect(await positionOf(page, filter)).toEqual(dropped)
+  // Still on top of the Source: the gesture reported no measurement, so no pass
+  // ran. This half is what fails if a drag ever starts one.
+  const a = await wrapper(page, filter).boundingBox()
+  const b = await wrapper(page, quelle).boundingBox()
+  expect(a.y).toBeLessThan(b.y + b.height)
+  expect(b.y).toBeLessThan(a.y + a.height)
+
+  // Now grow a card that has nothing to do with either of them. This half is what
+  // fails if `armReflow` is deleted — the assertions above would not have noticed.
+  await page.getByRole('button', { name: '+ Union' }).click()
+  for (let i = 0; i < 3; i += 1) {
+    await card(page, 'Union: Union').getByRole('button', { name: 'Eingang hinzufügen' }).click()
+  }
+
+  await expect.poll(async () => (await positionOf(page, filter)).y).toBeGreaterThan(dropped.y)
+  await expect
+    .poll(async () => {
+      const moved = await wrapper(page, filter).boundingBox()
+      const source = await wrapper(page, quelle).boundingBox()
+      return moved.y >= source.y + source.height
+    })
+    .toBe(true)
+})
+
+test('the reflow measures in flow space, so it still clears the cards when zoomed out', async ({
+  page,
+}) => {
+  // The one rule this story marks as a `Never` — the library's unscaled
+  // `offsetWidth`/`offsetHeight` rather than a client rect — is invisible at
+  // scale 1, where the two numbers coincide. `fitView({ maxZoom: 1 })` zooms *out*
+  // for any graph taller than the pane, so zoom < 1 is the ordinary case and not
+  // an exotic one. Swap the measurement for a scaled source and this is the only
+  // thing in the tree that goes red.
+  await pick(page, TWO_SOURCES)
+  await toEditor(page)
+
+  await page.getByRole('button', { name: '+ Union' }).click()
+  await card(page, 'Union: Union').getByLabel('Name').fill('Oben')
+  await card(page, 'Union: Union').getByLabel('Name').blur()
+
+  await page.getByRole('button', { name: '+ Union' }).click()
+  await card(page, 'Union: Union').getByLabel('Name').fill('Unten')
+  await card(page, 'Union: Union').getByLabel('Name').blur()
+
+  const box = await canvas(page).boundingBox()
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.wheel(0, 400)
+  await expect.poll(() => viewportScale(page)).toBeLessThan(0.95)
+
+  const oben = await idOf(page, 'Union: Oben')
+  const unten = await idOf(page, 'Union: Unten')
+  for (let i = 0; i < 3; i += 1) {
+    await card(page, 'Union: Oben').getByRole('button', { name: 'Eingang hinzufügen' }).click()
+  }
+
+  await expect
+    .poll(async () => {
+      const a = await wrapper(page, oben).boundingBox()
+      const b = await wrapper(page, unten).boundingBox()
+      return b.y >= a.y + a.height
+    })
+    .toBe(true)
+
+  await wrapper(page, unten).evaluate((el) => el.focus())
+  const badge = card(page, 'Union: Unten').getByRole('button', {
+    name: 'Als Ergebnis-Step setzen',
+  })
+  await badge.click()
+  await expect(badge).toHaveAttribute('aria-pressed', 'true')
 })
 
 test('leaving and re-entering the Editor loses no Step configuration', async ({ page }) => {

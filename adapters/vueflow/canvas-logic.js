@@ -138,12 +138,23 @@ export function createRemovalRouter({ removeStep, disconnect, schedule = queueMi
   }
 }
 
-/** Position changes, as the model's `moveStep` wants them. `dimensions` changes
- *  are Vue Flow's own measurement and are none of the model's business. */
+/** Position changes, as the model's `moveStep` wants them. A `dimensions` change
+ *  carries no position and never becomes one — it is a measurement, and what the
+ *  host does with it is the reflow at the bottom of this file. */
 export const positionChanges = (changes) =>
   changes
     .filter((c) => c.type === 'position' && c.position)
     .map((c) => ({ id: c.id, x: c.position.x, y: c.position.y }))
+
+/**
+ * Whether a batch carries the library's own measurement of a card.
+ *
+ * It is the only report that says a card changed size, and a card changes size
+ * from buttons inside itself: every input slot row and every Diagnostic mark
+ * grows it. A drag reports `position` and resizes nothing, which is why the
+ * reflow below never fires under a pressed pointer.
+ */
+export const hasDimensionChange = (changes) => changes.some((c) => c.type === 'dimensions')
 
 /**
  * The one thing design B hands back to the library, kept deliberately narrow.
@@ -223,3 +234,113 @@ const TYPING_TAGS = new Set(['INPUT', 'SELECT', 'TEXTAREA'])
  */
 export const isTypingTarget = (element) =>
   !!element && (TYPING_TAGS.has(element.tagName) || element.isContentEditable === true)
+
+// ----------------------------------------------------------------- the reflow
+
+/**
+ * The **vertical** clearance a reflow leaves between two cards in one column.
+ *
+ * Vertical only, and the asymmetry is deliberate: two columns that merely touch
+ * (`a.x + a.width === b.x`) are clear, because a column is a place and the gap is
+ * about stacking. Nothing horizontal is ever adjusted anyway — see `reflowMoves`.
+ *
+ * **It is not independent of `PLACEMENT.dy` in `core/graph/graph.js`, and the
+ * bound is `gap <= dy - the tallest card`.** With `dy: 200` that leaves 176 px, so
+ * any card above that height makes the reflow nudge the grid the model just placed
+ * on: a 187 px card — the height story 6b measured for a slot row plus a mark —
+ * moves the cell below it from y=240 to y=251, an 11 px shove on a layout that was
+ * already free of overlap. That is the pass enforcing the clearance rather than a
+ * defect, but it does mean the grid is not self-consistent, and raising this
+ * number past 50 would have the emptiest possible graph reflow itself on mount.
+ *
+ * The same number as `VIEW_MARGIN` and still a separate constant: one is what
+ * "inside the pane" means and the other what "not stacked on" means.
+ */
+export const LAYOUT = Object.freeze({ gap: 24 })
+
+/**
+ * A node the library has actually measured.
+ *
+ * Vue Flow leaves `dimensions` at `{ width: 0, height: 0 }` until its
+ * ResizeObserver has reported (`updateNodeDimensions` only assigns when both are
+ * truthy), so an unmeasured node arrives as a zero box. Reflowing against one
+ * would stack every node on the first frame — so it is neither moved nor an
+ * obstacle, and the pass runs again when its measurement arrives.
+ */
+const measured = (node) =>
+  Number.isFinite(node?.x) &&
+  Number.isFinite(node?.y) &&
+  Number.isFinite(node?.width) &&
+  Number.isFinite(node?.height) &&
+  node.width > 0 &&
+  node.height > 0
+
+/** Whether two measured boxes leave each other alone. The horizontal clauses come
+ *  first and carry the whole column idea: a vertical overlap between two nodes in
+ *  different columns is not an overlap at all. They are bare — the gap is vertical
+ *  by definition (see `LAYOUT`), so columns that touch are clear and columns that
+ *  genuinely intersect fall through to the vertical test like anything else. */
+const clear = (a, b, gap) =>
+  a.x + a.width <= b.x ||
+  b.x + b.width <= a.x ||
+  a.y + a.height + gap <= b.y ||
+  b.y + b.height + gap <= a.y
+
+/**
+ * The nodes that must move for no two cards to sit on top of each other, as
+ * `[{ id, x, y }]` — empty when there is nothing to do.
+ *
+ * **This is the promise the row pitch in `core/graph/graph.js` cannot make.** A
+ * Step card has no fixed height, so a constant pitch clears the tallest card that
+ * existed the day it was chosen and nothing more; an overlapping card then
+ * swallows the pointer aimed at the one beneath it. The model cannot fix that —
+ * `core/graph/` is browser-free by AD-2 and can only place from numbers it was
+ * given — so the measurement is read here and handed back through the `move`
+ * command like any other position.
+ *
+ * Three properties it is written for, each asserted in the test beside it:
+ *
+ *   **Idempotent.** Its own output produces no moves. The library also reports
+ *   dimensions with `forceUpdate: true` from two watchers, so this pass must be
+ *   expected to run over a layout it already settled — without idempotence that
+ *   is a loop rather than a no-op.
+ *   **Deterministic.** The order nodes arrive in does not matter: they are sorted
+ *   by `(y, x, id)`, and the first in that order is the anchor that never moves.
+ *   **Down only.** The horizontal position carries the column meaning
+ *   `freePosition` put there, and a sideways nudge would take it away.
+ *
+ * The inner loop terminates because every pass moves a node to a strictly greater
+ * `y` — `max(bottom) + gap` over boxes it overlaps is above its own top by
+ * definition of overlapping — and that value is always one of finitely many
+ * settled bottoms. There are at most `settled.length` of those, so at most that
+ * many increases can happen, and the loop is given one iteration more than that:
+ * the last check cannot find a hit. The test beside this asserts the result is
+ * pairwise clear over a spread of arrangements rather than trusting the argument.
+ *
+ * **Cost is `O(n³)` in the worst case** — the settled scan is inside the pass loop,
+ * per node — and it runs on every measurement report, including the ones that
+ * changed nothing (the library forces those). `n` is the node count, which the
+ * whole product bounds at what a person can hold in a graph, so it is nowhere near
+ * the row counts C-3 is about; if that ever stops being true it is this line that
+ * has to be measured rather than the pass that has to be rewritten.
+ */
+export function reflowMoves(nodes, gap = LAYOUT.gap) {
+  const ordered = (Array.isArray(nodes) ? nodes : [])
+    .filter(measured)
+    .map((n) => ({ id: n.id, x: n.x, y: n.y, width: n.width, height: n.height }))
+    .sort((a, b) => a.y - b.y || a.x - b.x || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+
+  const settled = []
+  const moves = []
+  for (const node of ordered) {
+    const was = node.y
+    for (let pass = 0; pass <= settled.length; pass += 1) {
+      const hit = settled.filter((other) => !clear(node, other, gap))
+      if (hit.length === 0) break
+      node.y = Math.max(...hit.map((other) => other.y + other.height)) + gap
+    }
+    settled.push(node)
+    if (node.y !== was) moves.push(Object.freeze({ id: node.id, x: node.x, y: node.y }))
+  }
+  return Object.freeze(moves)
+}
