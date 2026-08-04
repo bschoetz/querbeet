@@ -25,6 +25,7 @@ import { GRAPH_CODES } from '@core/graph/graph.js'
 import { addableKinds, kindCodes } from '@core/graph/kinds.js'
 import { STEP_CODES } from '@core/steps/index.js'
 import { COMBINES, OPERATORS, VALUELESS_OPERATORS } from '@core/steps/filter.js'
+import { ENDS } from '@core/steps/first.js'
 import { DIRECTIONS } from '@core/steps/sort.js'
 import { typeLabel } from '@ui/type-labels.js'
 
@@ -35,11 +36,12 @@ const KIND = Object.freeze(
     join: 'Join',
     filter: 'Filter',
     columns: 'Spalten',
-    // „Erste N" rather than „Begrenzen" or „Limit": the toolbar entry has to say
-    // what the Step does to a person who has never seen one, and the N is the
-    // whole of what they will set.
+    // „Erste/Letzte N" rather than „Begrenzen" or „Limit": the toolbar entry has
+    // to say what the Step does to a person who has never seen one, and both
+    // ends belong in the name — a card reading „Erste N" while the Step is set
+    // to „Letzte 10" would be the one place the graph lies about itself.
     sort: 'Sortieren',
-    first: 'Erste N',
+    first: 'Erste/Letzte N',
     computed: 'Berechnete Spalte',
     aggregate: 'Aggregation',
   }),
@@ -157,6 +159,29 @@ export const directionLabels = () => DIRECTIONS.map((code) => [code, directionLa
 /** Every direction the core offers that this file has no German word for. Empty
  *  is the rule, and a test asserts it. */
 export const directionLabelGaps = () => DIRECTIONS.filter((code) => !Object.hasOwn(DIRECTION, code))
+
+// ------------------------------------------- which end the limit takes from
+//
+// The words name the *rows*, not the order: „Erste" and „Letzte" are what a
+// person asks for („die letzten 10"), while `first`/`last` is what the config
+// holds. The parenthetical is the part a user cannot see — every order this
+// product produces puts what it could not read at the end.
+
+const END = Object.freeze(
+  Object.assign(Object.create(null), {
+    first: 'Erste — vom Anfang der Reihenfolge',
+    last: 'Letzte — vom Ende der Reihenfolge',
+  }),
+)
+
+export const endLabel = (code) => (Object.hasOwn(END, code) ? END[code] : code)
+
+/** `[code, label]` for the two ends a limit offers, in the core's order. */
+export const endLabels = () => ENDS.map((code) => [code, endLabel(code)])
+
+/** Every end the core offers that this file has no German word for. Empty is the
+ *  rule, and a test asserts it. */
+export const endLabelGaps = () => ENDS.filter((code) => !Object.hasOwn(END, code))
 
 const GERMAN = Object.freeze(
   Object.assign(Object.create(null), {
@@ -321,6 +346,18 @@ const GERMAN = Object.freeze(
         : `${rows(v.rows)} haben in einer Sortierspalte einen Wert, der unter dem bestätigten Typ ` +
           `nicht lesbar ist — sie werden nicht verglichen, sondern in beiden Richtungen hinter die ` +
           `lesbaren Werte gestellt.`,
+    // The limit's own warning, and it is about the rows that **stayed**. Every
+    // order this product produces puts what it could not read at the end, so
+    // „die letzten 3" after a sort is quite likely three unreadable rows — a
+    // legitimate thing to ask for, and not a thing to discover by accident.
+    'step.boxed_rows_kept': (v) =>
+      v.rows === 1
+        ? `1 der behaltenen Zeilen enthält einen Wert, der unter dem bestätigten Typ nicht lesbar ` +
+          `ist. Nicht lesbare Werte stehen in jeder Sortierung am Ende — am Ende der Reihenfolge ` +
+          `sind sie deshalb zuerst zu finden.`
+        : `${nf(v.rows)} der behaltenen Zeilen enthalten einen Wert, der unter dem bestätigten ` +
+          `Typ nicht lesbar ist. Nicht lesbare Werte stehen in jeder Sortierung am Ende — am Ende ` +
+          `der Reihenfolge sind sie deshalb zuerst zu finden.`,
 
     // --------------------------------------------------------- the execution
     'exec.source_unconfirmed': (v, nameOf) =>

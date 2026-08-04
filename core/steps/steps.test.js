@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest'
 import { CODE, executorGaps, hasExecutor, stepKind } from './index.js'
 import { COMBINES, OPERATORS, valueKind } from './filter.js'
+import { ENDS } from './first.js'
 import { DIRECTIONS } from './sort.js'
 
 const { createArqueroEngine } = await import('../../adapters/arquero/engine.js')
@@ -617,7 +618,9 @@ describe('a Sort’s execution', () => {
 describe('a First-N’s configuration', () => {
   it('starts without a count, so a freshly added Step lets every row through', () => {
     const config = first.defaultConfig()
-    expect(config).toEqual({ count: null })
+    // The end is written out rather than left to a reader's default: the field a
+    // user did not touch still says which rows the Step keeps.
+    expect(config).toEqual({ count: null, end: 'first' })
     expect(first.validate(config).ok).toBe(true)
 
     const input = table([NAMES, AMOUNTS])
@@ -645,6 +648,21 @@ describe('a First-N’s configuration', () => {
     })
     expect(first.validate(null).diagnostics[0].values.field).toBe('config')
   })
+
+  it('closes the two ends it takes rows from, and judges one with no count set', () => {
+    expect(ENDS).toEqual(['first', 'last'])
+    for (const end of ENDS) expect(first.validate({ count: 2, end }).ok).toBe(true)
+    // An absent end is the first N, which is what every config stored before the
+    // flag existed means.
+    expect(first.validate({ count: 2 }).ok).toBe(true)
+    // …and a word this Step does not know is wrong even while no limit is set —
+    // returning early on the count would have stored it unseen.
+    expect(first.validate({ count: null, end: 'letzte' }).ok).toBe(false)
+    expect(first.validate({ count: 2, end: 'bottom' }).diagnostics[0]).toMatchObject({
+      code: CODE.configInvalid,
+      values: { field: 'end', value: 'bottom' },
+    })
+  })
 })
 
 describe('a First-N’s execution', () => {
@@ -666,6 +684,43 @@ describe('a First-N’s execution', () => {
 
     expect(out.rowCount()).toBe(4)
     expect(diagnostics[0]).toMatchObject({ code: CODE.rowsRemoved, values: { removed: 0, kept: 4 } })
+  })
+
+  it('takes the last N from the other end of the same order, without reversing it', () => {
+    // Asked for by the project owner after the story shipped: reaching the other
+    // end by reversing the Sort upstream edits a different Step and turns
+    // everything downstream of it around too.
+    const { table: out, diagnostics } = first.apply(engine, [table([NAMES, AMOUNTS])], {
+      count: 2,
+      end: 'last',
+    })
+
+    expect(rowsOf(out).map((r) => r.Kunde)).toEqual(['Carla', 'Dora'])
+    expect(diagnostics[0]).toMatchObject({ code: CODE.rowsRemoved, values: { removed: 2, kept: 2 } })
+  })
+
+  it('says when the rows it kept carry a value that could not be read', () => {
+    // Every order this product produces puts what it could not read at the end,
+    // so „die letzten 2" after a sort is quite likely the unreadable rows. That
+    // is a legitimate thing to ask for and not a thing to discover by accident.
+    const ordered = sort.apply(
+      engine,
+      [table([NAMES, { ...AMOUNTS, values: [1000, 500, 'abc', 250], unparsed: [2] }])],
+      { keys: [{ column: 'Betrag', direction: 'desc' }] },
+    ).table
+
+    const { table: out, diagnostics } = first.apply(engine, [ordered], { count: 2, end: 'last' })
+
+    expect(rowsOf(out).map((r) => r.Kunde)).toEqual(['Dora', 'Carla'])
+    expect(diagnostics[1]).toMatchObject({
+      severity: 'warning',
+      code: CODE.boxedRowsKept,
+      values: { rows: 1 },
+    })
+
+    // The same limit at the other end keeps readable rows and says nothing.
+    const front = first.apply(engine, [ordered], { count: 2, end: 'first' })
+    expect(front.diagnostics).toHaveLength(1)
   })
 
   it('takes the first N of the order a Sort upstream produced', () => {

@@ -733,13 +733,13 @@ describe('the Sort form', () => {
   })
 })
 
-// ------------------------------------------------------------------ Erste N
+// ---------------------------------------------------------- Erste/Letzte N
 
 describe('the First-N form', () => {
   const firstStep = (config = null) => step({ kind: 'first', name: 'Top 10', config })
 
   it('opens without a count, and says every row stays', async () => {
-    const w = await render({ step: firstStep(), label: 'Erste N: Top 10' })
+    const w = await render({ step: firstStep(), label: 'Erste/Letzte N: Top 10' })
 
     expect(field(w, 'Anzahl Zeilen').element.value).toBe('')
     expect(w.find('[data-testid="first-count-pending"]').text()).toContain(
@@ -749,12 +749,46 @@ describe('the First-N form', () => {
   })
 
   it('sends a count the moment one whole number is entered', async () => {
-    const w = await render({ step: firstStep(), label: 'Erste N' })
+    const w = await render({ step: firstStep(), label: 'Erste/Letzte N' })
 
     await field(w, 'Anzahl Zeilen').setValue('10')
 
-    expect(configured(w)).toEqual({ count: 10 })
+    // The end travels with the count, so a stored config always says which rows
+    // the Step keeps rather than relying on a reader's default.
+    expect(configured(w)).toEqual({ count: 10, end: 'first' })
     expect(w.find('[data-testid="first-count-pending"]').exists()).toBe(false)
+  })
+
+  it('takes the rows from the end the select names, and sends both together', async () => {
+    const w = await render({ step: firstStep({ count: 10, end: 'first' }), label: 'Erste/Letzte N' })
+
+    expect(field(w, 'Welche Zeilen').element.value).toBe('first')
+    await field(w, 'Welche Zeilen').setValue('last')
+
+    expect(configured(w)).toEqual({ count: 10, end: 'last' })
+  })
+
+  it('withholds an end changed before any count is set, like every unfinished edit', async () => {
+    // Without a count there is no window to place, so an end alone is a config
+    // change nobody could see in the table — `configOf` withholds it in the one
+    // place every control commits through.
+    const w = await render({ step: firstStep(), label: 'Erste/Letzte N' })
+
+    await field(w, 'Welche Zeilen').setValue('last')
+    expect(w.emitted('configure')).toBeUndefined()
+
+    // …and it survives in the draft, so the count typed next carries it.
+    await field(w, 'Anzahl Zeilen').setValue('3')
+    expect(configured(w)).toEqual({ count: 3, end: 'last' })
+  })
+
+  it('reads a stored end back into the select', async () => {
+    const w = await render({ step: firstStep({ count: 5, end: 'last' }), label: 'Erste/Letzte N' })
+
+    expect(field(w, 'Welche Zeilen').element.value).toBe('last')
+    // A config written before the flag existed still means the first N.
+    const old = await render({ step: firstStep({ count: 5 }), label: 'Erste/Letzte N' })
+    expect(field(old, 'Welche Zeilen').element.value).toBe('first')
   })
 
   it('refuses an entry that is no count, beside the field and not in the config', async () => {
@@ -762,7 +796,7 @@ describe('the First-N form', () => {
     // precedent is the Filter's number field one screen up: an entry that has
     // not finished is not a change to the config.
     for (const entry of ['0', '-1', '2,5', '2.5']) {
-      const w = await render({ step: firstStep({ count: 5 }), label: 'Erste N' })
+      const w = await render({ step: firstStep({ count: 5 }), label: 'Erste/Letzte N' })
       await field(w, 'Anzahl Zeilen').setValue(entry)
 
       expect(w.emitted('configure'), `sent ${entry} to the model`).toBeUndefined()
@@ -773,7 +807,7 @@ describe('the First-N form', () => {
   })
 
   it('emits nothing when the field is cleared, and says the stored count stays in force', async () => {
-    const w = await render({ step: firstStep({ count: 5 }), label: 'Erste N' })
+    const w = await render({ step: firstStep({ count: 5 }), label: 'Erste/Letzte N' })
 
     await field(w, 'Anzahl Zeilen').setValue('')
 
@@ -789,7 +823,7 @@ describe('the First-N form', () => {
   it('offers its form even where the input has no columns — it names none', async () => {
     // The one kind whose form is not about a column, so the guard that withholds
     // the Filter's and the Columns' controls does not apply to it.
-    const w = await render({ step: firstStep(), inputSchema: [], label: 'Erste N' })
+    const w = await render({ step: firstStep(), inputSchema: [], label: 'Erste/Letzte N' })
 
     expect(w.find('[data-testid="step-config-first"]').exists()).toBe(true)
     expect(w.find('[data-testid="step-panel-no-columns"]').exists()).toBe(false)
@@ -797,7 +831,7 @@ describe('the First-N form', () => {
   })
 
   it('names its one control, so the form is traversable by keyboard alone (C-7, NFR-6)', async () => {
-    const w = await render({ step: firstStep(), label: 'Erste N' })
+    const w = await render({ step: firstStep(), label: 'Erste/Letzte N' })
 
     expect(field(w, 'Anzahl Zeilen').attributes('type')).toBe('number')
     expect(field(w, 'Anzahl Zeilen').attributes('min')).toBe('1')

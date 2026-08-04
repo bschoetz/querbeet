@@ -35,6 +35,7 @@ import {
   SEVERITY,
   combineLabels,
   directionLabels,
+  endLabels,
   graphText,
   kindLabel,
   operatorLabels,
@@ -142,7 +143,7 @@ const readDraft = () => {
     }
   }
   if (props.step.kind === FIRST) {
-    return { count: config.count ?? null }
+    return { count: config.count ?? null, end: config.end ?? 'first' }
   }
   // Columns: one row per *input* column, so unchecking and rechecking is
   // symmetrical and the order controls have something to move. An empty stored
@@ -264,7 +265,10 @@ function configOf(state) {
     // An empty field is not a limit of nothing: `null` is the identity in
     // `core/steps/first.js` — every row through — so emitting it while the user
     // is between two numbers would silently lift the limit that is in force.
-    return state.count === null ? null : { count: state.count }
+    // The end travels with the count and never on its own: without a count
+    // there is no window to place, and emitting an end alone would be a config
+    // change nobody can see in the table.
+    return state.count === null ? null : { count: state.count, end: state.end }
   }
   const columns = state.entries
     .filter((entry) => entry.selected)
@@ -517,6 +521,11 @@ const patchSortKey = (at, patch) =>
  *  cleared field over a stored count leaves that count in force. Two different
  *  facts, and a sentence covering both would be true of neither. */
 const storedCount = computed(() => props.step.config?.count ?? null)
+
+/** Which end the rows come from. It is committed like every other control —
+ *  through `commit`, so a change with no count set is withheld by `configOf`
+ *  rather than by this function remembering to. */
+const setEnd = (end) => commit({ ...draft.value, end })
 
 function setCount(raw) {
   const text = String(raw).trim()
@@ -1018,9 +1027,25 @@ watch(
       class="flex flex-col gap-2"
     >
       <p class="text-xs text-slate-500">
-        Behält die ersten Zeilen in der Reihenfolge, die am Eingang liegt. „Die 10 neuesten“ ist
-        also ein Sortieren-Step davor und hier eine 10.
+        Behält Zeilen vom Anfang oder vom Ende der Reihenfolge, die am Eingang liegt. „Die 10
+        neuesten“ ist also ein Sortieren-Step davor und hier eine 10.
       </p>
+
+      <label class="flex flex-col gap-1">
+        <span class="text-xs text-slate-500">Welche Zeilen</span>
+        <select
+          :value="draft.end"
+          aria-label="Welche Zeilen"
+          class="w-full rounded border border-slate-200 px-2 py-1"
+          @change="setEnd($event.target.value)"
+        >
+          <option
+            v-for="[code, text] in endLabels()"
+            :key="code"
+            :value="code"
+          >{{ text }}</option>
+        </select>
+      </label>
 
       <label class="flex flex-col gap-1">
         <span class="text-xs text-slate-500">Anzahl Zeilen</span>

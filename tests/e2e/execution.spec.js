@@ -253,15 +253,15 @@ test('Sortieren then Erste 3 carries the three largest on, with the unreadable r
   await expect(panel(page).getByTestId('step-preview-row').last()).toContainText('Jutta')
   await panel(page).getByLabel('Richtung der Sortierung 1').selectOption('desc')
 
-  await page.getByRole('button', { name: '+ Erste N' }).click()
-  await card(page, 'Erste N: Erste N')
+  await page.getByRole('button', { name: '+ Erste/Letzte N' }).click()
+  await card(page, 'Erste/Letzte N: Erste/Letzte N')
     .getByLabel('Eingang 1', { exact: true })
     .selectOption({ label: 'Sortieren' })
-  await card(page, 'Erste N: Erste N')
+  await card(page, 'Erste/Letzte N: Erste/Letzte N')
     .getByRole('button', { name: 'Als Ergebnis-Step setzen' })
     .click()
 
-  await select(page, 'Erste N: Erste N')
+  await select(page, 'Erste/Letzte N: Erste/Letzte N')
   // No count yet, so it is the identity too.
   await expect(panel(page).getByTestId('first-count-pending')).toContainText('alle Zeilen bleiben')
   await expect(panel(page).getByTestId('step-counts')).toHaveText('10 Zeilen, 3 Spalten')
@@ -277,6 +277,23 @@ test('Sortieren then Erste 3 carries the three largest on, with the unreadable r
   expect(shown[0]).toContain('Anna')
   expect(shown[1]).toContain('Ingo')
   expect(shown[2]).toContain('Bernd')
+
+  // The other end of the same order, without touching the Sort upstream — and
+  // it is where the row querbeet could not read has been sitting all along, so
+  // the Step says so instead of letting it be discovered.
+  await panel(page).getByLabel('Welche Zeilen').selectOption('last')
+
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('3 Zeilen, 3 Spalten')
+  const last = await panel(page).getByTestId('step-preview-row').allInnerTexts()
+  expect(last[2]).toContain('Jutta')
+  await expect(
+    panel(page).getByTestId('step-panel-mark').filter({ hasText: 'Warnung' }),
+  ).toContainText('der behaltenen Zeilen enthält')
+
+  await panel(page).getByLabel('Welche Zeilen').selectOption('first')
+  await expect(
+    panel(page).getByTestId('step-panel-mark').filter({ hasText: 'Warnung' }),
+  ).toHaveCount(0)
 
   // An empty field leaves the stored count computing rather than lifting it.
   await enter(panel(page).getByLabel('Anzahl Zeilen'), '')

@@ -218,25 +218,38 @@
  *     table: the comparator goes on through `create({ order })`, never through a
  *     reified copy.
  *
- *   firstRows(table, count)
- *     The first `count` rows **of the order in force**, so *Sortieren* →
- *     *Erste N* is two ordinary Steps rather than a special case. `count` must
- *     be an integer of at least 1 — `0`, `-1` and `2.5` are refused one layer up
- *     and throw here. A `count` at or above the row count keeps every row and is
- *     not an error: the honest limit is the data, and the return says how many
- *     rows went.
+ *   firstRows(table, count, end)
+ *     The first — or, for `end: 'last'`, the last — `count` rows **of the order
+ *     in force**, so *Sortieren* → *Erste N* is two ordinary Steps rather than a
+ *     special case. `count` must be an integer of at least 1 — `0`, `-1` and
+ *     `2.5` are refused one layer up and throw here — and `end` is `'first'` or
+ *     `'last'`, which throws rather than defaulting: a silent default hands back
+ *     the opposite rows with nothing to say so. A `count` at or above the row
+ *     count keeps every row and is not an error: the honest limit is the data,
+ *     and the return says how many rows went.
  *
- *     The return is `{ table, removed }`. It is a `BitSet` over the first
- *     `count` ordered indices rather than a slice: a slice reifies every column,
- *     which is a full copy of the data at the NFR-3 shape, where the mask costs
- *     ~12.5 kB and keeps the columns shared. The ordered table's own order
- *     survives into the limited one.
+ *     **Both ends are a window on one order, and `last` is not a reversal.** The
+ *     kept rows come out in the order they were already in, and they are not the
+ *     rows a descending sort would have put first: every order this adapter
+ *     produces puts empty and unreadable values at the end, so `last` is the end
+ *     that meets them.
+ *
+ *     The return is `{ table, removed, boxed }`. `boxed` is how many of the
+ *     **kept** rows carry an unreadable value in any column — the limit knows
+ *     nothing about sort keys, so it asks all of them, which costs
+ *     `count × columns` and never a pass over the table. It is a plain number;
+ *     `core/` mints the Diagnostic (AD-13).
+ *
+ *     It is a `BitSet` over the ordered indices rather than a slice: a slice
+ *     reifies every column, which is a full copy of the data at the NFR-3 shape,
+ *     where the mask costs ~12.5 kB and keeps the columns shared. The ordered
+ *     table's own order survives into the limited one.
  *
  * @property {(columns: ReadonlyArray<EngineColumn>) => Table} fromColumns
  * @property {(table: Table, spec: { conditions: ReadonlyArray<{ column: string, op: string, value?: unknown }>, combine: 'all' | 'any' }) => { table: Table|null, removed: number, boxed: number, unreadable: ReadonlyArray<{ column: string, type: string, value: unknown }> }} filter
  * @property {(table: Table, ordered: ReadonlyArray<{ from: string, to: string }>) => Table} selectColumns
  * @property {(table: Table, keys: ReadonlyArray<{ column: string, direction: 'asc' | 'desc' }>) => { table: Table, boxed: number }} orderRows
- * @property {(table: Table, count: number) => { table: Table, removed: number }} firstRows
+ * @property {(table: Table, count: number, end?: 'first' | 'last') => { table: Table, removed: number, boxed: number }} firstRows
  */
 
 /**

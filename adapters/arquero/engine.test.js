@@ -802,6 +802,45 @@ describe('firstRows', () => {
     expect(out.removed).toBe(0)
   })
 
+  it('takes the last N from the same order rather than reversing it', () => {
+    // Both ends are a window on one order: the rows come out in the order they
+    // were already in, so the last two of an ascending order are the two largest
+    // *in ascending order* — not what a descending sort would have put first.
+    const t = engine.fromColumns(REPORT())
+    const ordered = engine.orderRows(t, [{ column: 'Betrag', direction: 'asc' }]).table
+
+    const out = engine.firstRows(ordered, 2, 'last')
+
+    expect([...out.table.rows()].map((r) => r.Kunde)).toEqual(['Anna', 'Carla'])
+    expect([...out.table.rows()].map((r) => r.Betrag)).toEqual([1000, 1000])
+    expect(out.removed).toBe(2)
+
+    // Unordered input: the last N is the end of the file, and it stays in file
+    // order.
+    const plain = engine.firstRows(t, 2, 'last')
+    expect([...plain.table.rows()].map((r) => r.Kunde)).toEqual(['Carla', 'Dora'])
+  })
+
+  it('counts the rows it kept that carry a box, whichever end they came from', () => {
+    // The limit knows nothing about sort keys, so it asks every column of the
+    // rows it kept — and every order this adapter produces puts what it could
+    // not read at the end, which is the end `last` meets.
+    const t = engine.fromColumns([
+      column('Kunde', 'text', ['Anna', 'Bernd', 'Carla', 'Dora']),
+      column('Betrag', 'number', [1000, 500, 'abc', 250], [2]),
+    ])
+    const ordered = engine.orderRows(t, [{ column: 'Betrag', direction: 'desc' }]).table
+
+    expect(engine.firstRows(ordered, 2, 'last').boxed).toBe(1)
+    expect(engine.firstRows(ordered, 2, 'first').boxed).toBe(0)
+    // One row carrying two unreadable cells is still one row.
+    const two = engine.fromColumns([
+      column('Kunde', 'text', ['Anna', 'Bernd'], [1]),
+      column('Betrag', 'number', [1000, 'abc'], [1]),
+    ])
+    expect(engine.firstRows(two, 2).boxed).toBe(1)
+  })
+
   it('shares its columns with the input, and keeps the box invisible', () => {
     // A `BitSet` over the first N ordered indices rather than a slice: the
     // engine's own `slice` ends in `reify`, which is a full copy of every
@@ -825,6 +864,10 @@ describe('firstRows', () => {
 
   it('throws for anything that is not a count — refused one layer up', () => {
     const t = engine.fromColumns(REPORT())
+
+    // The end throws rather than defaulting, for `orderRows`' reason: a silent
+    // default hands back the opposite rows with nothing to say so.
+    expect(() => engine.firstRows(t, 2, 'bottom')).toThrow(/unknown end of the order/)
 
     for (const count of [0, -1, 2.5, null, undefined, '3']) {
       expect(() => engine.firstRows(t, count), `accepted ${String(count)} as a row count`).toThrow(

@@ -41,7 +41,7 @@ context:
 
 - No promotion of the view's sorting into a Step (decided 2026-08-04) — story 11's header click stays looking, the Step is added by hand.
 - No `orderby`, no `slice` and no `reify()` of a full table: the comparator goes on through `create({ order })` and the limit through a `BitSet`, so the columns stay shared.
-- No "letzte N" — descending plus *Erste N* is the same thing, and a second verb would be a second thing to explain.
+- ~~No "letzte N" — descending plus *Erste N* is the same thing, and a second verb would be a second thing to explain.~~ **Renegotiated by the project owner on 2026-08-04, after the story shipped:** the other end is a flag on the same Step, not a second kind. See the change-log entry below.
 - No upper bound on N and no threshold that hides a control: both would be invented constants.
 - No sorting by a computed expression, no multi-locale option, no numeric collation (`Kunde 10` before `Kunde 9` stays as the collator has it).
 - No change to CAP-32's own text, and no work on story 11.
@@ -137,6 +137,14 @@ context:
 | P7 | A key naming a column an upstream rename removed showed a **different** column than the config held, and editing the direction committed the invisible one. | `sortColumnOptions` always includes the key's own column. |
 | P8 | `validate` returned early on a bad direction, so a repeated column stayed invisible until the direction was fixed — fixing one defect produced a "new" refusal. And `field: 'direction'` read „unvollständig" over an entry that is complete and wrong. | The column is registered before the direction is judged; `direction` gets its own German sentence. |
 | P9 | The comparator sketch below showed `return 0` where the implementation uses `continue`, contradicting the paragraph under it. | Sketch corrected, and extended with the tie-break P1 added. |
+
+**2026-08-04 — the owner renegotiated one `Never`, after the story was done and committed.** „Letzte N" is now a flag on the First-N Step rather than a forbidden second verb.
+
+- **What changed in the reasoning.** The original line — descending plus *Erste N* is the same thing — is true of the *rows* and false of the *work*: reaching the other end by reversing the order means editing the Step **upstream**, which is a different Step than the one the user is looking at, and it turns everything downstream of that Sort around too. A flag costs one word in one form.
+- **The shape.** `ENDS = ['first','last']` closed in `core/steps/first.js` beside `DIRECTIONS`' precedent; `defaultConfig()` writes `end: 'first'` out, so a stored config never relies on a reader's default, and an absent `end` still means the first N — every config written before the flag keeps meaning what it meant. The port takes `firstRows(table, count, end)` and throws on an unknown end rather than defaulting, for the reason a direction does: a silent default hands back the opposite rows with nothing to say so.
+- **Both ends are one window on one order, and `last` is not a reversal.** The kept rows come out in the order they were already in, so the last two of an ascending order are the two largest *ascending* — not what a descending sort would have put first.
+- **The kind's German name changed to „Erste/Letzte N".** A card reading „Erste N" while the Step is set to „Letzte 10" would be the one place the graph lies about itself.
+- **A new warning, `step.boxed_rows_kept`.** Every order this product produces places empty and unreadable values last, so *Letzte 3* after a sort is quite likely three rows querbeet could not read. Reported rather than refused — inspecting exactly those rows is a real reason to ask for them (C-10) — and counted over the **kept** rows and every column of them, because a limit knows nothing about sort keys. It costs `count × columns` and never a pass over the table.
 
 ## Design Notes
 
@@ -269,3 +277,17 @@ Several keys chain the same function: the first key that returns non-zero decide
 
 - CAP-32's recorded contradiction, left for story 11 rather than settled here.
   [`SPEC.md:181`](../../_bmad-output/specs/spec-querbeet/SPEC.md#L181)
+
+**Added after the story shipped — the limit's other end**
+
+- The vocabulary, closed beside the Sort's directions.
+  [`first.js:38`](../../core/steps/first.js#L38)
+
+- The window is placed from one end or the other; the order itself is never reversed.
+  [`engine.js:912`](../../adapters/arquero/engine.js#L912)
+
+- Counted over the rows that stayed — the end of an order is where the unreadable ones sit.
+  [`first.js:124`](../../core/steps/first.js#L124)
+
+- The select commits through the same path as every other control, so an end with no count is withheld.
+  [`StepPanel.vue:527`](../../ui/StepPanel.vue#L527)

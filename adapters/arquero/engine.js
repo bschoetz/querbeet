@@ -880,7 +880,7 @@ export function createArqueroEngine() {
     },
 
     /**
-     * The first `count` rows of the order in force (CAP-40).
+     * The first or the last `count` rows of the order in force (CAP-40).
      *
      * **A `BitSet` over the ordered indices rather than a slice.** The engine's
      * own `slice` ends in `reify(indices)`, which materializes every column — at
@@ -893,23 +893,53 @@ export function createArqueroEngine() {
      * table, so this composes with everything upstream without knowing what was
      * there. A `count` at or above the row count keeps every row and reports
      * nothing removed, which is not an error: the honest limit is the data.
+     *
+     * **`end` is a window on one order, not a second order.** Both ends read the
+     * same `indices()` and mark a contiguous run of it, so the rows come out in
+     * the order they were already in — `last` is *not* a reversal, and the rows
+     * it keeps are not the rows a descending sort would have put first: an
+     * unordered value (empty, unreadable) sits at the end of every order this
+     * adapter produces, so it is the end that meets them.
+     *
+     * **Which is why this counts boxes among the rows it kept.** The count is
+     * over the kept rows and every column of them — the limit knows nothing
+     * about sort keys — so it costs `count × columns` rather than a pass over
+     * the table. `core/steps/first.js` turns it into a Diagnostic; only this
+     * side of the port can see a box at all (AD-22).
      */
-    firstRows(table, count) {
+    firstRows(table, count, end = 'first') {
       const { t, types } = behind(table)
-      // Refused one layer up, at configure time, where it can be a Diagnostic
-      // naming the value. Reaching here is a caller's bug.
+      // Both refused one layer up, at configure time, where they can be a
+      // Diagnostic naming the value. Reaching here is a caller's bug — and the
+      // end throws rather than defaulting for `orderRows`' reason: a silent
+      // default would hand back the opposite rows with nothing to say so.
       if (!Number.isInteger(count) || count < 1) {
         throw new TypeError(`not a row count: ${count}`)
+      }
+      if (end !== 'first' && end !== 'last') {
+        throw new TypeError(`unknown end of the order: ${end}`)
       }
 
       const index = t.indices()
       const keep = new BitSet(t.totalRows())
       const n = Math.min(count, index.length)
-      for (let i = 0; i < n; i += 1) keep.set(index[i])
+      const from = end === 'last' ? index.length - n : 0
+      const columns = t.columnNames().map((name) => t.column(name))
+      let boxed = 0
+      for (let i = from; i < from + n; i += 1) {
+        const row = index[i]
+        keep.set(row)
+        for (const column of columns) {
+          if (column.at(row) instanceof Unparsed) {
+            boxed += 1
+            break
+          }
+        }
+      }
 
       const before = t.numRows()
       const next = wrap(t.create({ filter: keep }), types)
-      return Object.freeze({ table: next, removed: before - next.rowCount() })
+      return Object.freeze({ table: next, removed: before - next.rowCount(), boxed })
     },
   }
 }

@@ -35,6 +35,7 @@ export const CODE = Object.freeze({
   // questions about the same unreadable cell, and one sentence cannot be true
   // of both.
   boxedRowsLast: 'step.boxed_rows_last',
+  boxedRowsKept: 'step.boxed_rows_kept',
 })
 
 /** The enumeration `ui/graph-labels.js` checks itself against. */

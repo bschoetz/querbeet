@@ -8,10 +8,11 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { createGraphStore } from '@core/graph/graph-store.js'
-import { error } from '@core/diagnostics/diagnostic.js'
+import { error, warning } from '@core/diagnostics/diagnostic.js'
 import { CODE } from '@core/steps/index.js'
 import {
   directionLabelGaps,
+  endLabelGaps,
   graphLabelGaps,
   graphText,
   kindLabelGaps,
@@ -58,6 +59,22 @@ describe('the German maps', () => {
     // sort key's direction, which reaches the screen as a select option, so a
     // missing word here would put a raw `asc` in front of the user.
     expect(directionLabelGaps()).toEqual([])
+    // …and a fifth when the limit gained its flag: which end the rows come from
+    // is a select option too, and `first`/`last` is machine vocabulary.
+    expect(endLabelGaps()).toEqual([])
+  })
+
+  it('says which rows a limit kept were unreadable, and why they were at that end', () => {
+    // The one thing a person cannot see for themselves: „die letzten 3" after a
+    // sort lands exactly where the unreadable values were placed. Reported
+    // rather than refused — inspecting those rows is a real reason to ask.
+    const one = graphText(warning(CODE.boxedRowsKept, { rows: 1 }))
+    expect(one).toContain('1 der behaltenen Zeilen enthält')
+    expect(one).toContain('am Ende')
+
+    // German counts one of a thing differently, and the verb follows the number.
+    const many = graphText(warning(CODE.boxedRowsKept, { rows: 4 }))
+    expect(many).toContain('4 der behaltenen Zeilen enthalten')
   })
 
   it('names the column in the Sort’s refusal, and never the core’s own field name', () => {
