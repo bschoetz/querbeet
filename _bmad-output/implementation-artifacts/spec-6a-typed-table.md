@@ -2,7 +2,7 @@
 title: 'Story 6a — The typed Table: engine adapter, conversion, and the values that did not read'
 type: 'feature'
 created: '2026-08-04'
-status: 'in-review'
+status: 'done'
 baseline_commit: '1b5e4897ccc46454048b982d0576d361fb682606'
 review_loop_iteration: 1
 context:
@@ -134,3 +134,80 @@ context:
 - `npm run build && npm run assert` -- expected: one HTML file, zero `import(`, zero `fetch(`, every `url(` a `data:` or `#`
 - `npx vitest run --project core` -- expected: green, including pair-agreement and count-equality properties
 - `npm run verify` -- expected: lint (arquero ban active), both Vitest projects, Playwright in Chromium and Firefox green
+
+## Suggested Review Order
+
+**The port, and the one door through it**
+
+- Start here: the contract the whole story is built to satisfy, `unparsed` channel included.
+  [`index.js:128`](../../ports/index.js#L128)
+
+- Why core hands over positions instead of boxes — AD-22 stated as a rule, not a comment.
+  [`index.js:98`](../../ports/index.js#L98)
+
+**Conversion: reading exactly what detection counted**
+
+- One column in, `{values, unparsed}` out; missing is null, failure keeps its original text.
+  [`convert.js:139`](../../core/exec/convert.js#L139)
+
+- The dispatch on confirmed `type`, and where a `BigInt` is built from parts.
+  [`convert.js:102`](../../core/exec/convert.js#L102)
+
+- Step zero's cache, keyed by frozen entry — outside the registry, outside reactivity.
+  [`convert.js:253`](../../core/exec/convert.js#L253)
+
+- The seam: one reader per shape, so a predicate is `parts !== null` and cannot drift.
+  [`typing.js:2169`](../../core/types/typing.js#L2169)
+
+- A datetime read as one value: offset, end-of-day roll, two-digit year.
+  [`typing.js:1350`](../../core/types/typing.js#L1350)
+
+- Native columns read canonically — the readers a mutation proved were unobserved.
+  [`typing.js:1511`](../../core/types/typing.js#L1511)
+
+**The adapter, and the box nobody outside it sees**
+
+- The private box, and `unbox` at every edge.
+  [`engine.js:73`](../../adapters/arquero/engine.js#L73)
+
+- Columns boxed in place after all names validate — nothing mutated before the throw.
+  [`engine.js:209`](../../adapters/arquero/engine.js#L209)
+
+- `rows()` builds from the columns, so a column named `__proto__` survives.
+  [`engine.js:154`](../../adapters/arquero/engine.js#L154)
+
+**The count becomes rows**
+
+- Marks memoized per frozen entry; `null` when nothing is marked, so a clean Source allocates none.
+  [`SourcesPane.vue:174`](../../ui/SourcesPane.vue#L174)
+
+- Removal releases both caches — a test turns red if either line goes.
+  [`SourcesPane.vue:617`](../../ui/SourcesPane.vue#L617)
+
+- Marks projected alongside the window; the windowing arithmetic is untouched.
+  [`row-window.js:192`](../../core/view/row-window.js#L192)
+
+- The marked cell: amber plus a wavy underline, so colour is not the only signal.
+  [`RowWindow.vue:208`](../../ui/RowWindow.vue#L208)
+
+**The gates**
+
+- One importer, restated in every block — probed, including nested paths.
+  [`eslint.config.js:42`](../../eslint.config.js#L42)
+
+- AD-18's first-ever exception: pinned to acorn's own offset, not to a neighbourhood.
+  [`artifact-scan.mjs:45`](../../scripts/artifact-scan.mjs#L45)
+
+- The gate's reject path, now a failing test instead of a sentence about a probe.
+  [`vitest.config.js:74`](../../vitest.config.js#L74)
+
+**Peripherals**
+
+- The only module naming the adapter (AD-1).
+  [`main.js:38`](../../app/main.js#L38)
+
+- The pin, exact and without a caret.
+  [`package.json:18`](../../package.json#L18)
+
+- Count and marks asserted against each other in the built artefact, both engines.
+  [`typed-table.spec.js:89`](../../tests/e2e/typed-table.spec.js#L89)
