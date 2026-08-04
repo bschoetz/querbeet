@@ -57,12 +57,37 @@ export const CODE = Object.freeze({
   kindNotExecutable: 'exec.kind_not_executable',
   inputMissing: 'exec.input_missing',
   inputFailed: 'exec.input_failed',
+  stepThrew: 'exec.step_threw',
+  runIncomplete: 'exec.run_incomplete',
 })
 
 /** The enumeration `ui/graph-labels.js` checks itself against. */
 export const EXEC_CODES = Object.freeze(Object.values(CODE))
 
-const NOTHING = Object.freeze(new Map())
+/**
+ * A `Map` a caller cannot write to.
+ *
+ * `Object.freeze` does nothing to a `Map` — `set` and `delete` go on working —
+ * so freezing one is a promise the object does not keep, and every other
+ * projection in this codebase (`unparsed`, `slots`, `renamed`, the graph store's
+ * whole snapshot) freezes what it hands out. This is the same guarantee in the
+ * one shape `Object.freeze` cannot give: the read methods, and nothing else.
+ */
+function readOnlyMap(map) {
+  return Object.freeze({
+    get: (key) => map.get(key),
+    has: (key) => map.has(key),
+    get size() {
+      return map.size
+    },
+    keys: () => map.keys(),
+    values: () => map.values(),
+    entries: () => map.entries(),
+    [Symbol.iterator]: () => map.entries(),
+  })
+}
+
+const NOTHING = readOnlyMap(new Map())
 
 const refused = (diagnostics) =>
   Object.freeze({ ok: false, results: NOTHING, diagnostics: Object.freeze(diagnostics) })
@@ -197,7 +222,31 @@ export function executeGraph({ steps, resultId, engine, sourceTable }) {
     // The executor exists: the gate above refused the run otherwise.
     const kind = stepKind(node.kind)
     const config = node.config ?? kind.defaultConfig()
-    const outcome = kind.apply(engine, inputs, config)
+
+    /**
+     * **A throw out of a Step is a Diagnostic, not a broken Editor.**
+     *
+     * Every guard behind this call is an invariant guard — the engine refuses a
+     * column no table has, `fromColumns` refuses two columns of one name, the
+     * comparison refuses an operator outside a closed list — and each of them is
+     * *supposed* to be unreachable. What makes the catch load-bearing rather
+     * than defensive is where the call sits: both callers of `executeGraph` are
+     * on a render path, so an invariant guard that escapes reaches the user as a
+     * blank Editor, which is worse than the state the guard exists to prevent.
+     * The Step is recorded as having produced nothing and the walk continues, so
+     * the Steps downstream report their missing input exactly as they do for
+     * every other reason a Step produces no table.
+     */
+    let outcome
+    try {
+      outcome = kind.apply(engine, inputs, config)
+    } catch {
+      record(node, null, [
+        error(CODE.stepThrew, { id: node.id, kind: node.kind }, { stepId: node.id }),
+      ])
+      continue
+    }
+
     // A Step emits its diagnostics without knowing which Step it is — AD-4 hands
     // it an engine, inputs and a config, and nothing else. The origin is stamped
     // here, once, so every mark in the run can be routed to the card it belongs
@@ -211,9 +260,29 @@ export function executeGraph({ steps, resultId, engine, sourceTable }) {
     )
   }
 
+  // **One sentence about the run as a whole, and it is here because the cards
+  // deliberately do not carry the run's marks.** A Step error is visible in that
+  // Step's panel, which is where CAP-19 puts it — and a user with nothing
+  // selected would otherwise see a pipeline that computed nothing, with no
+  // reason anywhere on screen. This diagnostic carries **no `stepId`**, which is
+  // what routes it to the pane's own status region rather than to a card.
+  const failed = [...results.values()].filter((r) => r.table === null)
+  const whole =
+    failed.length === 0
+      ? []
+      : [
+          error(CODE.runIncomplete, {
+            id: [...results.entries()].find(([, r]) => r.table === null)[0],
+            steps: failed.length,
+          }),
+        ]
+
   return Object.freeze({
     ok: true,
-    results,
-    diagnostics: Object.freeze([...results.values()].flatMap((r) => r.diagnostics)),
+    results: readOnlyMap(results),
+    diagnostics: Object.freeze([
+      ...[...results.values()].flatMap((r) => r.diagnostics),
+      ...whole,
+    ]),
   })
 }

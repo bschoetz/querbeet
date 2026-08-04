@@ -2,7 +2,7 @@
 title: 'Story 6b — Execution walking skeleton: Filter and Columns Steps, and the per-Step preview'
 type: 'feature'
 created: '2026-08-04'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: '9c8f1f115c263a3cd268d9ca29f7a89b18d3ddc3'
 review_loop_iteration: 0
 context:

@@ -190,10 +190,21 @@ const marksFor = (id) => projection.value.diagnostics.filter((d) => d.stepId ===
  * Step: a gate refusal is about **the whole run**, and putting it only on the
  * card of the Source that caused it would let a user with the Editor scrolled
  * elsewhere see a pipeline that computed nothing and no reason anywhere.
+ *
+ * **A run that was not refused can still produce nothing, and that needs saying
+ * here too.** A Step error — a condition naming a column its input lost, a
+ * comparison the engine could not evaluate — leaves `ok: true` and is reported in
+ * that Step's own panel, which is where CAP-19 puts it. With the run's marks
+ * deliberately off the cards, a user with nothing selected would see a pipeline
+ * that computed nothing and no reason on screen at all. `exec.run_incomplete`
+ * carries no `stepId` for exactly that reason, so it lands here rather than on a
+ * card, and it names the first Step that failed.
  */
 const status = computed(() => [
   ...projection.value.diagnostics.filter((d) => d.stepId === undefined),
-  ...(execution.value.ok ? [] : execution.value.diagnostics),
+  ...(execution.value.ok
+    ? execution.value.diagnostics.filter((d) => d.stepId === undefined)
+    : execution.value.diagnostics),
 ])
 
 // ------------------------------------------------------------- the canvas

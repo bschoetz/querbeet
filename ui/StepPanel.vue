@@ -67,6 +67,11 @@ const colsLabel = (n) => (n === 1 ? '1 Spalte' : `${nf(n)} Spalten`)
 
 const configurable = computed(() => hasExecutor(props.step.kind))
 const columnNames = computed(() => (props.inputSchema ?? []).map((c) => c.name))
+/** An input table with no columns at all. `inputSchema` is then `[]` rather than
+ *  `null` — there *is* an input, it simply has nothing to configure against —
+ *  and the difference has to be said rather than shown as a control that does
+ *  nothing when pressed. */
+const hasColumns = computed(() => columnNames.value.length > 0)
 const typeOfColumn = (name) => props.inputSchema?.find((c) => c.name === name)?.type ?? 'text'
 
 // ------------------------------------------------------------- the draft
@@ -148,14 +153,33 @@ watch(
   { immediate: true },
 )
 
+/**
+ * Whether a condition is finished enough to be worth sending to the model.
+ *
+ * A condition awaiting its value is **not** a condition with a bad value, and
+ * the difference is what this predicate exists for. A freshly added condition on
+ * a `date`, `datetime`, `time` or `duration` column starts with an empty string —
+ * there is no neutral instant the way `0` is a neutral number — which passes the
+ * registry's shape check (the kind is `text`, correct for those types) and then
+ * fails at execution as `step.value_unreadable`. So *every* temporal column broke
+ * its Step on the first click, while number and boolean columns did not.
+ *
+ * The precedent is one file down: an unreadable number entry does not reach the
+ * store either. An entry that has not finished is not a change to the config.
+ */
+const isComplete = (condition) =>
+  !takesValue(condition.op) || (condition.value !== '' && condition.value !== undefined && condition.value !== null)
+
 /** The config the current draft means, in canonical machine form. */
 function configOf(state) {
   if (props.step.kind === FILTER) {
     return {
       combine: state.combine,
-      conditions: state.conditions.map((c) =>
-        takesValue(c.op) ? { column: c.column, op: c.op, value: c.value } : { column: c.column, op: c.op },
-      ),
+      conditions: state.conditions
+        .filter(isComplete)
+        .map((c) =>
+          takesValue(c.op) ? { column: c.column, op: c.op, value: c.value } : { column: c.column, op: c.op },
+        ),
     }
   }
   return {
@@ -219,8 +243,22 @@ const addCondition = () => {
   commit(withConditions([...draft.value.conditions, { column, op: 'eq', value: emptyValue(column) }]))
 }
 
-const removeCondition = (at) =>
+/**
+ * Remove a condition, and move the refusals that sit above it down with it.
+ *
+ * `numberRefusals` is keyed by position and the positions shift — without the
+ * re-keying a „das ist keine Zahl" message stayed on index 2 while the condition
+ * that earned it became index 1, so the message appeared under a different
+ * condition than the one it was about.
+ */
+function removeCondition(at) {
+  numberRefusals.value = Object.fromEntries(
+    Object.entries(numberRefusals.value)
+      .filter(([key]) => Number(key) !== at)
+      .map(([key, value]) => [Number(key) > at ? Number(key) - 1 : Number(key), value]),
+  )
   commit(withConditions(draft.value.conditions.filter((_, i) => i !== at)))
+}
 
 const patchCondition = (at, patch) =>
   commit(withConditions(draft.value.conditions.map((c, i) => (i === at ? { ...c, ...patch } : c))))
@@ -291,8 +329,13 @@ const preview = shallowRef(null)
 const status = computed(() => (props.result ? runStatus(props.result.diagnostics) : null))
 
 const marks = computed(() =>
-  (props.result?.diagnostics ?? []).map((d) => ({
-    key: `${d.code}:${d.severity}`,
+  // The index is in the key because a code is **not** unique per Step: a Filter
+  // with two disagreeing conditions emits two `step.type_mismatch`, and a
+  // Columns Step naming two vanished columns emits two `step.unknown_column`.
+  // Duplicate `v-for` keys make Vue drop or reuse a mark, so the second finding
+  // would silently not be rendered.
+  (props.result?.diagnostics ?? []).map((d, at) => ({
+    key: `${at}:${d.code}`,
     text: graphText(d, props.nameOf),
     ...SEVERITY[d.severity],
   })),
@@ -361,6 +404,17 @@ watch(
     </p>
 
     <!-- ------------------------------------------------------ Filter -->
+    <!-- An input with no columns. The controls below all name a column, so there
+         is nothing for them to offer — and an enabled "Bedingung hinzufügen"
+         that silently does nothing is worse than a sentence. -->
+    <p
+      v-else-if="configurable && !hasColumns"
+      data-testid="step-panel-no-columns"
+      class="rounded bg-slate-50 px-2 py-1 text-xs text-slate-600"
+    >
+      Der Eingang dieses Steps hat keine Spalten — hier gibt es nichts einzustellen.
+    </p>
+
     <div
       v-else-if="props.step.kind === FILTER && draft"
       data-testid="step-config-filter"
@@ -482,6 +536,16 @@ watch(
           class="w-full text-xs text-amber-700"
         >
           Das ist keine Zahl — bitte in deutscher Schreibweise eingeben, zum Beispiel 1.234,56.
+        </p>
+        <!-- A condition awaiting its value is not sent to the model at all, so
+             it has no effect yet — and saying nothing would leave a row on
+             screen that looks configured and filters nothing. -->
+        <p
+          v-else-if="!isComplete(condition)"
+          data-testid="filter-value-pending"
+          class="w-full text-xs text-slate-500"
+        >
+          Noch ohne Wert — diese Bedingung wirkt erst, wenn ein Wert eingetragen ist.
         </p>
       </div>
 

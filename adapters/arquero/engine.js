@@ -34,8 +34,12 @@
 //
 // **`ColumnTable` rather than the base `Table`, decided 2026-08-04 with the
 // project owner and measured on both sides.** Story 6a built against the base
-// class, which is 58,729 bytes cheaper and had every method that story's port
-// needed. This story's port needs two verbs, and the chain figure is what decided
+// class, which was **58,729 bytes** cheaper against *that* tree and had every
+// method that story's port needed. (The 57,829 figure further down is the same
+// class choice re-measured against *this* tree after story 6b landed — two
+// measurements, two trees, and the small difference is the rest of the story's
+// code shifting what the bundler can share. Neither figure supersedes the
+// other.) This story's port needs two verbs, and the chain figure is what decided
 // it: CAP-19 shows the row and column count of every Step's **full** output, so
 // no intermediate is transient. Arquero's verbs share the column arrays, which
 // costs ~0.0 MB for a Source → Filter → Columns chain with every Step retained; a
@@ -241,11 +245,14 @@ const CLOCK_DURATION = /^(-)?(\d+):([0-5]\d)(?::([0-5]\d))?$/
 const fractionNanos = (fraction) => (fraction ? BigInt(fraction.padEnd(9, '0')) : 0n)
 
 /**
- * UTC midnight of a calendar day, in epoch milliseconds.
+ * UTC midnight of a calendar day, in epoch milliseconds — or `NaN` for a day
+ * outside what a `Date` can hold.
  *
  * `Date.UTC` maps years 0–99 onto 1900–1999. The pattern above requires four
  * digits, so the fast path covers everything it can match; the guard stays
- * because a year is a number this function is handed, not one it parsed.
+ * because a year is a number this function is handed, not one it parsed. The
+ * slow path returns `NaN` for a year past ±275,760, which `calendarMillis`
+ * below turns into the module's one "unreadable" answer.
  */
 function utcMidnightMillis(year, month, day) {
   if (year >= 100 && year <= 9999) return Date.UTC(year, month - 1, day)
@@ -255,10 +262,47 @@ function utcMidnightMillis(year, month, day) {
   return d.getTime()
 }
 
-const offsetMinutes = (zone) => {
+/** How many days a month has, proleptic Gregorian. February is the only one
+ *  that needs the year, and the year is the only reason this is a function. */
+function daysInMonth(year, month) {
+  if (month === 2) {
+    const leap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0
+    return leap ? 29 : 28
+  }
+  return [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1]
+}
+
+/**
+ * A calendar day as epoch milliseconds, or `null` where the fields are not a day.
+ *
+ * **`Date` rolls over and this module may not.** `Date.UTC(2025, 1, 30)` is 2
+ * March and `Date.UTC(2025, 12, 45)` is 14 February 2026 — silently, with no
+ * signal of any kind. This file's own contract is that a value which is not a
+ * canonical form is *refused* rather than guessed at, so every component is
+ * range-checked before the arithmetic runs. The technique is not new here:
+ * `CLOCK_DURATION` has bounded its minutes and seconds with `[0-5]\d` from the
+ * first line; it was applied in one of four places.
+ */
+function calendarMillis(year, month, day) {
+  if (month < 1 || month > 12) return null
+  if (day < 1 || day > daysInMonth(year, month)) return null
+  const millis = utcMidnightMillis(year, month, day)
+  return Number.isFinite(millis) ? millis : null
+}
+
+/**
+ * A zone offset in minutes, or `null` for one that is not a zone offset.
+ *
+ * `Z` and an absent zone are both UTC. The bound is ±23:59 rather than the ±14:00
+ * the IANA database actually uses: this is a syntactic guard against `+99:99`,
+ * not a claim about which zones exist.
+ */
+function offsetMinutes(zone) {
   if (!zone || zone === 'Z') return 0
-  const sign = zone[0] === '-' ? -1 : 1
-  return sign * (Number(zone.slice(1, 3)) * 60 + Number(zone.slice(4, 6)))
+  const hours = Number(zone.slice(1, 3))
+  const minutes = Number(zone.slice(4, 6))
+  if (hours > 23 || minutes > 59) return null
+  return (zone[0] === '-' ? -1 : 1) * (hours * 60 + minutes)
 }
 
 /**
@@ -268,31 +312,50 @@ const offsetMinutes = (zone) => {
  * `null` is a return value rather than a throw: an unreadable comparison value is
  * a state of the configuration, and the port carries it back as `unreadable` so
  * `core/steps/` can mint a Diagnostic naming the column and the value.
+ *
+ * **Shape and range are both refusals**, and the second half is the one that is
+ * easy to leave out. A pattern match says `2025-02-30` has the shape of a date;
+ * only the range check says it is not one, and without it `Date` rolls it over
+ * to 2 March and the filter quietly compares against a day the user never named.
  */
 export function comparisonValue(type, value) {
   if (type === 'date') {
     const m = ISO_DATE.exec(value)
     if (!m) return null
-    return BigInt(utcMidnightMillis(Number(m[1]), Number(m[2]), Number(m[3]))) * NANOS_PER_MILLI
+    const millis = calendarMillis(Number(m[1]), Number(m[2]), Number(m[3]))
+    return millis === null ? null : BigInt(millis) * NANOS_PER_MILLI
   }
   if (type === 'datetime') {
     const m = ISO_DATETIME.exec(value)
     if (!m) return null
-    const millis =
-      utcMidnightMillis(Number(m[1]), Number(m[2]), Number(m[3])) +
-      ((Number(m[4]) * 60 + Number(m[5])) * 60 + Number(m[6] ?? 0)) * 1000 -
-      offsetMinutes(m[8]) * 60_000
+    const day = calendarMillis(Number(m[1]), Number(m[2]), Number(m[3]))
+    const zone = offsetMinutes(m[8])
+    const hour = Number(m[4])
+    const minute = Number(m[5])
+    const second = Number(m[6] ?? 0)
+    if (day === null || zone === null) return null
+    // 24:00 is end-of-day in ISO 8601 and `core/exec/convert.js` reads it as the
+    // next calendar day's midnight; it is not admitted *here* because a
+    // comparison value is written by a control, and no control this product
+    // renders can produce it.
+    if (hour > 23 || minute > 59 || second > 59) return null
+    const millis = day + ((hour * 60 + minute) * 60 + second) * 1000 - zone * 60_000
     return BigInt(millis) * NANOS_PER_MILLI + fractionNanos(m[7])
   }
   if (type === 'time') {
     const m = ISO_TIME.exec(value)
-    if (!m || Number(m[1]) > 23) return null
+    if (!m) return null
+    const hour = Number(m[1])
+    const minute = Number(m[2])
+    const second = Number(m[3] ?? 0)
+    if (hour > 23 || minute > 59 || second > 59) return null
     return (
-      BigInt(Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3] ?? 0)) * NANOS_PER_SECOND +
-      fractionNanos(m[4])
+      BigInt(hour * 3600 + minute * 60 + second) * NANOS_PER_SECOND + fractionNanos(m[4])
     )
   }
   if (type === 'duration') {
+    // The one shape that was already bounded: `[0-5]\d` in the pattern itself,
+    // with the hours field unbounded because a duration is a quantity.
     const m = CLOCK_DURATION.exec(value)
     if (!m) return null
     const magnitude =
@@ -338,9 +401,10 @@ function matches(op, cell, target) {
       return cell <= target
     case 'gt':
       return cell > target
-    /* c8 ignore next 2 -- the vocabulary is closed in core/steps/filter.js */
     case 'gte':
       return cell >= target
+    /* c8 ignore next 2 -- the vocabulary is closed in core/steps/filter.js, so
+       this is an invariant guard rather than a branch a caller can reach */
     default:
       throw new TypeError(`unknown comparison operator: ${op}`)
   }
@@ -449,6 +513,13 @@ export function createArqueroEngine() {
      */
     filter(table, { conditions = [], combine = 'all' } = {}) {
       const { t, types } = behind(table)
+      // The vocabulary is closed in `core/steps/filter.js` and `validate`
+      // refuses anything else, so this is an invariant guard — and it throws
+      // rather than defaulting, because the silent default was `any`: a typo in
+      // a stored config would have *widened* a result set with nothing to say so.
+      if (combine !== 'all' && combine !== 'any') {
+        throw new TypeError(`unknown combination rule: ${combine}`)
+      }
 
       // Every condition prepared before the walk, and an unreadable value
       // reported before a single row is examined — a filter nobody can evaluate
@@ -484,8 +555,21 @@ export function createArqueroEngine() {
       const kept = new BitSet(total)
       let boxed = 0
 
+      /**
+       * Whether a row survives, and whether any of its compared cells was a box.
+       *
+       * **Every condition is evaluated, with no short circuit, and that is what
+       * makes the second number mean something.** Short-circuiting on the first
+       * failing condition under `all` made `boxed` depend on the order the user
+       * happened to add the conditions in: a row failing condition 1 normally
+       * and holding a box in condition 2 was not counted, and swapping the two
+       * counted it. A number the user is asked to trust (AD-13) may not change
+       * with the order of a form. The cost is at most one comparison per
+       * condition per row, against a `BitSet` write that dominates it.
+       */
       const admits = (row) => {
         let anyMatch = false
+        let allMatch = true
         let sawBox = false
         for (const { op, column, target } of prepared) {
           const cell = column.at(row)
@@ -494,17 +578,13 @@ export function createArqueroEngine() {
           // smuggle every unreadable cell through as non-empty text.
           if (cell instanceof Unparsed) {
             sawBox = true
-            if (combine === 'all') return { pass: false, sawBox: true }
+            allMatch = false
             continue
           }
-          const ok = matches(op, cell, target)
-          if (combine === 'all') {
-            if (!ok) return { pass: false, sawBox }
-          } else if (ok) {
-            anyMatch = true
-          }
+          if (matches(op, cell, target)) anyMatch = true
+          else allMatch = false
         }
-        return { pass: combine === 'all' ? true : anyMatch, sawBox }
+        return { pass: combine === 'all' ? allMatch : anyMatch, sawBox }
       }
 
       const consider = (row) => {
@@ -517,9 +597,14 @@ export function createArqueroEngine() {
         }
         const verdict = admits(row)
         if (verdict.pass) kept.set(row)
-        // Counted only where the box actually decided the outcome: under `any`,
-        // a row with a box in one column and a match in another is kept, and
-        // reporting it as dropped would be a number about nothing.
+        // **The definition, stated so the German sentence can be true of it:**
+        // a row that was *excluded* and carried a box in at least one of the
+        // compared columns. Not "the box decided it" — under `all` a box and a
+        // failing comparison can both be true of one row and there is no
+        // meaningful order between them — and not "any row with a box", because
+        // under `any` a row with a box in one column and a match in another is
+        // kept, and reporting a row that is in the output as dropped would be a
+        // number about nothing.
         else if (verdict.sawBox) boxed += 1
       }
 

@@ -303,11 +303,11 @@ const GERMAN = {
             `benannt: ${unnamed.map((r) => `Spalte ${nf(r.at)} → „${r.to}“`).join(', ')}.`,
       )
     }
-    return (
-      parts.join(' ') +
-      ` Eine Tabelle kann zwei Spalten gleichen Namens nicht auseinanderhalten; die Werte selbst ` +
-      `sind unverändert.`
-    )
+    // No claim about the values here. It read "die Werte selbst sind unverändert",
+    // which is true of CSV and XLSX and false of Parquet, where a duplicated
+    // column arrives empty — and this sentence cannot see which format it is
+    // describing. What it *can* say is why the rename had to happen at all.
+    return parts.join(' ') + ` Eine Tabelle kann zwei Spalten gleichen Namens nicht auseinanderhalten.`
   },
   'source.unreadable': (v) =>
     `„${v.fileName}“ konnte nicht gelesen werden — die Datei ist beschädigt, ` +
@@ -327,25 +327,38 @@ const GERMAN = {
     `Spalte „${v.column}“ enthält Werte verschiedener Excel-Typen ` +
     `(${v.kinds.map((k) => typeLabel(k)).join(', ')}) — sie wird als Text gelesen, ` +
     `damit kein Wert stillschweigend umgedeutet wird.`,
+  // Both sentences describe what happens *after* the store makes column names
+  // unique (story 6b), and they used to describe what happened before it: "diese
+  // Spalte bleibt ohne Namen" and "sind aber am Namen nicht zu unterscheiden"
+  // were true until 2026-08-04 and are now the opposite of what the card one line
+  // below reports. Two sentences on one card contradicting each other is worse
+  // than either being merely terse.
   'xlsx.blank_header': (v) =>
     v.columns.length === 1
-      ? `In der Kopfzeile ist Spalte ${nf(v.columns[0])} leer — diese Spalte bleibt ohne Namen. ` +
-        `Bitte die Kopfzeile prüfen.`
-      : `In der Kopfzeile sind die Spalten ${v.columns.map(nf).join(', ')} leer — diese Spalten ` +
-        `bleiben ohne Namen. Bitte die Kopfzeile prüfen.`,
+      ? `In der Kopfzeile ist Spalte ${nf(v.columns[0])} leer — querbeet benennt sie beim Einlesen ` +
+        `nach ihrer Position (siehe Meldung dazu). Bitte die Kopfzeile prüfen.`
+      : `In der Kopfzeile sind die Spalten ${v.columns.map(nf).join(', ')} leer — querbeet benennt ` +
+        `sie beim Einlesen nach ihrer Position (siehe Meldung dazu). Bitte die Kopfzeile prüfen.`,
   'xlsx.duplicate_header': (v) =>
-    `Die Kopfzeile vergibt ${v.columns.map((c) => `„${c}“`).join(', ')} mehrfach — die Spalten ` +
-    `werden getrennt gehalten, sind aber am Namen nicht zu unterscheiden.`,
+    `Die Kopfzeile vergibt ${v.columns.map((c) => `„${c}“`).join(', ')} mehrfach — querbeet hat die ` +
+    `Spalten beim Einlesen eindeutig benannt, damit sie auseinanderzuhalten sind. Welcher Name wo ` +
+    `steht, sagt die Meldung dazu.`,
   'parquet.nested_column': (v) =>
     `Spalte „${v.column}“ ist verschachtelt (Liste, Map oder Struktur) — sie wird als Text ` +
     `im JSON-Format gelesen. Das Auffächern in einzelne Spalten kommt später.`,
   'parquet.unsupported_type': (v) =>
     `Spalte „${v.column}“ hat den Parquet-Typ ${v.type}, für den querbeet noch keine ` +
     `Umrechnung kennt — sie wird als Text gelesen.`,
+  // The names *are* distinguishable now; the values are still missing, because
+  // the Parquet reader plans a duplicated column as unreadable and fills it with
+  // nulls (`adapters/parquet/parquet-reader.js`). Story 6b deliberately does not
+  // open that reader, so the sentence says what is actually true of the file
+  // rather than repeating a premise that has changed — and it must, because the
+  // rename sentence beside it no longer claims the values are untouched.
   'parquet.duplicate_column_name': (v) =>
-    `Die Datei enthält ${nf(v.columns)} Spalten mit dem Namen „${v.column}“. querbeet kann sie ` +
-    `nicht auseinanderhalten und lässt sie deshalb leer — sonst stünden unter der einen ` +
-    `Überschrift die Werte der anderen. Die übrigen Spalten sind vollständig gelesen.`,
+    `Die Datei enthält ${nf(v.columns)} Spalten mit dem Namen „${v.column}“. Die Namen sind beim ` +
+    `Einlesen eindeutig gemacht worden, die Werte dieser Spalten liest querbeet aber noch nicht — ` +
+    `sie bleiben leer. Die übrigen Spalten sind vollständig gelesen.`,
   'parquet.unreadable_column': (v) =>
     `Spalte „${v.column}“ hat den Parquet-Typ ${v.type}, den querbeet nicht entschlüsseln ` +
     `kann — sie bleibt leer. Die übrigen Spalten der Datei sind vollständig gelesen.`,

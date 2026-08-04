@@ -394,14 +394,35 @@ describe('leaving and re-entering the Editor', () => {
 describe('configureStep', () => {
   const store = () => createGraphStore()
 
-  it('stores a validated config, frozen, and hands the same object back', () => {
+  it('stores a validated config, frozen all the way down, and hands the same object back', () => {
     const graph = store()
     const filter = graph.addStep('filter', { name: 'Nur Große' }).id
     const config = { combine: 'all', conditions: [{ column: 'Betrag', op: 'gt', value: 1000 }] }
 
     expect(graph.configureStep(filter, config).ok).toBe(true)
     expect(graph.get(filter).config).toBe(config)
-    expect(Object.isFrozen(graph.get(filter).config)).toBe(true)
+
+    // **Deep, not shallow.** `Object.freeze` on the outer object leaves the
+    // conditions array and every condition in it writable, so a component could
+    // change a Step's body without going through a command (AD-10) — and do it
+    // invisibly, because the object on the node is the object the caller kept.
+    const stored = graph.get(filter).config
+    expect(Object.isFrozen(stored)).toBe(true)
+    expect(Object.isFrozen(stored.conditions)).toBe(true)
+    expect(Object.isFrozen(stored.conditions[0])).toBe(true)
+  })
+
+  it('freezes the leaves of a config whose outer object was already frozen', () => {
+    // The case a `Object.isFrozen` short circuit would miss: a caller that
+    // froze the wrapper and not its contents.
+    const graph = store()
+    const columns = graph.addStep('columns').id
+    const config = Object.freeze({ columns: [{ from: 'a', to: 'b' }] })
+
+    graph.configureStep(columns, config)
+
+    expect(Object.isFrozen(graph.get(columns).config.columns)).toBe(true)
+    expect(Object.isFrozen(graph.get(columns).config.columns[0])).toBe(true)
   })
 
   it('opens with no config at all, so a kind can supply its own default', () => {

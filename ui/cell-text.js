@@ -45,7 +45,8 @@ const NANOS_PER_HOUR = 60n * NANOS_PER_MINUTE
 const pad = (n, width = 2) => String(n).padStart(width, '0')
 
 /**
- * The calendar fields of an epoch-nanosecond instant, read in **UTC**.
+ * The calendar fields of an epoch-nanosecond instant, read in **UTC** — or
+ * `null` for an instant no `Date` can hold.
  *
  * UTC because that is what the value is (AD-21: a date column holds UTC-midnight
  * epoch nanoseconds). A local-zone reader would render 31 December as 30
@@ -54,6 +55,12 @@ const pad = (n, width = 2) => String(n).padStart(width, '0')
  *
  * The nanosecond remainder is taken with `BigInt` arithmetic before the value is
  * narrowed to a `Number`, so nothing is rounded on the way into `Date`.
+ *
+ * **`null` rather than `NaN.NaN.NaN`.** A `BigInt` is unbounded and a `Date` is
+ * not — anything past ±8.64e15 ms is an Invalid Date, and every field read off
+ * one is `NaN`. The representation can hold such a value (that is why it is a
+ * `BigInt` at all), so the projection has to answer for it, and the answer is the
+ * same one a boxed cell already gets: fall back to what the value literally is.
  */
 function utcFields(nanos) {
   let millis = nanos / NANOS_PER_MILLI
@@ -65,6 +72,7 @@ function utcFields(nanos) {
     sub += NANOS_PER_MILLI
   }
   const d = new Date(Number(millis))
+  if (Number.isNaN(d.getTime())) return null
   return {
     year: d.getUTCFullYear(),
     month: d.getUTCMonth() + 1,
@@ -80,7 +88,7 @@ function utcFields(nanos) {
 /** `31.12.2025` — the German date, in German field order. */
 const dateText = (nanos) => {
   const f = utcFields(nanos)
-  return `${pad(f.day)}.${pad(f.month)}.${f.year}`
+  return f === null ? null : `${pad(f.day)}.${pad(f.month)}.${f.year}`
 }
 
 /**
@@ -94,6 +102,7 @@ const dateText = (nanos) => {
  */
 function datetimeText(nanos) {
   const f = utcFields(nanos)
+  if (f === null) return null
   const clock = `${pad(f.hour)}:${pad(f.minute)}`
   const fraction = f.milli * 1_000_000 + f.nano
   const seconds =
@@ -168,15 +177,36 @@ export function cellText(value, type) {
   // temporal writer a string — which is exactly what a boxed cell is — would
   // produce `NaN` fields and a date nobody can trace back to a file.
   const wanted = type === 'number' ? 'number' : type === 'boolean' ? 'boolean' : 'bigint'
-  return typeof value === wanted ? write(value) : String(value)
+  if (typeof value !== wanted) return String(value)
+  // A writer answers `null` for a value of the right *shape* that it still
+  // cannot render — an instant outside what a `Date` can hold. Same fallback,
+  // and for the same reason: showing the value is always better than showing
+  // `NaN.NaN.NaN`, which is a rendering bug wearing the costume of data.
+  return write(value) ?? String(value)
 }
 
-/** What a German number field may contain: an optional sign, digits with
- *  grouping dots or spaces, and at most one decimal comma. Deliberately not a
- *  general number parser — `1.234.56` is not a number in this convention and
- *  guessing which dot was meant is exactly the silent reinterpretation CAP-15
- *  refuses. */
-const GERMAN_NUMBER = /^-?[\d.\s]*(,\d*)?$/
+/**
+ * What a German number field may contain.
+ *
+ * An optional sign, then **either** a plain run of digits **or** a properly
+ * grouped one — one to three digits followed by groups of exactly three, every
+ * separator the same character — then at most one decimal comma with at least
+ * one digit behind it.
+ *
+ * **The grouping has to be positionally valid, and the loose version of this
+ * pattern accepted exactly the input its own comment named as the case to
+ * refuse.** `^-?[\d.\s]*(,\d*)?$` matched `1.234.56` (→ 123456), `1.2` (→ 12),
+ * `12.` (→ 12) and even `.` (→ 0), so a stray dot became a silent number and a
+ * filter that quietly removed rows. Guessing which dot was meant is the silent
+ * reinterpretation CAP-15 refuses, and the refusal has to be in the pattern
+ * rather than in a sentence about it.
+ *
+ * The backreference is what keeps `1.000 000` out: a number groups with dots or
+ * with spaces, not with both. U+00A0 is in the class because that is what a
+ * paste out of Excel or a browser's own number formatting carries.
+ */
+const GERMAN_NUMBER =
+  /^-?(?:\d+|\d{1,3}(?:([.\u0020\u00a0\u202f])\d{3})(?:\1\d{3})*)(?:,\d+)?$/
 
 /**
  * A number as a German reader writes it, as the machine number a config stores —
@@ -192,6 +222,6 @@ const GERMAN_NUMBER = /^-?[\d.\s]*(,\d*)?$/
 export function germanNumber(text) {
   const trimmed = String(text).trim()
   if (trimmed === '' || !GERMAN_NUMBER.test(trimmed)) return null
-  const value = Number(trimmed.replaceAll(/[.\s]/g, '').replace(',', '.'))
+  const value = Number(trimmed.replaceAll(/[.\u0020\u00a0\u202f]/g, '').replace(',', '.'))
   return Number.isFinite(value) ? value : null
 }

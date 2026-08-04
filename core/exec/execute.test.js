@@ -99,18 +99,65 @@ describe('the frontier', () => {
   })
 
   it('visits a Step feeding two consumers once', () => {
+    // **A real diamond**, which the previous version of this case did not have —
+    // it built a linear chain and asserted a key set, which any traversal
+    // satisfies whether or not `inDependencyOrder` de-duplicates anything.
+    //
+    // The Step this story can *execute* takes one input, so the only way to
+    // close a diamond today is a Union — and a Union in the frontier refuses the
+    // run before the walk executes anything (stories 8 and 9 give it an
+    // executor). What is still observable is the visit count, because the gate
+    // pass emits one diagnostic **per contributing node**: without the `seen`
+    // set, `src:a` is reached down both arms and would be named twice.
     const graph = createGraphStore()
     graph.syncSources([{ id: 'src:a', name: 'A' }])
-    const first = graph.addStep('filter', { name: 'Eins' }).id
-    const second = graph.addStep('columns', { name: 'Zwei' }).id
-    const third = graph.addStep('columns', { name: 'Drei' }).id
-    graph.connect('src:a', first, 0)
-    graph.connect(first, second, 0)
-    graph.connect(second, third, 0)
-    graph.setResult(third)
+    const left = graph.addStep('filter', { name: 'Links' }).id
+    const right = graph.addStep('columns', { name: 'Rechts' }).id
+    const union = graph.addStep('union', { name: 'Zusammen' }).id
+    graph.connect('src:a', left, 0)
+    graph.connect('src:a', right, 0)
+    graph.connect(left, union, 0)
+    graph.connect(right, union, 1)
+    graph.setResult(union)
 
-    const out = run(graph, new Map([['src:a', REPORT()]]))
-    expect([...out.results.keys()].sort()).toEqual(['src:a', first, second, third].sort())
+    const out = run(graph) // src:a unconfirmed, so gate 1 names it
+    const named = out.diagnostics.filter((d) => d.code === CODE.sourceUnconfirmed)
+
+    expect(named).toHaveLength(1)
+    expect(named[0].values.id).toBe('src:a')
+    expect(out.diagnostics.filter((d) => d.code === CODE.kindNotExecutable)).toHaveLength(1)
+  })
+
+  it('runs a shared upstream once for two consumers, counted at the executor', () => {
+    // The other half of the same property, where it *can* be counted: one
+    // Columns Step feeding two Filters, one of which is the Result. The shared
+    // Step is applied once, not once per path that reaches it.
+    const graph = createGraphStore()
+    graph.syncSources([{ id: 'src:a', name: 'A' }])
+    const shared = graph.addStep('columns', { name: 'Geteilt' }).id
+    const one = graph.addStep('filter', { name: 'Eins' }).id
+    graph.connect('src:a', shared, 0)
+    graph.connect(shared, one, 0)
+    graph.setResult(one)
+
+    let applied = 0
+    const counting = {
+      ...engine,
+      selectColumns: (...args) => {
+        applied += 1
+        return engine.selectColumns(...args)
+      },
+    }
+    graph.configureStep(shared, { columns: [{ from: 'Kunde', to: 'Kunde' }] })
+
+    executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine: counting,
+      sourceTable: () => REPORT(),
+    })
+
+    expect(applied).toBe(1)
   })
 
   it('says nothing at all when no Step is designated as the Result', () => {
@@ -243,6 +290,91 @@ describe('a Step that produced nothing', () => {
   })
 })
 
+describe('a Step whose executor throws', () => {
+  /** A graph whose one executable Step is handed an engine that throws. Every
+   *  guard behind `apply` is an invariant guard, so this is how one arrives. */
+  const withThrowingEngine = () => {
+    const { graph, filter, columns } = chain()
+    const throwing = {
+      ...engine,
+      filter: () => {
+        throw new TypeError('a table cannot hold two columns called Betrag')
+      },
+    }
+    return {
+      out: executeGraph({
+        steps: graph.list(),
+        resultId: graph.resultId(),
+        engine: throwing,
+        sourceTable: () => REPORT(),
+      }),
+      filter,
+      columns,
+    }
+  }
+
+  it('records it as a Diagnostic rather than letting it escape the run', () => {
+    // Both callers of `executeGraph` are on a render path, so a throw that
+    // escapes reaches the user as a blank Editor — which is worse than the state
+    // the invariant guard exists to prevent.
+    let out
+    expect(() => {
+      out = withThrowingEngine().out
+    }).not.toThrow()
+
+    expect(out.ok).toBe(true)
+    expect(out.diagnostics.some((d) => d.code === CODE.stepThrew)).toBe(true)
+  })
+
+  it('names the Step and its kind, and lets the walk continue past it', () => {
+    const { out, filter, columns } = withThrowingEngine()
+
+    expect(out.results.get(filter)).toMatchObject({ table: null, rowCount: null })
+    expect(out.results.get(filter).diagnostics[0]).toMatchObject({
+      severity: 'error',
+      code: CODE.stepThrew,
+      values: { id: filter, kind: 'filter' },
+      stepId: filter,
+    })
+    // The Step downstream is still visited and reports its missing input by
+    // name, exactly as it does for every other reason a Step produces no table.
+    expect(out.results.get(columns).diagnostics[0]).toMatchObject({
+      code: CODE.inputFailed,
+      values: { upstream: filter },
+    })
+  })
+})
+
+describe('what the run says about itself', () => {
+  it('names a run that produced no result, without a stepId, so it is not a card mark', () => {
+    // The cards deliberately do not carry the run's marks — they are full
+    // sentences and a card wearing two of them overlaps the one below it — so a
+    // user with nothing selected would otherwise see a pipeline that computed
+    // nothing and no reason anywhere on screen.
+    const { graph, filter } = chain()
+    graph.configureStep(filter, {
+      combine: 'all',
+      conditions: [{ column: 'Betrag', op: 'eq', value: 'tausend' }],
+    })
+
+    const out = run(graph, new Map([['src:umsatz', REPORT()]]))
+    const whole = out.diagnostics.filter((d) => d.stepId === undefined)
+
+    expect(whole).toHaveLength(1)
+    expect(whole[0]).toMatchObject({
+      code: CODE.runIncomplete,
+      values: { id: filter, steps: 2 },
+    })
+  })
+
+  it('says nothing about itself when every Step produced a table', () => {
+    const { graph } = chain()
+    const out = run(graph, new Map([['src:umsatz', REPORT()]]))
+
+    expect(out.diagnostics.filter((d) => d.stepId === undefined)).toEqual([])
+  })
+})
+
 describe('what the run carries out of a Step', () => {
   it('stamps every Step diagnostic with the Step it came from', () => {
     // A Step kind is handed an engine, inputs and a config and nothing else
@@ -266,6 +398,23 @@ describe('what the run carries out of a Step', () => {
     expect(Object.isFrozen(out)).toBe(true)
     expect(Object.isFrozen(out.diagnostics)).toBe(true)
     expect(Object.isFrozen(out.results.get('src:umsatz'))).toBe(true)
+  })
+
+  it('hands out a results map a caller cannot write to', () => {
+    // `Object.freeze` does nothing to a `Map` — `set` and `delete` go on working
+    // — so freezing one is a promise the object does not keep. Every other
+    // projection in this codebase freezes what it hands out; this is the same
+    // guarantee in the one shape `Object.freeze` cannot give.
+    const { graph } = chain()
+    const out = run(graph, new Map([['src:umsatz', REPORT()]]))
+
+    expect(Object.isFrozen(out.results)).toBe(true)
+    expect(out.results.set).toBeUndefined()
+    expect(out.results.delete).toBeUndefined()
+    // …and it still answers every read the callers make.
+    expect(out.results.size).toBeGreaterThan(0)
+    expect([...out.results.keys()]).toContain('src:umsatz')
+    expect([...out.results.values()].every((r) => r !== undefined)).toBe(true)
   })
 
   it('uses a kind’s default config where the Step has none', () => {

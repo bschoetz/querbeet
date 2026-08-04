@@ -205,9 +205,64 @@ test('a Step keeps its own preview while another Step is the Result', async ({ p
 
 // ------------------------------------------------------------- the refusals
 
-test('a type disagreement is refused naming both types, and the Step downstream says whose input it lost', async ({
+test('a Step whose column vanished refuses by name, and the Step downstream names it', async ({
   page,
 }) => {
+  // **What this case does and does not cover, stated because its predecessor
+  // did not.** The type disagreement of CAP-15 — a `date` column compared
+  // against a number — is **not reachable through this interface**, and that is
+  // a property rather than a gap: the value control follows the column's type,
+  // so a date column renders `<input type="date">` and a number cannot be typed
+  // into it, and changing a condition's column resets its value. It arrives with
+  // story 14, which loads a Recipe somebody else wrote, and it is pinned at unit
+  // level in `core/steps/steps.test.js`. The predecessor of this case claimed to
+  // test it and actually reached an *empty* temporal value, which is now not
+  // sent to the model at all.
+  //
+  // What *is* reachable is the other half of the same promise, and it is the
+  // half a real editing session produces: a Filter configured against a column
+  // that a Columns Step upstream stops passing on.
+  await pick(page, REPORT)
+  await confirm(page, 'umsatz')
+  await toEditor(page)
+
+  await page.getByRole('button', { name: '+ Spalten' }).click()
+  await card(page, 'Spalten: Spalten')
+    .getByLabel('Eingang 1', { exact: true })
+    .selectOption({ label: 'umsatz' })
+  await page.getByRole('button', { name: '+ Filter' }).click()
+  await card(page, 'Filter: Filter')
+    .getByLabel('Eingang 1', { exact: true })
+    .selectOption({ label: 'Spalten' })
+  await card(page, 'Filter: Filter')
+    .getByRole('button', { name: 'Als Ergebnis-Step setzen' })
+    .click()
+
+  // The Filter is configured while every column is still coming through.
+  await select(page, 'Filter: Filter')
+  await panel(page).getByRole('button', { name: 'Bedingung hinzufügen' }).click()
+  await panel(page).getByLabel('Spalte der Bedingung 1').selectOption('Betrag')
+  await panel(page).getByLabel('Vergleich der Bedingung 1').selectOption('gt')
+  await enter(panel(page).getByLabel('Wert der Bedingung 1'), '50')
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('3 Zeilen, 3 Spalten')
+
+  // Now the column it names stops arriving.
+  await select(page, 'Spalten: Spalten')
+  await panel(page).getByLabel('Spalte übernehmen: Betrag').uncheck()
+
+  await select(page, 'Filter: Filter')
+  await expect(panel(page).getByTestId('step-counts')).toContainText('Kein Ergebnis')
+  await expect(panel(page)).toContainText('Es gibt keine Spalte „Betrag“ mehr im Eingang')
+})
+
+test('a Filter awaiting a value filters nothing, and says so instead of failing', async ({
+  page,
+}) => {
+  // A freshly added condition on a temporal column has no value yet — there is
+  // no neutral instant the way `0` is a neutral number — and it used to reach
+  // the engine as an empty string, come back unreadable, and leave the Step with
+  // no table on the first click. Every date column broke; number and boolean
+  // columns did not, so it read as a temporal bug rather than a state bug.
   await pick(page, REPORT)
   await confirm(page, 'umsatz')
   await toEditor(page)
@@ -216,33 +271,55 @@ test('a type disagreement is refused naming both types, and the Step downstream 
   await card(page, 'Filter: Filter')
     .getByLabel('Eingang 1', { exact: true })
     .selectOption({ label: 'umsatz' })
+
+  await select(page, 'Filter: Filter')
+  await panel(page).getByRole('button', { name: 'Bedingung hinzufügen' }).click()
+  await panel(page).getByLabel('Spalte der Bedingung 1').selectOption('Datum')
+
+  await expect(panel(page).getByTestId('filter-value-pending')).toContainText('Noch ohne Wert')
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('10 Zeilen, 3 Spalten')
+
+  // …and it takes effect the moment a value is there.
+  await enter(panel(page).getByLabel('Wert der Bedingung 1'), '2026-01-01')
+  await expect(panel(page).getByTestId('filter-value-pending')).toHaveCount(0)
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('1 Zeile, 3 Spalten')
+})
+
+test('a run that produced no result says so where a user with nothing selected can see it', async ({
+  page,
+}) => {
+  // The cards deliberately carry the graph's marks and not the run's, so a Step
+  // error lives in that Step's panel. With nothing selected there is no panel —
+  // and without this sentence there would be no reason on screen at all.
+  await pick(page, REPORT)
+  await confirm(page, 'umsatz')
+  await toEditor(page)
+
   await page.getByRole('button', { name: '+ Spalten' }).click()
   await card(page, 'Spalten: Spalten')
     .getByLabel('Eingang 1', { exact: true })
-    .selectOption({ label: 'Filter' })
-  await card(page, 'Spalten: Spalten')
+    .selectOption({ label: 'umsatz' })
+  await page.getByRole('button', { name: '+ Filter' }).click()
+  await card(page, 'Filter: Filter')
+    .getByLabel('Eingang 1', { exact: true })
+    .selectOption({ label: 'Spalten' })
+  await card(page, 'Filter: Filter')
     .getByRole('button', { name: 'Als Ergebnis-Step setzen' })
     .click()
 
-  // A date column compared against a number. The date control hands back ISO
-  // 8601, so the disagreement is reached the way a Recipe reaches it: by
-  // pointing an existing condition at another column.
   await select(page, 'Filter: Filter')
   await panel(page).getByRole('button', { name: 'Bedingung hinzufügen' }).click()
   await panel(page).getByLabel('Spalte der Bedingung 1').selectOption('Betrag')
   await enter(panel(page).getByLabel('Wert der Bedingung 1'), '50')
-  await panel(page).getByLabel('Spalte der Bedingung 1').selectOption('Datum')
-
-  // The condition now carries an empty date while the column is a date — which
-  // is a value that cannot be read rather than a type disagreement, so both
-  // refusals are reachable and both name what is wrong.
-  await expect(panel(page).getByTestId('step-counts')).toContainText('Kein Ergebnis')
-  await expect(panel(page)).toContainText('Spalte „Datum“')
-
-  // …and the Step downstream refuses by name rather than computing anything.
   await select(page, 'Spalten: Spalten')
-  await expect(panel(page).getByTestId('step-counts')).toContainText('Kein Ergebnis')
-  await expect(panel(page)).toContainText('„Filter“ an Eingang 1 hat kein Ergebnis geliefert')
+  await panel(page).getByLabel('Spalte übernehmen: Betrag').uncheck()
+
+  // Deselect by clicking the canvas background, so nothing is selected at all.
+  await canvas(page).click({ position: { x: 6, y: 6 } })
+  await expect(page.getByTestId('step-panel-empty')).toBeVisible()
+
+  await expect(editorStatus(page)).toContainText('Der Lauf hat kein Ergebnis')
+  await expect(editorStatus(page)).toContainText('„Filter“')
 })
 
 test('an unconfirmed Source refuses the whole run, naming the Source (AD-29 gate 1)', async ({
@@ -318,6 +395,31 @@ test('a rename onto a name already in use is refused, and the previous config st
   await expect(panel(page).locator('th').nth(1)).toHaveText('Betrag')
   // …and the word the refusal is about is still on screen, so it can be fixed.
   await expect(panel(page).getByLabel('Neuer Name: Betrag')).toHaveValue('Kunde')
+})
+
+test('an emptied rename field names the column, never the core’s own field name', async ({
+  page,
+}) => {
+  // Clearing a „Neuer Name“ field is an ordinary gesture: the registry refuses
+  // the config, the edit is discarded, and this sentence is what explains it.
+  // It read „… sind unvollständig (to)" — `to` being the core's word for a slot
+  // in a config object, on a German screen, which NFR-6 forbids.
+  await pick(page, REPORT)
+  await confirm(page, 'umsatz')
+  await toEditor(page)
+
+  await page.getByRole('button', { name: '+ Spalten' }).click()
+  await card(page, 'Spalten: Spalten')
+    .getByLabel('Eingang 1', { exact: true })
+    .selectOption({ label: 'umsatz' })
+
+  await select(page, 'Spalten: Spalten')
+  await enter(panel(page).getByLabel('Neuer Name: Betrag'), '')
+
+  await expect(refusal(page)).toContainText('Für Spalte „Betrag“ fehlt der neue Name')
+  await expect(refusal(page)).not.toContainText('(to)')
+  // The previous config stays in force, so the column is still there.
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('10 Zeilen, 3 Spalten')
 })
 
 test('"is empty" matches null, the empty string and whitespace alike', async ({ page }) => {
@@ -456,7 +558,7 @@ test('the panel takes its subject from the canvas, and lets go of it', async ({ 
 
   await page.getByRole('button', { name: '+ Filter' }).click()
   const filter = await select(page, 'Filter: Filter')
-  await expect(panel(page)).toContainText('Nur Große'.slice(0, 0) + 'Filter')
+  await expect(panel(page)).toContainText('Filter')
 
   // Deleting the selected Step closes the panel rather than leaving it showing a
   // Step that no longer exists.
@@ -479,7 +581,21 @@ test('no raw core vocabulary reaches the screen while a Step is configured and p
   await select(page, 'Filter: Filter')
   await panel(page).getByRole('button', { name: 'Bedingung hinzufügen' }).click()
 
-  const shown = await panel(page).innerText()
+  // **The refusal region is read too, and it is the one that matters most.**
+  // `editor-refusal` is a sibling of the panel, so a guard reading only the
+  // panel could not see the region where a core-minted sentence in the Editor
+  // actually lands — which is exactly where `step.config_invalid` put an English
+  // field name on screen. So a refusal is *provoked* here rather than hoped for:
+  // a Columns Step with an emptied rename field is the cheapest one to reach.
+  await page.getByRole('button', { name: '+ Spalten' }).click()
+  await card(page, 'Spalten: Spalten')
+    .getByLabel('Eingang 1', { exact: true })
+    .selectOption({ label: 'umsatz' })
+  await select(page, 'Spalten: Spalten')
+  await enter(panel(page).getByLabel('Neuer Name: Betrag'), '')
+  await expect(refusal(page)).not.toBeEmpty()
+
+  const shown = [await panel(page).innerText(), await refusal(page).innerText()].join('\n')
   for (const enumValue of ['info', 'warning', 'error', 'unresolved']) {
     expect(shown.toLowerCase(), `severity "${enumValue}" reached the screen untranslated`).not.toMatch(
       new RegExp(`\\b${enumValue}\\b`),

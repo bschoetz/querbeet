@@ -304,8 +304,31 @@ export function configureStep(graph, id, config) {
   const node = findNode(graph, id)
   if (!node) return refused(error(CODE.unknownStep, { id }))
   if (node.kind === 'source') return refused(error(CODE.notConfigurable, { id, kind: node.kind }))
-  node.config = config === null ? null : Object.freeze(config)
+  node.config = config === null ? null : deepFreeze(config)
   return done()
+}
+
+/**
+ * Freeze a configuration all the way down.
+ *
+ * `Object.freeze` is shallow, and a config is nested by construction — a Filter's
+ * `conditions` is an array of objects. Freezing only the outer object hands out a
+ * projection whose leaves are still writable, which would let a component mutate
+ * a Step's body without going through a command (AD-10) and would do it
+ * *invisibly*, because the object on the node is the object the caller kept. It
+ * is also what every other projection in this codebase does — `unparsed`, the
+ * `lost` map, the graph store's whole snapshot.
+ *
+ * Plain data only: a config is selects and typed inputs producing arrays,
+ * objects, strings, numbers and booleans (C-9, AD-30), so there is no cycle to
+ * guard against and nothing here needs a `seen` set. There is deliberately no
+ * `Object.isFrozen` short circuit either — an already-frozen *outer* object may
+ * still hold writable leaves, which is exactly the case this function exists for.
+ */
+function deepFreeze(value) {
+  if (value === null || typeof value !== 'object') return value
+  for (const key of Object.keys(value)) deepFreeze(value[key])
+  return Object.freeze(value)
 }
 
 export function setResult(graph, id) {
@@ -538,15 +561,17 @@ export const cloneGraph = (graph) => ({
  * pointer aimed at the lower one's Ergebnis button. It went unnoticed until story
  * 6b because nothing had ever needed to click a Step rather than a control inside
  * it; the side panel takes its subject from the canvas's selection, so something
- * finally did. 200 clears the tallest card this build renders, and `near` follows
- * it so the free-cell scan and the pitch agree about what "occupied" means.
+ * finally did. 200 clears the tallest card this build renders, and `near` is the
+ * same number so the free-cell scan and the pitch agree about what "occupied"
+ * means: a cell exactly one pitch away is free (`200 < 200` is false), and every
+ * cell nearer than that is not.
  *
  * It is a pitch rather than a measurement, and that is the standing limitation: a
  * card taller than 200 px — several marks at once — would overlap again. Measuring
  * the rendered height would mean the model asking the DOM, which AD-2 forbids
  * outright, so the honest fix is a layout pass in `ui/` and it is in the ledger.
  */
-export const PLACEMENT = Object.freeze({ x0: 40, y0: 40, dx: 320, dy: 200, near: 180 })
+export const PLACEMENT = Object.freeze({ x0: 40, y0: 40, dx: 320, dy: 200, near: 200 })
 
 /**
  * Where a new node goes, **derived from the nodes already in the graph**.

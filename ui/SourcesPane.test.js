@@ -1255,6 +1255,80 @@ describe('the typing diagnostics in German', () => {
     expect(text).not.toContain('Unbekannte Meldung aus dem Kern.')
   })
 
+  it('says nothing that the rename sentence beside it contradicts', async () => {
+    // The store concatenates the reader's diagnostics with its own, so these
+    // render on one card. Until 2026-08-04 three of the reader sentences
+    // described the state *before* the store made column names unique — "diese
+    // Spalte bleibt ohne Namen", "sind aber am Namen nicht zu unterscheiden",
+    // "querbeet kann sie nicht auseinanderhalten" — and each one is now the
+    // opposite of what the sentence one line down reports. The earlier version
+    // of this suite asserted only the prefixes and stopped exactly before the
+    // clauses that became false.
+    const renamed = {
+      severity: 'warning',
+      code: 'source.columns_renamed',
+      values: { renamed: [{ from: 'Betrag', to: 'Betrag_2', at: 3 }] },
+    }
+
+    const w = await render(
+      stubStore(
+        source([column('Kunde'), column('Betrag'), column('Betrag_2')], {
+          diagnostics: [
+            renamed,
+            { severity: 'warning', code: 'xlsx.duplicate_header', values: { columns: ['Betrag'] } },
+            { severity: 'warning', code: 'xlsx.blank_header', values: { columns: [4] } },
+          ],
+        }),
+      ),
+    )
+
+    const text = w.text()
+    // The rename sentence names what became what, which is the whole point:
+    // a user looking for `Betrag` in a Filter's column select has to find out.
+    expect(text).toContain('„Betrag“ (Spalte 3) heißt jetzt „Betrag_2“')
+    expect(text).toContain('Eine Tabelle kann zwei Spalten gleichen Namens nicht auseinanderhalten.')
+    // …and it no longer claims the values are untouched, which is true of CSV
+    // and XLSX and false of Parquet, where a duplicated column arrives empty.
+    expect(text).not.toContain('die Werte selbst sind unverändert')
+
+    // The two XLSX sentences describe the outcome rather than the old one.
+    expect(text).toContain('querbeet hat die Spalten beim Einlesen eindeutig benannt')
+    expect(text).not.toContain('am Namen nicht zu unterscheiden')
+    expect(text).toContain('querbeet benennt sie beim Einlesen nach ihrer Position')
+    expect(text).not.toContain('diese Spalte bleibt ohne Namen')
+  })
+
+  it('says of a duplicated Parquet column what is still true of it', async () => {
+    // The names are distinguishable now; the values are still missing, because
+    // the reader plans a duplicated column as unreadable and fills it with
+    // nulls. Story 6b does not open that reader, so the sentence has to be true
+    // of the file rather than repeat a premise that changed.
+    const w = await render(
+      stubStore(
+        source([column('Betrag'), column('Betrag_2')], {
+          diagnostics: [
+            {
+              severity: 'warning',
+              code: 'source.columns_renamed',
+              values: { renamed: [{ from: 'Betrag', to: 'Betrag_2', at: 2 }] },
+            },
+            {
+              severity: 'warning',
+              code: 'parquet.duplicate_column_name',
+              values: { column: 'Betrag', columns: 2 },
+            },
+          ],
+        }),
+      ),
+    )
+
+    const text = w.text()
+    expect(text).toContain('Die Namen sind beim Einlesen eindeutig gemacht worden')
+    expect(text).toContain('die Werte dieser Spalten liest querbeet aber noch nicht')
+    expect(text).not.toContain('querbeet kann sie nicht auseinanderhalten')
+    expect(text).not.toContain('die Werte selbst sind unverändert')
+  })
+
   it('names a refused native type in German, and still offers the column a type', async () => {
     // A Parquet TIME or DECIMAL column. The declaration was discarded in
     // core/types, so the column is text-domained and settable like any other —

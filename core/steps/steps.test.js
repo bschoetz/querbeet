@@ -185,19 +185,32 @@ describe('a Filter’s execution', () => {
   })
 
   it('refuses a temporal value that is not canonical, rather than guessing at it', () => {
-    // `31.12.2025` is the display form, and CAP-15 says a stored value is never
-    // one. Guessing which of the two numbers is the day is exactly the silent
-    // reinterpretation this product exists to remove.
-    const { table: out, diagnostics } = filter.apply(engine, [table([DATES])], {
-      combine: 'all',
-      conditions: [{ column: 'Datum', op: 'gt', value: '31.12.2025' }],
-    })
+    // Two ways a value can fail to be canonical, and the second is the one that
+    // is easy to leave out. `31.12.2025` is the display form — CAP-15 says a
+    // stored value is never one, and guessing which of the two numbers is the
+    // day is the silent reinterpretation this product exists to remove. And
+    // `2025-02-30` has the *shape* of a date and is not one: without a range
+    // check `Date` rolls it over to 2 March and the filter compares against a
+    // day nobody named.
+    const refusals = [
+      '31.12.2025', // display form
+      '2025-02-30', // shape right, range wrong
+      '2025-13-45',
+      '999999-01-01', // past what a `Date` can hold
+    ]
 
-    expect(out).toBeNull()
-    expect(diagnostics[0]).toMatchObject({
-      code: CODE.valueUnreadable,
-      values: { column: 'Datum', type: 'date', value: '31.12.2025' },
-    })
+    for (const value of refusals) {
+      const { table: out, diagnostics } = filter.apply(engine, [table([DATES])], {
+        combine: 'all',
+        conditions: [{ column: 'Datum', op: 'gt', value }],
+      })
+
+      expect(out, `accepted ${value}`).toBeNull()
+      expect(diagnostics[0]).toMatchObject({
+        code: CODE.valueUnreadable,
+        values: { column: 'Datum', type: 'date', value },
+      })
+    }
   })
 
   it('matches null, the empty string and whitespace alike under "is empty"', () => {

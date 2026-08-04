@@ -10,7 +10,7 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
-import { info, warning } from '@core/diagnostics/diagnostic.js'
+import { error, info, warning } from '@core/diagnostics/diagnostic.js'
 import StepPanel from './StepPanel.vue'
 
 const step = (over = {}) => ({
@@ -95,13 +95,52 @@ describe('the Filter form', () => {
     expect(w.text()).toContain('Keine Bedingung — alle Zeilen bleiben stehen.')
   })
 
-  it('adds a condition over the first column, with a neutral value for its type', async () => {
+  it('adds a condition over the first column, and does not send it until it has a value', async () => {
+    // A condition awaiting its value is not a condition with a bad value. It
+    // shows on screen, says so, and reaches the model the moment a value is
+    // entered — the same treatment an unreadable number entry already gets.
     const w = await render()
     await w.findAll('button').find((b) => b.text() === 'Bedingung hinzufügen').trigger('click')
 
+    expect(conditions(w)).toHaveLength(1)
+    expect(configured(w)).toEqual({ combine: 'all', conditions: [] })
+    expect(w.find('[data-testid="filter-value-pending"]').text()).toContain('Noch ohne Wert')
+
+    await field(w, 'Wert der Bedingung 1').setValue('Anna')
     expect(configured(w)).toEqual({
       combine: 'all',
-      conditions: [{ column: 'Kunde', op: 'eq', value: '' }],
+      conditions: [{ column: 'Kunde', op: 'eq', value: 'Anna' }],
+    })
+    expect(w.find('[data-testid="filter-value-pending"]').exists()).toBe(false)
+  })
+
+  it('never sends an empty temporal value, which is what broke every date column', async () => {
+    // `emptyValue` has no neutral instant to offer a `date`, `datetime`, `time`
+    // or `duration` column the way `0` serves a number — so the condition used
+    // to reach the engine as `''`, come back `step.value_unreadable`, and leave
+    // the Step with no table on the *first* click. Number and boolean columns
+    // did not break, so it looked like a temporal bug rather than a state bug.
+    const w = await render()
+    await w.findAll('button').find((b) => b.text() === 'Bedingung hinzufügen').trigger('click')
+    await field(w, 'Spalte der Bedingung 1').setValue('Datum')
+
+    expect(configured(w).conditions).toEqual([])
+    expect(w.find('[data-testid="filter-value-pending"]').exists()).toBe(true)
+
+    await field(w, 'Wert der Bedingung 1').setValue('2025-12-31')
+    expect(configured(w).conditions).toEqual([
+      { column: 'Datum', op: 'eq', value: '2025-12-31' },
+    ])
+  })
+
+  it('keeps a valueless operator sendable, because it needs no value at all', async () => {
+    const w = await render()
+    await w.findAll('button').find((b) => b.text() === 'Bedingung hinzufügen').trigger('click')
+    await field(w, 'Vergleich der Bedingung 1').setValue('empty')
+
+    expect(configured(w)).toEqual({
+      combine: 'all',
+      conditions: [{ column: 'Kunde', op: 'empty' }],
     })
   })
 
@@ -156,7 +195,7 @@ describe('the Filter form', () => {
     expect(w.text()).toContain('ist leer (auch nur Leerzeichen)')
   })
 
-  it('drops the value when the operator stops taking one, and restores it after', async () => {
+  it('drops the value when the operator stops taking one, and waits for a new one after', async () => {
     const w = await render({
       step: step({ config: { combine: 'all', conditions: [{ column: 'Kunde', op: 'eq', value: 'Anna' }] } }),
     })
@@ -164,8 +203,39 @@ describe('the Filter form', () => {
     await field(w, 'Vergleich der Bedingung 1').setValue('not_empty')
     expect(configured(w).conditions[0]).toEqual({ column: 'Kunde', op: 'not_empty' })
 
+    // Back to an operator that takes a value: the old one does not return —
+    // carrying `Anna` under a comparison the user has just re-chosen would be
+    // the panel deciding what they meant — so the condition waits again.
     await field(w, 'Vergleich der Bedingung 1').setValue('eq')
-    expect(configured(w).conditions[0]).toEqual({ column: 'Kunde', op: 'eq', value: '' })
+    expect(configured(w).conditions).toEqual([])
+    expect(w.find('[data-testid="filter-value-pending"]').exists()).toBe(true)
+  })
+
+  it('moves a value refusal down with the condition above it when that one is removed', async () => {
+    // `numberRefusals` is keyed by position and positions shift. Without the
+    // re-keying the „das ist keine Zahl" message stayed on the index it was
+    // raised at and appeared under a different condition than the one that
+    // earned it.
+    const w = await render({
+      step: step({
+        config: {
+          combine: 'all',
+          conditions: [
+            { column: 'Kunde', op: 'eq', value: 'Anna' },
+            { column: 'Betrag', op: 'gt', value: 0 },
+          ],
+        },
+      }),
+    })
+
+    await field(w, 'Wert der Bedingung 2').setValue('viel')
+    expect(conditions(w)[1].find('[data-testid="filter-value-refusal"]').exists()).toBe(true)
+
+    await field(w, 'Bedingung entfernen: 1').trigger('click')
+    await nextTick()
+
+    expect(conditions(w)).toHaveLength(1)
+    expect(conditions(w)[0].find('[data-testid="filter-value-refusal"]').exists()).toBe(true)
   })
 
   it('resets the value when the column changes, so no disagreement is inherited', async () => {
@@ -306,6 +376,29 @@ describe('what the Step produced', () => {
     expect(marks[1]).toContain('3 Zeilen wurden nicht verglichen')
   })
 
+  it('renders every mark when one code appears twice', async () => {
+    // A code is not unique per Step: a Filter with two disagreeing conditions
+    // emits two `step.type_mismatch`, and a Columns Step naming two vanished
+    // columns emits two `step.unknown_column`. Keyed by code alone, Vue drops or
+    // reuses the second and the finding is silently not rendered.
+    const w = await render({
+      result: result({
+        table: null,
+        rowCount: null,
+        columnCount: null,
+        diagnostics: [
+          error('step.unknown_column', { column: 'Betrag' }, { stepId: 's1' }),
+          error('step.unknown_column', { column: 'Datum' }, { stepId: 's1' }),
+        ],
+      }),
+    })
+
+    const marks = w.findAll('[data-testid="step-panel-mark"]').map((m) => m.text())
+    expect(marks).toHaveLength(2)
+    expect(marks[0]).toContain('„Betrag“')
+    expect(marks[1]).toContain('„Datum“')
+  })
+
   it('says so when the Step ran clean, rather than showing nothing at all', async () => {
     const w = await render({ result: result() })
     expect(w.find('[data-testid="step-status"]').text()).toBe('Ohne Warnungen.')
@@ -357,6 +450,17 @@ describe('what it does not offer', () => {
       'noch nicht ausführen',
     )
     expect(w.find('[data-testid="step-config-filter"]').exists()).toBe(false)
+  })
+
+  it('says why rather than offering a control that does nothing, for an input with no columns', async () => {
+    // `[]` is not `null`: there *is* an input, it simply has nothing to
+    // configure against. "Bedingung hinzufügen" was enabled and silently did
+    // nothing, which is the one state a form must never be in.
+    const w = await render({ inputSchema: [] })
+
+    expect(w.find('[data-testid="step-panel-no-columns"]').text()).toContain('keine Spalten')
+    expect(w.find('[data-testid="step-config-filter"]').exists()).toBe(false)
+    expect(w.findAll('button').some((b) => b.text() === 'Bedingung hinzufügen')).toBe(false)
   })
 
   it('offers no column list where there is no input to read one off', async () => {

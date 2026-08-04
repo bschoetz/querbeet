@@ -210,11 +210,25 @@ test('a pipeline is built with the slot rows, and the Result Step is designated'
   // Everything reaches the Result now, so nothing is marked as contributing to
   // nothing and the graph has nothing left to say about itself.
   await expect(canvas(page).getByTestId('step-mark')).toHaveCount(0)
-  await expect(page.getByTestId('editor-status').filter({ hasText: 'Ergebnis ausgewiesen' })).toHaveCount(0)
-  // What the region *does* say as of story 6b is about the run rather than about
-  // the graph: these two Sources were never confirmed, so AD-29's first gate
-  // refuses before anything is computed.
-  await expect(page.getByTestId('editor-status').first()).toContainText('noch nicht bestätigt')
+
+  // **The region is enumerated rather than sampled.** This assertion was
+  // `toHaveCount(0)` until story 6b put the run's own refusals here, and
+  // relaxing it to a substring check would have left any *other* spurious
+  // sentence in this scenario unobserved — which is the whole thing the original
+  // count was buying. So the new truth is stated exactly: three sentences, and
+  // all three are about the run rather than about the graph. The two Sources were
+  // never confirmed, so AD-29's first gate refuses; the Union has no executor
+  // until story 8.
+  await expect(page.getByTestId('editor-status')).toHaveCount(3)
+  await expect(page.getByTestId('editor-status').nth(0)).toContainText(
+    '„Umsatz Q1“ ist noch nicht bestätigt',
+  )
+  await expect(page.getByTestId('editor-status').nth(1)).toContainText(
+    '„Umsatz Q2“ ist noch nicht bestätigt',
+  )
+  await expect(page.getByTestId('editor-status').nth(2)).toContainText(
+    '„Halbjahr“ ist eine Union',
+  )
 })
 
 test('re-designating the Result marks what no longer reaches it, without removing it', async ({

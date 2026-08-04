@@ -101,6 +101,19 @@ describe('the rest', () => {
   })
 })
 
+describe('a value the projection cannot render', () => {
+  it('falls back to the raw value rather than showing NaN.NaN.NaN', () => {
+    // A `BigInt` is unbounded and a `Date` is not: anything past ±8.64e15 ms is
+    // an Invalid Date and every field read off one is `NaN`. The representation
+    // can hold such a value — that is why it is a `BigInt` at all — so the
+    // projection has to answer for it, with the same fallback a boxed cell gets.
+    const beyond = 10n ** 30n
+    expect(cellText(beyond, 'date')).toBe(String(beyond))
+    expect(cellText(-beyond, 'datetime')).toBe(String(-beyond))
+    expect(cellText(beyond, 'date')).not.toContain('NaN')
+  })
+})
+
 describe('germanNumber — the inverse', () => {
   it('reads back what `cellText` wrote, so a preview value can be pasted into a Filter', () => {
     for (const value of [1234.56, -80, 0, 1234.5678, 1_000_000]) {
@@ -114,11 +127,30 @@ describe('germanNumber — the inverse', () => {
     expect(germanNumber(' 42 ')).toBe(42)
   })
 
-  it('refuses anything that is not a number, rather than guessing', () => {
-    // `1.234.56` is not a number in this convention, and deciding which dot was
-    // meant is exactly the silent reinterpretation CAP-15 refuses.
-    for (const text of ['', 'abc', '1.234.56,7,8', '12abc', '1,2,3']) {
+  it('refuses a grouping that is not a grouping, which is the case the comment names', () => {
+    // The loose pattern accepted exactly what it claimed to refuse: `1.234.56`
+    // came back as 123456, `1.2` as 12, `12.` as 12, and a bare `.` as 0 — so a
+    // stray dot became a silent number and a filter that quietly removed rows.
+    // The suite was green over that because it probed `1.234.56,7,8`, which has
+    // two commas and fails for a different reason entirely.
+    for (const text of ['1.234.56', '1.2', '12.', '.', '...', '1.23', '1.2345', '1.', '-.']) {
       expect(germanNumber(text), `accepted ${text}`).toBeNull()
     }
+  })
+
+  it('refuses anything that is not a number at all', () => {
+    for (const text of ['', 'abc', '1.234.56,7,8', '12abc', '1,2,3', '1,', ',5', '- 5']) {
+      expect(germanNumber(text), `accepted ${text}`).toBeNull()
+    }
+  })
+
+  it('refuses a grouping that mixes its separators', () => {
+    // A number groups with dots or with spaces, never with both — the
+    // backreference is what says so, and without it `1.000 000` reads as a
+    // million.
+    expect(germanNumber('1.000 000')).toBeNull()
+    expect(germanNumber('1 000.000')).toBeNull()
+    expect(germanNumber('1.000.000')).toBe(1_000_000)
+    expect(germanNumber('1 000 000')).toBe(1_000_000)
   })
 })

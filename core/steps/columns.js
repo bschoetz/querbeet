@@ -64,7 +64,11 @@ export function validate(config) {
       return
     }
     if (!isName(entry.to)) {
-      refuse('to', { at })
+      // The *column* is named, not the field: `to` is this module's word for
+      // "the new name" and `ui/` may not put it on a German screen (AD-13,
+      // NFR-6). Clearing a rename field is an ordinary gesture, so this refusal
+      // is one a user meets rather than a shape only a loader can produce.
+      refuse('to', { at, column: entry.from })
       return
     }
     // The collision names the name rather than the position: the user typed a

@@ -12,7 +12,7 @@
 // import — which is the property.
 
 import { describe, expect, it } from 'vitest'
-import { createArqueroEngine } from './engine.js'
+import { comparisonValue, createArqueroEngine } from './engine.js'
 
 const engine = createArqueroEngine()
 
@@ -274,6 +274,54 @@ describe('filter', () => {
     ).toEqual(['Anna'])
   })
 
+  it('refuses a component out of range instead of letting `Date` roll it over', () => {
+    // `Date.UTC(2025, 1, 30)` is 2 March and `Date.UTC(2025, 12, 45)` is 14
+    // February 2026 — silently, with no signal of any kind. This file's contract
+    // is that a value which is not a canonical form is refused rather than
+    // guessed at, and a pattern match alone only ever checks the *shape*.
+    for (const value of [
+      '2025-02-30', // February has 28 days in 2025
+      '2025-13-45',
+      '2025-00-00',
+      '2025-01-32',
+      '999999-01-01', // past what a `Date` can hold at all
+    ]) {
+      expect(comparisonValue('date', value), `accepted ${value} as a date`).toBeNull()
+    }
+    // …and the leap day itself still reads, so the guard is a range check rather
+    // than a blanket refusal of the 29th.
+    expect(comparisonValue('date', '2024-02-29')).not.toBeNull()
+    expect(comparisonValue('date', '2025-02-29')).toBeNull()
+
+    for (const value of ['14:99', '23:59:99', '24:00', '99:00']) {
+      expect(comparisonValue('time', value), `accepted ${value} as a time`).toBeNull()
+    }
+    for (const value of [
+      '2025-01-01T29:99:99',
+      '2025-01-01T23:60',
+      '2025-02-30T12:00',
+      '2025-01-01T12:00+99:99',
+    ]) {
+      expect(comparisonValue('datetime', value), `accepted ${value} as a datetime`).toBeNull()
+    }
+    // A real offset is still read, so the offset guard is a bound rather than a
+    // refusal of zones.
+    expect(comparisonValue('datetime', '2025-12-31T16:30:00+02:00')).toBe(
+      comparisonValue('datetime', '2025-12-31T14:30:00Z'),
+    )
+  })
+
+  it('never throws for a value it cannot read — `null` is the whole vocabulary', () => {
+    // `999999-01-01` produced `RangeError: The number NaN cannot be converted to
+    // a BigInt`, and both callers of the executor are on a render path, so a
+    // throw here reached the user as a blank Editor.
+    for (const type of ['date', 'datetime', 'time', 'duration']) {
+      for (const value of ['999999-01-01', '2025-02-30', '', 'nonsense', '2025-01-01T99:99']) {
+        expect(() => comparisonValue(type, value)).not.toThrow()
+      }
+    }
+  })
+
   it('reads the four temporal shapes it accepts, and refuses everything else', () => {
     const at = (type, values) => engine.fromColumns([column('v', type, values)])
     const kept = (type, values, value, op = 'eq') =>
@@ -298,6 +346,37 @@ describe('filter', () => {
 
     expect(names(second.table)).toEqual(['Bernd', 'Carla'])
     expect(second.removed).toBe(1)
+  })
+
+  it('counts a boxed row the same whichever order the conditions were added in', () => {
+    // Short-circuiting on the first failing condition made this number depend on
+    // the order a form happened to be filled in: a row failing condition 1
+    // normally and holding a box in condition 2 was not counted, and swapping
+    // the two counted it. A number the user is asked to trust may not do that.
+    const t = engine.fromColumns([
+      column('Kunde', 'text', ['Anna', 'Bernd']),
+      column('Betrag', 'number', [1000, 'ungefähr'], [1]),
+    ])
+    const byName = { column: 'Kunde', op: 'eq', value: 'Anna' }
+    const byAmount = { column: 'Betrag', op: 'gt', value: 0 }
+
+    const first = engine.filter(t, { conditions: [byName, byAmount], combine: 'all' })
+    const second = engine.filter(t, { conditions: [byAmount, byName], combine: 'all' })
+
+    // Bernd is excluded by the name condition *and* holds a box in the amount
+    // column; the count is the same read either way round.
+    expect(first.boxed).toBe(second.boxed)
+    expect(first.boxed).toBe(1)
+    expect(first.table.rowCount()).toBe(second.table.rowCount())
+  })
+
+  it('refuses a combination rule outside the closed vocabulary', () => {
+    // The silent default was `any`, so a typo in a stored config would have
+    // *widened* a result set with nothing on screen to say so.
+    const t = engine.fromColumns(REPORT())
+    expect(() => engine.filter(t, { conditions: [], combine: 'either' })).toThrow(
+      /unknown combination rule/,
+    )
   })
 
   it('keeps every row when there is no condition at all', () => {

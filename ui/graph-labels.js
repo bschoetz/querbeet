@@ -199,8 +199,19 @@ const GERMAN = Object.freeze(
     // sentences are here, beside the graph's, because a Step's mark is rendered
     // on the same card by the same map. `column` is a name rather than an id —
     // a column is not a Step and there is nothing to resolve it against.
+    // **It names the column or the condition, never the field.** `field` is the
+    // core's own word for a slot in a config object — `to`, `from`, `combine`,
+    // `op` — and interpolating it put English on a German screen, which NFR-6
+    // forbids and which an ordinary gesture reached: clearing a „Neuer Name“
+    // field produced „… sind unvollständig (to)". The value stays in the
+    // diagnostic as machine data; what a person is told is which control is
+    // waiting for them.
     'step.config_invalid': (v) =>
-      `Die Einstellungen dieses Steps sind unvollständig (${v.field}) — die vorherigen bleiben in Kraft.`,
+      v.column !== undefined
+        ? `Für Spalte ${q(v.column)} fehlt der neue Name — die vorherige Einstellung bleibt in Kraft.`
+        : v.at !== undefined
+          ? `Bedingung ${v.at + 1} ist unvollständig — die vorherige Einstellung bleibt in Kraft.`
+          : 'Die Einstellungen dieses Steps sind unvollständig — die vorherigen bleiben in Kraft.',
     'step.rename_collision': (v) =>
       `Der Name ${q(v.name)} ist in diesem Step bereits vergeben — zwei Spalten können nicht gleich ` +
       `heißen. Die vorherige Einstellung bleibt in Kraft.`,
@@ -244,6 +255,23 @@ const GERMAN = Object.freeze(
     'exec.input_failed': (v, nameOf) =>
       `${step(nameOf, v.id)} konnte nicht gerechnet werden: ${step(nameOf, v.upstream)} an Eingang ` +
       `${v.slot + 1} hat kein Ergebnis geliefert.`,
+    // A guard that was supposed to be unreachable. It says so plainly rather
+    // than blaming the data — the user did nothing wrong and there is nothing
+    // for them to correct — and it names the Step so a report has a subject.
+    'exec.step_threw': (v, nameOf) =>
+      `${step(nameOf, v.id)} (${kindLabel(v.kind)}) ist beim Rechnen mit einem internen Fehler ` +
+      `abgebrochen. Das ist ein Fehler in querbeet, nicht in den Daten — die übrigen Steps wurden ` +
+      `weiter gerechnet.`,
+    // The run's own sentence, and the reason it exists: a Step's marks live in
+    // that Step's panel, so a user with nothing selected would otherwise see a
+    // pipeline that computed nothing and no reason anywhere on screen.
+    'exec.run_incomplete': (v, nameOf) =>
+      v.steps === 1
+        ? `Der Lauf hat kein Ergebnis: ${step(nameOf, v.id)} konnte nicht gerechnet werden. ` +
+          `Der Grund steht in den Einstellungen dieses Steps.`
+        : `Der Lauf hat kein Ergebnis: ${v.steps} Steps konnten nicht gerechnet werden, ` +
+          `beginnend mit ${step(nameOf, v.id)}. Die Gründe stehen in den Einstellungen des ` +
+          `jeweiligen Steps.`,
   }),
 )
 

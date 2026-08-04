@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest'
 import { createStepZeroCache } from '@core/exec/convert.js'
 import { createGraphStore } from '@core/graph/graph-store.js'
 import EditorPane from './EditorPane.vue'
+import StepPanel from './StepPanel.vue'
 
 /** A canvas that renders the node bodies and nothing else. It stands in for the
  *  Vue Flow adapter exactly at the port's surface: it takes the two projections
@@ -18,7 +19,7 @@ import EditorPane from './EditorPane.vue'
 const StubCanvas = {
   name: 'StubCanvas',
   props: { nodes: { type: Array }, edges: { type: Array }, guard: { type: Function } },
-  emits: ['connect', 'refused', 'move', 'remove', 'disconnect'],
+  emits: ['connect', 'refused', 'move', 'remove', 'disconnect', 'select'],
   setup(props, { slots }) {
     return () =>
       h(
@@ -367,13 +368,27 @@ describe('what recomputes and what does not', () => {
   })
 
   it('recomputes for a configuration change', async () => {
+    // **Through the panel, not through the store.** The previous version of this
+    // case called `graph.configureStep` directly — which the pane never hears
+    // about — and then asserted that nothing recomputed, so it was
+    // shape-identical to its neighbour below and pinned the opposite of its own
+    // name. The rule the interim recompute list most needs pinned had no test.
     const { graph, filter } = wired()
     const engine = countingEngine()
-    withEngine(graph, engine)
+    const w = withEngine(graph, engine)
+
+    w.findComponent(StubCanvas).vm.$emit('select', filter)
+    await nextTick()
+
+    const panel = w.findComponent(StepPanel)
+    expect(panel.exists()).toBe(true)
     const before = engine.calls.filter
 
-    graph.configureStep(filter, { combine: 'all', conditions: [] })
-    expect(engine.calls.filter).toBe(before)
+    panel.vm.$emit('configure', { combine: 'any', conditions: [] })
+    await nextTick()
+
+    expect(graph.get(filter).config).toEqual({ combine: 'any', conditions: [] })
+    expect(engine.calls.filter).toBe(before + 1)
   })
 
   it('does not recompute for a rename or a move', async () => {
