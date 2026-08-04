@@ -73,6 +73,10 @@ const configured = (w) => w.emitted('configure')?.at(-1)?.[0] ?? null
 const conditions = (w) => w.findAll('[data-testid="filter-condition"]')
 const entries = (w) => w.findAll('[data-testid="columns-entry"]')
 const field = (w, label) => w.find(`[aria-label="${label}"]`)
+/** The Columns list as it reads on screen, in list order. The `<span>` carries
+ *  the input name, which is the column's identity whatever it is renamed to. */
+const listed = (w) => entries(w).map((row) => row.find('span').text())
+const press = (w, text) => w.findAll('button').find((b) => b.text() === text)
 
 // -------------------------------------------------------------------- Filter
 
@@ -262,6 +266,18 @@ describe('the Filter form', () => {
 describe('the Columns form', () => {
   const columnsStep = (config = null) => step({ kind: 'columns', name: 'Nur Kunde', config })
 
+  /** The width a report actually has, which is what story 6c is about: keeping
+   *  three of thirty columns cost twenty-seven clicks. */
+  const WIDE = Array.from({ length: 30 }, (_, i) => ({
+    name: `S${String(i + 1).padStart(2, '0')}`,
+    type: 'text',
+  }))
+  const THREE = [
+    { from: 'S01', to: 'S01' },
+    { from: 'S07', to: 'S07' },
+    { from: 'S30', to: 'S30' },
+  ]
+
   it('opens with every input column checked, in input order', async () => {
     const w = await render({ step: columnsStep(), label: 'Spalten: Nur Kunde' })
 
@@ -284,17 +300,244 @@ describe('the Columns form', () => {
     })
   })
 
-  it('refuses to uncheck the last one, because empty means every column', async () => {
-    // An empty selection is the identity in `core/steps/columns.js`, so
-    // unchecking the last column would show *more* columns rather than none —
-    // the opposite of what the click means.
+  it('lets the last one be unchecked, and sends nothing while none is selected', async () => {
+    // The inverse of what this case asserted until story 6c. An empty selection
+    // is not a config meaning "no columns" — `[]` is the identity in
+    // `core/steps/columns.js` — it is an unfinished edit, so it is simply not
+    // committed and the stored config stays in force. That is what lets „Alle
+    // abwählen“ exist without inventing a zero-column table.
     const w = await render({
       step: columnsStep({ columns: [{ from: 'Kunde', to: 'Kunde' }] }),
       label: 'Spalten',
     })
 
-    expect(field(w, 'Spalte übernehmen: Kunde').attributes('disabled')).toBeDefined()
-    expect(field(w, 'Spalte übernehmen: Betrag').attributes('disabled')).toBeUndefined()
+    expect(field(w, 'Spalte übernehmen: Kunde').attributes('disabled')).toBeUndefined()
+
+    await field(w, 'Spalte übernehmen: Kunde').setValue(false)
+
+    expect(w.emitted('configure')).toBeUndefined()
+    const pending = w.find('[data-testid="columns-selection-pending"]')
+    expect(pending.text()).toContain('die vorherige Einstellung bleibt in Kraft')
+    // A refusal is a command the model rejected; this never reached the model at
+    // all, so it is a hint like the Filter's pending line and not `role="status"`.
+    expect(pending.attributes('role')).toBeUndefined()
+  })
+
+  it('clears thirty checkboxes in one click and sends nothing at all', async () => {
+    const w = await render({
+      step: columnsStep({ columns: THREE }),
+      inputSchema: WIDE,
+      label: 'Spalten',
+    })
+
+    await press(w, 'Alle abwählen').trigger('click')
+
+    expect(entries(w)).toHaveLength(30)
+    for (const column of WIDE) {
+      expect(field(w, `Spalte übernehmen: ${column.name}`).element.checked).toBe(false)
+    }
+    // The Step goes on computing with the stored three, because nothing left.
+    expect(w.emitted('configure')).toBeUndefined()
+    expect(w.find('[data-testid="columns-selection-pending"]').exists()).toBe(true)
+  })
+
+  it('sends exactly the first column checked after a bulk deselect — 1 + k, not n − k', async () => {
+    const w = await render({
+      step: columnsStep({ columns: THREE }),
+      inputSchema: WIDE,
+      label: 'Spalten',
+    })
+
+    await press(w, 'Alle abwählen').trigger('click')
+    await field(w, 'Spalte übernehmen: S07').setValue(true)
+
+    expect(configured(w)).toEqual({ columns: [{ from: 'S07', to: 'S07' }] })
+    expect(w.find('[data-testid="columns-selection-pending"]').exists()).toBe(false)
+  })
+
+  it('selects every entry in one click, in the list order the list already had', async () => {
+    // The list order *is* the config order (CAP-16), so a bulk verb may not
+    // reorder as a side effect — here the stored order differs from the input's.
+    const w = await render({
+      step: columnsStep({ columns: [{ from: 'Datum', to: 'Datum' }, { from: 'Kunde', to: 'Kunde' }] }),
+      label: 'Spalten',
+    })
+    expect(listed(w)).toEqual(['Datum', 'Kunde', 'Betrag'])
+
+    await press(w, 'Alle auswählen').trigger('click')
+
+    expect(configured(w).columns.map((c) => c.from)).toEqual(['Datum', 'Kunde', 'Betrag'])
+    expect(listed(w)).toEqual(['Datum', 'Kunde', 'Betrag'])
+  })
+
+  it('sends nothing for a bulk verb that moves no checkbox', async () => {
+    // A freshly added Step already has everything checked, so „Alle auswählen“
+    // is a no-op — and a `configure` for it would cost a `configureStep` and a
+    // full recompute of the graph for a click that changed nothing.
+    const w = await render({ step: columnsStep(), label: 'Spalten' })
+
+    await press(w, 'Alle auswählen').trigger('click')
+
+    expect(w.emitted('configure')).toBeUndefined()
+    expect(listed(w)).toEqual(['Kunde', 'Betrag', 'Datum'])
+  })
+
+  it('acts on the visible entries only under a search, and its label names them', async () => {
+    const w = await render({ step: columnsStep(), inputSchema: WIDE, label: 'Spalten' })
+
+    await field(w, 'Spalte suchen').setValue('s0')
+
+    // S01…S09 — nine of thirty, and the term is matched case-insensitively.
+    expect(entries(w)).toHaveLength(9)
+    // Both verbs are renamed for the visible set, not just the one under test.
+    expect(press(w, 'Alle abwählen')).toBeUndefined()
+    expect(press(w, 'Alle auswählen')).toBeUndefined()
+    expect(press(w, 'Angezeigte auswählen')).toBeDefined()
+    await press(w, 'Angezeigte abwählen').trigger('click')
+
+    // The nine are cleared; the other twenty-one keep their state and their order.
+    for (const column of WIDE.slice(0, 9)) {
+      expect(field(w, `Spalte übernehmen: ${column.name}`).element.checked).toBe(false)
+    }
+    expect(configured(w).columns.map((c) => c.from)).toEqual(WIDE.slice(9).map((c) => c.name))
+  })
+
+  it('keeps an unselected column between its input neighbours, not at the end', async () => {
+    // Its position is recorded nowhere — the stored config lists the chosen
+    // columns and nothing else — so the input schema is the only other source of
+    // order. Appending it moved a merely unchecked column to the bottom at the
+    // next rebuild.
+    const w = await render({
+      step: columnsStep({ columns: [{ from: 'Kunde', to: 'Kunde' }, { from: 'Datum', to: 'Datum' }] }),
+      label: 'Spalten',
+    })
+
+    expect(listed(w)).toEqual(['Kunde', 'Betrag', 'Datum'])
+    expect(field(w, 'Spalte übernehmen: Betrag').element.checked).toBe(false)
+  })
+
+  it('places a dropped column after the neighbour it follows in the input, even when reordered', async () => {
+    // Input [A,B,C,D] with config [C,A] reads [C,D,A,B]: each unselected column
+    // sits directly behind the nearest input column already placed.
+    const w = await render({
+      step: columnsStep({ columns: [{ from: 'C', to: 'C' }, { from: 'A', to: 'A' }] }),
+      inputSchema: ['A', 'B', 'C', 'D'].map((name) => ({ name, type: 'text' })),
+      label: 'Spalten',
+    })
+
+    expect(listed(w)).toEqual(['C', 'D', 'A', 'B'])
+  })
+
+  it('filters visibility only: the order returns unchanged and nothing was sent', async () => {
+    const w = await render({ step: columnsStep(), label: 'Spalten' })
+    const before = listed(w)
+
+    await field(w, 'Spalte suchen').setValue('at')
+    expect(listed(w)).toEqual(['Datum'])
+
+    await field(w, 'Spalte suchen').setValue('')
+    expect(listed(w)).toEqual(before)
+    expect(w.emitted('configure')).toBeUndefined()
+  })
+
+  it('searches the input name, not the new one — the column is what is being found', async () => {
+    // Matching the rename field too would make a row vanish the moment it was
+    // renamed to something the term no longer contains.
+    const w = await render({ step: columnsStep(), label: 'Spalten' })
+    await field(w, 'Neuer Name: Betrag').setValue('Summe')
+
+    await field(w, 'Spalte suchen').setValue('Betrag')
+    expect(listed(w)).toEqual(['Betrag'])
+    expect(field(w, 'Neuer Name: Betrag').element.value).toBe('Summe')
+
+    await field(w, 'Spalte suchen').setValue('Summe')
+    expect(entries(w)).toHaveLength(0)
+    expect(w.find('[data-testid="columns-no-match"]').exists()).toBe(true)
+  })
+
+  it('ignores space around the term, which is what a paste leaves behind', async () => {
+    const w = await render({ step: columnsStep(), label: 'Spalten' })
+
+    await field(w, 'Spalte suchen').setValue('  Betrag  ')
+
+    expect(listed(w)).toEqual(['Betrag'])
+    expect(w.find('[data-testid="columns-no-match"]').exists()).toBe(false)
+  })
+
+  it('disables the order buttons while a term filters the list, and states the reason', async () => {
+    // `moveColumn` swaps neighbours of the *full* list, so under a filter the
+    // swap would be correct in the config and invisible on screen.
+    const w = await render({ step: columnsStep(), label: 'Spalten' })
+
+    await field(w, 'Spalte suchen').setValue('Betrag')
+
+    expect(field(w, 'Nach oben: Betrag').attributes('disabled')).toBeDefined()
+    expect(field(w, 'Nach unten: Betrag').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-testid="columns-order-locked"]').text()).toContain(
+      'lässt sich die Reihenfolge nicht ändern',
+    )
+  })
+
+  it('says no column matches rather than showing an empty list', async () => {
+    const w = await render({ step: columnsStep(), label: 'Spalten' })
+
+    await field(w, 'Spalte suchen').setValue('Zahlungsziel')
+
+    expect(entries(w)).toHaveLength(0)
+    expect(w.find('[data-testid="columns-no-match"]').text()).toContain('Zahlungsziel')
+    // The bulk verbs stay pressable and act on nothing rather than on the hidden
+    // twenty-seven — and acting on nothing sends nothing.
+    await press(w, 'Angezeigte abwählen').trigger('click')
+    expect(listed(w)).toEqual([])
+    expect(w.emitted('configure')).toBeUndefined()
+  })
+
+  it('clears the term when another Step is selected under it', async () => {
+    const w = await render({ step: columnsStep(), label: 'Spalten' })
+    await field(w, 'Spalte suchen').setValue('Betrag')
+    expect(entries(w)).toHaveLength(1)
+
+    await w.setProps({ step: step({ id: 's2', kind: 'columns', name: 'Andere', config: null }) })
+    await nextTick()
+
+    expect(field(w, 'Spalte suchen').element.value).toBe('')
+    expect(entries(w)).toHaveLength(3)
+  })
+
+  it('clears the term when the input schema changes under it', async () => {
+    // The watcher's other trigger, and the one a user reaches without leaving
+    // the panel: a Step upstream stops passing a column on.
+    const w = await render({ step: columnsStep(), label: 'Spalten' })
+    await field(w, 'Spalte suchen').setValue('Betrag')
+    expect(entries(w)).toHaveLength(1)
+
+    await w.setProps({ inputSchema: SCHEMA.filter((column) => column.name !== 'Datum') })
+    await nextTick()
+
+    expect(field(w, 'Spalte suchen').element.value).toBe('')
+    expect(listed(w)).toEqual(['Kunde', 'Betrag'])
+  })
+
+  it('names every new control, so the form is traversable by keyboard alone (C-7, NFR-6)', async () => {
+    const w = await render({ step: columnsStep(), label: 'Spalten' })
+
+    // The search field is named by its `aria-label`, as the Filter's selects are;
+    // the two buttons are named by their own text, as „Bedingung hinzufügen“ is.
+    expect(field(w, 'Spalte suchen').exists()).toBe(true)
+    expect(field(w, 'Spalte suchen').attributes('disabled')).toBeUndefined()
+    for (const text of ['Alle auswählen', 'Alle abwählen']) {
+      expect(press(w, text), text).toBeDefined()
+      expect(press(w, text).attributes('disabled'), text).toBeUndefined()
+    }
+  })
+
+  it('offers no bulk verb and no search where the input has no columns', async () => {
+    const w = await render({ step: columnsStep(), inputSchema: [], label: 'Spalten' })
+
+    expect(w.find('[data-testid="step-panel-no-columns"]').text()).toContain('keine Spalten')
+    expect(w.find('[data-testid="step-config-columns"]').exists()).toBe(false)
+    expect(field(w, 'Spalte suchen').exists()).toBe(false)
+    expect(press(w, 'Alle abwählen')).toBeUndefined()
   })
 
   it('makes the list order the output order (CAP-16)', async () => {

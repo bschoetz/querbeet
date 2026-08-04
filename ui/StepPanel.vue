@@ -24,7 +24,7 @@
 // live in a `shallowRef` written imperatively and never in a `computed` — the
 // same discipline `ui/RowWindow.vue` follows one level down.
 
-import { computed, shallowRef, watch } from 'vue'
+import { computed, ref, shallowRef, watch } from 'vue'
 import { runStatus } from '@core/diagnostics/diagnostic.js'
 import { hasExecutor, stepKind } from '@core/steps/index.js'
 import { COLUMNS, FILTER, SOURCE } from '@core/graph/kinds.js'
@@ -98,6 +98,17 @@ const draft = shallowRef(null)
  */
 const numberRefusals = shallowRef({})
 
+/**
+ * The Columns list's search term. It filters **visibility and nothing else** —
+ * the list order *is* the config order (CAP-16), so a term that reordered or
+ * removed a row would silently rewrite the output. It is a plain string, which
+ * is why it may be reactive at all (AD-6).
+ *
+ * Declared here for the same reason `numberRefusals` is: the draft watcher below
+ * clears it, and that watcher is `immediate`.
+ */
+const columnSearch = ref('')
+
 const readDraft = () => {
   const kind = stepKind(props.step.kind)
   if (!kind) return null
@@ -113,16 +124,40 @@ const readDraft = () => {
   // config means "every column, unchanged", which is what a freshly added Step
   // carries — see `core/steps/columns.js`.
   const chosen = config.columns ?? []
+  if (chosen.length === 0) {
+    return {
+      entries: columnNames.value.map((name) => ({ from: name, to: name, selected: true })),
+    }
+  }
   const listed = chosen.map((entry) => ({
     from: entry.from,
     to: entry.to ?? entry.from,
     selected: true,
   }))
-  const seen = new Set(listed.map((entry) => entry.from))
-  const rest = columnNames.value
-    .filter((name) => !seen.has(name))
-    .map((name) => ({ from: name, to: name, selected: chosen.length === 0 }))
-  return { entries: [...listed, ...rest] }
+  // **Where an unselected column goes.** The stored config lists only the chosen
+  // columns, so a deselected one has no recorded position anywhere and the input
+  // schema is the only other source of order. Appending it — what this did until
+  // story 6c — moved a column the user had merely unchecked to the bottom of the
+  // list at the next rebuild, which nothing ever asked for.
+  //
+  // The rule instead: walking the input in order, each unselected column is
+  // inserted **directly behind the column it follows in the input**, and at the
+  // front where it is the input's first. For a config whose order still follows
+  // the input this reproduces the input order exactly — input `[A,B,C,D]` with
+  // config `[A,B,D]` reads `[A,B,C,D]` — which is the case the finding is about.
+  // Where the user has reordered, the same sentence still explains the result:
+  // input `[A,B,C,D]` with config `[C,A]` gives `[C,D,A,B]`.
+  const names = columnNames.value
+  names.forEach((name, index) => {
+    if (listed.some((entry) => entry.from === name)) return
+    // A lookup rather than a search: the predecessor is always already placed —
+    // it was either in the stored config or spliced in by the iteration before
+    // this one. `names[-1]` is `undefined`, which finds nothing and puts the
+    // input's first column at the front, which is where it belongs.
+    const after = listed.findIndex((entry) => entry.from === names[index - 1])
+    listed.splice(after + 1, 0, { from: name, to: name, selected: false })
+  })
+  return { entries: listed }
 }
 
 /**
@@ -130,11 +165,11 @@ const readDraft = () => {
  *
  * The subject changing (another Step selected) and the input's columns changing
  * are the two events a draft cannot survive. A change to the *stored* config is
- * not one of them, and that is the point: after a refusal the stored config is
- * unchanged while the draft holds the word the refusal is about, and after an
- * accepted change the stored config *is* the draft, so rebuilding from it would
- * only shuffle the Columns list — an unchecked column would jump to the bottom,
- * because a stored config lists the chosen columns and nothing else.
+ * not one of them, and the refusal path is what settles it: after a refusal the
+ * stored config is unchanged while the draft holds the word the refusal is
+ * about, so a rebuild would delete it — and after an *accepted* change the
+ * stored config is what the draft just said, so a rebuild would be work over a
+ * form somebody is still typing in. Destructive or redundant, never useful.
  *
  * The schema is compared by content rather than by identity: the pane derives it
  * on every projection, so a rename two Steps away would otherwise reset a form
@@ -149,6 +184,9 @@ watch(
   () => {
     draft.value = readDraft()
     numberRefusals.value = {}
+    // A search is about the list in front of the user; a different Step's list,
+    // or the same one after its input changed, is a different list.
+    columnSearch.value = ''
   },
   { immediate: true },
 )
@@ -170,7 +208,11 @@ watch(
 const isComplete = (condition) =>
   !takesValue(condition.op) || (condition.value !== '' && condition.value !== undefined && condition.value !== null)
 
-/** The config the current draft means, in canonical machine form. */
+/**
+ * The config the current draft means, in canonical machine form — or `null`
+ * where the draft is an edit that has not finished and is therefore not a change
+ * to the config at all.
+ */
 function configOf(state) {
   if (props.step.kind === FILTER) {
     return {
@@ -182,18 +224,26 @@ function configOf(state) {
         ),
     }
   }
-  return {
-    columns: state.entries
-      .filter((entry) => entry.selected)
-      .map((entry) => ({ from: entry.from, to: entry.to })),
-  }
+  const columns = state.entries
+    .filter((entry) => entry.selected)
+    .map((entry) => ({ from: entry.from, to: entry.to }))
+  // Nothing selected is **not** a config meaning "no columns": `[]` is the
+  // identity in `core/steps/columns.js` — every column, unchanged — so emitting
+  // it would show *more* columns rather than none. It is an unfinished edit,
+  // exactly like a Filter condition still awaiting its value, and withholding it
+  // here is what lets „Alle abwählen“ exist without inventing a zero-column
+  // table: the stored config stays in force until the first check.
+  return columns.length === 0 ? null : { columns }
 }
 
 /** Replace the draft and issue the command. One function, so no control can
- *  change the draft without the model hearing about it. */
+ *  change the draft without the model hearing about it — and one place where an
+ *  unfinished draft is withheld, so no control has to remember to. */
 function commit(next) {
   draft.value = next
-  emit('configure', configOf(next))
+  const config = configOf(next)
+  if (config === null) return
+  emit('configure', config)
 }
 
 // ------------------------------------------------------------- the Filter
@@ -299,6 +349,54 @@ const withEntries = (entries) => ({ ...draft.value, entries })
 
 const selectedCount = computed(
   () => draft.value?.entries?.filter((entry) => entry.selected).length ?? 0,
+)
+
+/** Whether an entry is on screen under the current term.
+ *
+ *  The **input** name is what is matched, not the rename field: it is the
+ *  column's identity, and matching the new name too would make a row vanish the
+ *  moment it was renamed to something the term no longer contains. */
+const matchesSearch = (entry) => {
+  const term = columnSearch.value.trim().toLocaleLowerCase('de-DE')
+  return term === '' || entry.from.toLocaleLowerCase('de-DE').includes(term)
+}
+
+const searching = computed(() => columnSearch.value.trim() !== '')
+
+/** The rows to render, each carrying its index in the **full** list. `moveColumn`
+ *  swaps by that index, so a filtered view may never renumber what it shows. */
+const visibleEntries = computed(() =>
+  (draft.value?.entries ?? [])
+    .map((entry, at) => ({ entry, at }))
+    .filter(({ entry }) => matchesSearch(entry)),
+)
+
+/**
+ * The bulk verbs act on what is **visible**, and the labels say so.
+ *
+ * With no term, visible is all — that is the case the story exists for, and
+ * „Alle abwählen“ clears everything. With a term active, acting on the whole list
+ * would contradict a screen showing three rows, so the verbs act on those three
+ * and are named for them.
+ */
+const setVisibleSelection = (selected) => {
+  const next = draft.value.entries.map((entry) =>
+    matchesSearch(entry) ? { ...entry, selected } : entry,
+  )
+  // A verb that moves no checkbox is not a change to the config. Two ordinary
+  // gestures reach it — a term matching nothing, and „Alle auswählen“ over a list
+  // that is already all selected — and each one otherwise cost a `configureStep`
+  // and a full recompute of the graph for a click that changed nothing. The
+  // buttons stay pressable either way: a `:disabled` here would be a control
+  // whose reason is invisible, and the verbs are defined as acting on what is
+  // visible even when that is nothing.
+  if (next.every((entry, at) => entry.selected === draft.value.entries[at].selected)) return
+  commit(withEntries(next))
+}
+
+const selectAllLabel = computed(() => (searching.value ? 'Angezeigte auswählen' : 'Alle auswählen'))
+const deselectAllLabel = computed(() =>
+  searching.value ? 'Angezeigte abwählen' : 'Alle abwählen',
 )
 
 const toggleColumn = (at, selected) =>
@@ -569,20 +667,85 @@ watch(
       <p class="text-xs text-slate-500">
         Reihenfolge hier ist die Reihenfolge im Ergebnis.
       </p>
+
+      <!-- Finding a column may not reorder it: the term filters visibility and
+           nothing else, so clearing it restores exactly the list that was
+           there. -->
+      <label class="flex flex-col gap-1">
+        <span class="text-xs text-slate-500">Spalte suchen</span>
+        <input
+          v-model="columnSearch"
+          type="search"
+          aria-label="Spalte suchen"
+          class="rounded border border-slate-200 px-2 py-1 text-xs"
+        >
+      </label>
+
+      <div class="flex flex-wrap gap-2 py-1">
+        <!-- Named by their own text, like „Bedingung hinzufügen“ above: a second
+             source for one accessible name goes stale the first time the German
+             is reworded, and nothing would say so. -->
+        <button
+          type="button"
+          class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+          @click="setVisibleSelection(true)"
+        >
+          {{ selectAllLabel }}
+        </button>
+        <button
+          type="button"
+          class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+          @click="setVisibleSelection(false)"
+        >
+          {{ deselectAllLabel }}
+        </button>
+      </div>
+
+      <!-- Not a refusal, so not `role="status"`: a refusal is a command the model
+           rejected, and an empty selection never reaches the model at all. It is
+           the same kind of hint as the Filter's pending line above. -->
+      <p
+        v-if="selectedCount === 0"
+        data-testid="columns-selection-pending"
+        class="text-xs text-slate-500"
+      >
+        Keine Spalte ausgewählt — diese Einstellung ist noch nicht fertig, die vorherige
+        Einstellung bleibt in Kraft. Die neue Auswahl wirkt, sobald eine Spalte angehakt ist.
+      </p>
+
+      <!-- `moveColumn` swaps neighbours of the *full* list, so under a filter the
+           neighbour is usually hidden: the swap would be correct in the config
+           and invisible on screen. Disabling it with the reason stated is the
+           honest option, and reordering wants the whole list anyway. -->
+      <p
+        v-if="searching"
+        data-testid="columns-order-locked"
+        class="text-xs text-slate-500"
+      >
+        Solange gesucht wird, lässt sich die Reihenfolge nicht ändern — dafür muss die ganze
+        Liste sichtbar sein.
+      </p>
+
+      <p
+        v-if="searching && visibleEntries.length === 0"
+        data-testid="columns-no-match"
+        class="text-xs text-slate-500"
+      >
+        Keine Spalte enthält „{{ columnSearch.trim() }}“.
+      </p>
+
       <div
-        v-for="(entry, at) in draft.entries"
+        v-for="{ entry, at } in visibleEntries"
         :key="entry.from"
         data-testid="columns-entry"
         class="flex flex-wrap items-center gap-2 rounded border border-slate-100 p-2"
       >
-        <!-- The last selected column cannot be unchecked: an empty selection is
-             the identity in `core/steps/columns.js` — every column, unchanged —
-             so unchecking the last one would show *more* columns rather than
-             none, which is the opposite of what the click means. -->
+        <!-- The last selected column *can* be unchecked. An empty selection is
+             not a config meaning "no columns" — it is an unfinished edit, which
+             `commit` withholds — so there is nothing here to guard against. -->
         <input
           type="checkbox"
           :checked="entry.selected"
-          :disabled="entry.selected && selectedCount === 1"
           :aria-label="'Spalte übernehmen: ' + entry.from"
           @change="toggleColumn(at, $event.target.checked)"
         >
@@ -597,7 +760,7 @@ watch(
         <button
           type="button"
           :aria-label="'Nach oben: ' + entry.from"
-          :disabled="at === 0"
+          :disabled="searching || at === 0"
           class="rounded border border-slate-300 px-1.5 text-xs text-slate-600 disabled:opacity-40"
           @click="moveColumn(at, -1)"
         >
@@ -606,7 +769,7 @@ watch(
         <button
           type="button"
           :aria-label="'Nach unten: ' + entry.from"
-          :disabled="at === draft.entries.length - 1"
+          :disabled="searching || at === draft.entries.length - 1"
           class="rounded border border-slate-300 px-1.5 text-xs text-slate-600 disabled:opacity-40"
           @click="moveColumn(at, 1)"
         >

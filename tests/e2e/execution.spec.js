@@ -522,6 +522,93 @@ test('a header row ending in two extra delimiters names its columns by position,
   await expect(page.getByTestId('preview-mark')).toHaveText(['abc'])
 })
 
+// ------------------------------------------------------------ at report width
+
+/** Thirty columns, which is the width the O(n)-clicks complaint is about — the
+ *  four-column fixture every other case here uses is honest about nothing. The
+ *  values are letters so every column types as `text`: what is under test is the
+ *  form, and a detection surprise would fail far from its cause. */
+const WIDE = csv(
+  'breit.csv',
+  [Array.from({ length: 30 }, (_, i) => `S${String(i + 1).padStart(2, '0')}`).join(';')]
+    .concat(
+      ['a', 'b', 'c'].map((row) =>
+        Array.from({ length: 30 }, (_, i) => `${row}${String(i + 1).padStart(2, '0')}`).join(';'),
+      ),
+    )
+    .join('\n') + '\n',
+)
+
+test('keeping three of thirty columns costs four clicks, and the counts wait for the first one', async ({
+  page,
+}) => {
+  // The whole of story 6c in one pass: "Alle abwählen" is a draft change and not
+  // a config change, so nothing recomputes until a column is checked — and the
+  // search finds a column in a list of thirty without reordering it.
+  await pick(page, WIDE)
+  await confirm(page, 'breit')
+  await toEditor(page)
+
+  await page.getByRole('button', { name: '+ Spalten' }).click()
+  await card(page, 'Spalten: Spalten')
+    .getByLabel('Eingang 1', { exact: true })
+    .selectOption({ label: 'breit' })
+  await card(page, 'Spalten: Spalten')
+    .getByRole('button', { name: 'Als Ergebnis-Step setzen' })
+    .click()
+
+  await select(page, 'Spalten: Spalten')
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('3 Zeilen, 30 Spalten')
+
+  // One click clears all thirty…
+  await panel(page).getByRole('button', { name: 'Alle abwählen' }).click()
+  await expect(panel(page).getByLabel('Spalte übernehmen: S01')).not.toBeChecked()
+  await expect(panel(page).getByLabel('Spalte übernehmen: S30')).not.toBeChecked()
+  await expect(panel(page).getByTestId('columns-selection-pending')).toContainText(
+    'die vorherige Einstellung bleibt in Kraft',
+  )
+
+  // Finding a column in thirty, without reordering anything: the order buttons
+  // are disabled while the term filters, and say why.
+  await panel(page).getByLabel('Spalte suchen').fill('S07')
+  await expect(panel(page).getByTestId('columns-entry')).toHaveCount(1)
+  await expect(panel(page).getByLabel('Nach oben: S07')).toBeDisabled()
+  await expect(panel(page).getByTestId('columns-order-locked')).toContainText(
+    'lässt sich die Reihenfolge nicht ändern',
+  )
+
+  // The first check is what reaches the model.
+  await panel(page).getByLabel('Spalte übernehmen: S07').check()
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('3 Zeilen, 1 Spalte')
+  await expect(panel(page).getByTestId('columns-selection-pending')).toHaveCount(0)
+  await panel(page).getByLabel('Spalte suchen').fill('')
+  await expect(panel(page).getByTestId('columns-entry')).toHaveCount(30)
+
+  // **The assertion this case exists for, and it is only falsifiable here.** A
+  // stored config of one column is not the identity, so a regression that emitted
+  // `{columns: []}` instead of withholding would read „30 Spalten“ at once. Over
+  // a *freshly added* Step the same regression is invisible: the empty list is
+  // the identity in `core/steps/columns.js` and thirty columns is what both the
+  // right answer and the wrong one produce.
+  await panel(page).getByRole('button', { name: 'Alle abwählen' }).click()
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('3 Zeilen, 1 Spalte')
+  await expect(panel(page).getByTestId('columns-selection-pending')).toBeVisible()
+
+  await panel(page).getByLabel('Spalte übernehmen: S01').check()
+  await panel(page).getByLabel('Spalte übernehmen: S07').check()
+  await panel(page).getByLabel('Spalte übernehmen: S30').check()
+
+  // 1 + 3 clicks for a selection that cost twenty-seven before this story.
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('3 Zeilen, 3 Spalten')
+  // The list order is the output order, and the search never touched it. The
+  // count is asserted first, so the order claim rests on the whole header row
+  // rather than on its first three cells.
+  await expect(panel(page).locator('th')).toHaveCount(3)
+  await expect(panel(page).locator('th').first()).toHaveText('S01')
+  await expect(panel(page).locator('th').nth(1)).toHaveText('S07')
+  await expect(panel(page).locator('th').nth(2)).toHaveText('S30')
+})
+
 // ----------------------------------------------------------- the interim rule
 
 test('renaming and moving a Step recompute nothing, while connecting does', async ({ page }) => {
