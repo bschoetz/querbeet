@@ -98,6 +98,7 @@ export const readingLabelGaps = () =>
 // would be the core talking to the user.
 
 import { shallowRef } from 'vue'
+import { createStepZeroCache } from '@core/exec/convert.js'
 import { nativeTypeOf } from '@core/types/catalog.js'
 import { ENCODINGS } from '@core/types/encoding.js'
 import { unresolvedColumns } from '@core/types/typing.js'
@@ -111,6 +112,10 @@ const props = defineProps({
    *  has to hear about a file that finishes parsing while it is the pane on
    *  screen — this pane keeps running its own `addFiles` loop either way. */
   onChanged: { type: Function, default: null },
+  /** The `TableEngine` implementation, arriving as a prop because `app/` is the
+   *  only place that names one (AD-1). This pane never sees the engine's tables:
+   *  it asks Step zero which cells did not read and renders that. */
+  engine: { type: Object, required: true },
 })
 
 // shallowRef, never ref/reactive/computed: the entries hold parsed tables, and
@@ -124,6 +129,65 @@ const refresh = () => {
 }
 
 const nf = (n) => n.toLocaleString('de-DE')
+
+// ------------------------------------------------- the count, made clickable
+//
+// CAP-9's panel says "842 von 900 Werten lesbar" and, until story 6, could not
+// show which 58. The jump from the count to the rows is the conversion's own
+// output: Step zero converts a confirmed Source, the values that fail their
+// confirmed type are boxed by the engine adapter, and the indices come back as
+// plain data (AD-22 keeps the box itself inside `adapters/arquero/`).
+//
+// TWO THINGS ABOUT WHERE THIS STATE LIVES, both AD-6.
+//
+// The Step-zero cache is a plain closure, not a `ref`: it holds converted
+// Tables, and a table must never enter deep reactivity — R2 measured 437–479 MB
+// and an 11–13× read penalty for exactly that. `marks` below is likewise a plain
+// `Map`, and what reaches the template is a small array of `Set`s of row indices,
+// which is neither a table nor a row.
+//
+// The memo is keyed by the frozen entry, like the cache it sits in front of, so
+// re-rendering asks for the same array identity and `RowWindow`'s watcher does
+// not repaint on every keystroke in a neighbouring field.
+const stepZero = createStepZeroCache(props.engine)
+
+/** @type {Map<string, { entry: object, marks: ReadonlyArray<Set<number>|null>|null }>} */
+const markMemo = new Map()
+
+/**
+ * Which cells of this Source's preview are marked — one `Set` of row indices per
+ * column, or `null` where nothing is.
+ *
+ * `null` for an unconfirmed Source, which is the matrix's own row: no conversion,
+ * no marks. The columns are addressed by position, as everywhere in this pane,
+ * and the conversion's map is keyed by name — a Source that repeats a name is not
+ * converted at all, so the two cannot disagree here.
+ */
+function marksFor(entry) {
+  const memo = markMemo.get(entry.id)
+  if (memo !== undefined && memo.entry === entry) return memo.marks
+
+  const conversion = stepZero.of(entry)
+  const marks =
+    conversion === null
+      ? null
+      : Object.freeze(
+          entry.typing.columns.map((column) => {
+            const at = conversion.unparsed[column.name]
+            return at !== undefined && at.length > 0 ? new Set(at) : null
+          }),
+        )
+
+  markMemo.set(entry.id, { entry, marks })
+  return marks
+}
+
+/** The sentence a marked cell carries. German lives here (AD-13), and it names
+ *  the *type* rather than the reading: `time` and `duration` have no reading to
+ *  choose, so "unter der gewählten Lesart" would send the user looking for a
+ *  control that is not rendered — the same correction `typing.unparsed_values`
+ *  already carries. */
+const MARK_TITLE = 'Unter dem bestätigten Typ nicht lesbar'
 
 // The formats this build can read, from the reader registry `app/` wired up —
 // never a hand-kept list. Two sentences name them to the user (the drop zone and
@@ -540,6 +604,11 @@ const rename = (id, name) => {
 }
 const remove = (id) => {
   props.store.removeSource(id)
+  // No entry arrives for a removed Source again, so nothing else would ever
+  // release its conversion — the two caches are keyed by Source id and would
+  // hold a converted Table for a Source that no longer exists.
+  stepZero.release(id)
+  markMemo.delete(id)
   refresh()
 }
 // The three commands that re-parse are awaited: a binary reader cannot be
@@ -1149,6 +1218,8 @@ const unconfirm = (id) => {
           class="mt-3"
           :table="s.table"
           :label="'Vorschau: ' + s.name"
+          :marks="marksFor(s)"
+          :mark-title="MARK_TITLE"
         />
 
         <details

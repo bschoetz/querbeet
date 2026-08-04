@@ -2,7 +2,8 @@
 title: 'Story 6a — The typed Table: engine adapter, conversion, and the values that did not read'
 type: 'feature'
 created: '2026-08-04'
-status: 'ready-for-dev'
+status: 'in-progress'
+baseline_commit: '1b5e4897ccc46454048b982d0576d361fb682606'
 review_loop_iteration: 0
 context:
   - '_bmad-output/planning-artifacts/architecture/architecture-querbeet-2026-08-02/ARCHITECTURE-SPINE.md'
@@ -79,18 +80,18 @@ context:
 
 **Execution:**
 
-- [ ] `package.json` -- add `"arquero": "8.0.3"` (exact pin, no caret) -- AD-19; the spine's Stack table is version authority
-- [ ] `eslint.config.js` -- `arqueroBan` restated in every `no-restricted-imports` block; other adapter dirs included -- one importer, enforced by lint not review (AD-1)
-- [ ] `ports/index.js` -- give `TableEngine` its first real contract: `fromColumns(columns: ReadonlyArray<{name, type, values, unparsed}>) → Table`, where `values` at the `unparsed` indices holds original text the adapter boxes; document that boxes and `BigInt` are adapter-owned hazards and state the edge rule (a box materializes as its original text) -- the port stops being prose
-- [ ] `core/types/typing.js` -- export `dateParts`, `datetimeParts`, `timeParts`, `durationParts`, `booleanParts` beside their predicates; export the missing-split (`sift`) -- one parser rule: no second reading of any shape
-- [ ] `core/types/typing.test.js` (extend) -- pair-agreement property per type over the reading corpus: extractor returns parts iff predicate returns true -- the counts and the conversion cannot disagree
-- [ ] `core/exec/convert.js` (new) + `convert.test.js` -- `convertSource(entry, engine)` → `{table, unparsed}`: per-column dispatch on confirmed type, missing → null, failure → original text plus its index in `unparsed` (the adapter boxes those positions), temporals → `BigInt` ns; plus the Step-zero cache keyed by entry reference, invalidated when the registry hands out a different frozen entry -- AD-7's own sentence: typing "is applied by the engine as Step zero … and caches like any other Step"
-- [ ] `adapters/arquero/engine.js` (new) + `engine.test.js` -- `createArqueroEngine()`: builds the Arquero table column-wise, private box representation, `Table` handle with frozen row objects at edges -- node-envelope tests like `canvas-logic.test.js`
-- [ ] `app/main.js` -- construct the engine, pass it down as a prop -- the only file naming the adapter (AD-1)
-- [ ] `ui/SourcesPane.vue` -- for a confirmed Source, obtain the conversion and hand per-column marks to the preview; German title on a marked cell (e.g. `Unter dem bestätigten Typ nicht lesbar`) -- the count stops being a dead end
-- [ ] `core/view/row-window.js` + `ui/RowWindow.vue` -- optional `marks` input: per-cell marked state rendered as class + `title`, windowing math untouched -- a render, not a search
-- [ ] `tests/e2e/typed-table.spec.js` (new) -- fixture with known unparsed cells: confirm, count marked cells, assert equality with the panel's number, original text visible -- CAP-9:109
-- [ ] `_bmad-output/implementation-artifacts/deferred-work.md` -- close the entry at `:175-178` (count → rows), citing this spec -- ledger hygiene
+- [x] `package.json` -- add `"arquero": "8.0.3"` (exact pin, no caret) -- AD-19; the spine's Stack table is version authority
+- [x] `eslint.config.js` -- `arqueroBan` restated in every `no-restricted-imports` block; other adapter dirs included -- one importer, enforced by lint not review (AD-1)
+- [x] `ports/index.js` -- give `TableEngine` its first real contract: `fromColumns(columns: ReadonlyArray<{name, type, values, unparsed}>) → Table`, where `values` at the `unparsed` indices holds original text the adapter boxes; document that boxes and `BigInt` are adapter-owned hazards and state the edge rule (a box materializes as its original text) -- the port stops being prose
+- [x] `core/types/typing.js` -- export `dateParts`, `datetimeParts`, `timeParts`, `durationParts`, `booleanParts` beside their predicates; export the missing-split (`sift`) -- one parser rule: no second reading of any shape
+- [x] `core/types/typing.test.js` (extend) -- pair-agreement property per type over the reading corpus: extractor returns parts iff predicate returns true -- the counts and the conversion cannot disagree
+- [x] `core/exec/convert.js` (new) + `convert.test.js` -- `convertSource(entry, engine)` → `{table, unparsed}`: per-column dispatch on confirmed type, missing → null, failure → original text plus its index in `unparsed` (the adapter boxes those positions), temporals → `BigInt` ns; plus the Step-zero cache keyed by entry reference, invalidated when the registry hands out a different frozen entry -- AD-7's own sentence: typing "is applied by the engine as Step zero … and caches like any other Step"
+- [x] `adapters/arquero/engine.js` (new) + `engine.test.js` -- `createArqueroEngine()`: builds the Arquero table column-wise, private box representation, `Table` handle with frozen row objects at edges -- node-envelope tests like `canvas-logic.test.js`
+- [x] `app/main.js` -- construct the engine, pass it down as a prop -- the only file naming the adapter (AD-1)
+- [x] `ui/SourcesPane.vue` -- for a confirmed Source, obtain the conversion and hand per-column marks to the preview; German title on a marked cell (e.g. `Unter dem bestätigten Typ nicht lesbar`) -- the count stops being a dead end
+- [x] `core/view/row-window.js` + `ui/RowWindow.vue` -- optional `marks` input: per-cell marked state rendered as class + `title`, windowing math untouched -- a render, not a search
+- [x] `tests/e2e/typed-table.spec.js` (new) -- fixture with known unparsed cells: confirm, count marked cells, assert equality with the panel's number, original text visible -- CAP-9:109
+- [x] `_bmad-output/implementation-artifacts/deferred-work.md` -- close the entry at `:175-178` (count → rows), citing this spec -- ledger hygiene
 
 **Acceptance Criteria:**
 

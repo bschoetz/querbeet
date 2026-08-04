@@ -166,6 +166,44 @@ export function sliceRows(table, start, end) {
   return Object.freeze(rows)
 }
 
+const NO_MARKS = Object.freeze([])
+
+/**
+ * The marked state of the same window, cell for cell — `marked[r][c]` beside
+ * `rows[r][c]`.
+ *
+ * `marks` is one entry per column: a set of row indices, or `null`/absent for a
+ * column with nothing marked. It is a *projection alongside* the table, not a
+ * change to it — `sliceRows` still reads `columns[c].cells[i]` and the windowing
+ * arithmetic above is untouched, which is the whole reason the two are separate
+ * functions. Story 6a's marks are the cells that did not parse under a confirmed
+ * type; nothing here knows that, and a later caller marking something else needs
+ * no change.
+ *
+ * Row indices are **table coordinates**, the same ones `firstRow` is in, so a
+ * mark on row 60,000 lands on the right row on the right page.
+ *
+ * @param {ReadonlyArray<ReadonlySet<number>|null>|null} marks per column
+ * @param {number} columnCount
+ * @param {number} start inclusive, in table coordinates
+ * @param {number} end exclusive
+ * @returns {ReadonlyArray<ReadonlyArray<boolean>>} empty where nothing is marked
+ */
+export function sliceMarks(marks, columnCount, start, end) {
+  if (!marks || columnCount === 0) return NO_MARKS
+
+  const from = count(start)
+  const to = Math.max(from, count(end))
+
+  const out = new Array(to - from)
+  for (let i = from; i < to; i += 1) {
+    const row = new Array(columnCount)
+    for (let c = 0; c < columnCount; c += 1) row[c] = marks[c]?.has(i) === true
+    out[i - from] = Object.freeze(row)
+  }
+  return Object.freeze(out)
+}
+
 /**
  * The whole projection in one pure step: everything a view needs to render
  * `table` at `page` and `scrollTop`.
@@ -183,10 +221,13 @@ export function sliceRows(table, start, end) {
  * @param {{ columns: ReadonlyArray<object>, rowCount: number }} table
  * @param {number} page current page index; forced into range
  * @param {number} scrollTop pixels scrolled inside the container
- * @returns {{ rows: ReadonlyArray<ReadonlyArray<string>>, firstRow: number,
+ * @param {ReadonlyArray<ReadonlySet<number>|null>|null} [marks] per column, in
+ *   table coordinates; omitted or `null` marks nothing
+ * @returns {{ rows: ReadonlyArray<ReadonlyArray<string>>,
+ *            marked: ReadonlyArray<ReadonlyArray<boolean>>, firstRow: number,
  *            topPx: number, bottomPx: number, page: number, pages: number }}
  */
-export function buildWindow(table, page, scrollTop) {
+export function buildWindow(table, page, scrollTop, marks = null) {
   const total = count(table.rowCount)
   const current = clampPage(page, total)
   const offset = pageOffset(current)
@@ -196,9 +237,15 @@ export function buildWindow(table, page, scrollTop) {
   // what the view renders as aria-rowindex and what keys the rows, and both
   // have to mean the same thing on page 2 as on page 1.
   const firstRow = offset + bounds.start
+  const lastRow = offset + bounds.end
 
   return Object.freeze({
-    rows: sliceRows(table, firstRow, offset + bounds.end),
+    rows: sliceRows(table, firstRow, lastRow),
+    // Same bounds as the rows, so `marked[r][c]` and `rows[r][c]` are the same
+    // cell by construction rather than by two clamps agreeing. `bounds.end` is
+    // already inside the page and the page is already inside the table, so
+    // neither needs a second clamp here.
+    marked: sliceMarks(marks, table.columns.length, firstRow, lastRow),
     firstRow,
     topPx: bounds.topPx,
     bottomPx: bounds.bottomPx,

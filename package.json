@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@vue-flow/core": "1.48.2",
+    "arquero": "8.0.3",
     "hyparquet": "1.27.1",
     "hyparquet-compressors": "1.1.1",
     "papaparse": "5.5.4",

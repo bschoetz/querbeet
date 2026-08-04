@@ -52,8 +52,8 @@ const pretendRows = (rowCount, columnNames = ['Nr', 'Wert']) => ({
  *  computed — so the DOM that assignment produces exists one tick after mount.
  *  Reading `w.html()` before that tick shows the empty initial window, and every
  *  assertion here would pass vacuously against it. */
-const render = async (table) => {
-  const w = mount(RowWindow, { props: { table } })
+const render = async (table, extra = {}) => {
+  const w = mount(RowWindow, { props: { table, ...extra } })
   await nextTick()
   return w
 }
@@ -178,5 +178,62 @@ describe('a table with no columns', () => {
 
     expect(w.find('[data-testid="preview"]').exists()).toBe(false)
     expect(w.find('[data-testid="preview-empty"]').text()).toContain('Nichts anzuzeigen')
+  })
+})
+
+// ------------------------------------------------- the cells story 6a marks
+//
+// The projection is `core/view`'s and is tested there. What only a render
+// function executes is the rest of it: that a marked cell keeps its own text,
+// that it carries the German sentence as a `title` rather than only a colour, and
+// that an unmarked cell carries neither — the three things a `:class` typo or a
+// dropped binding would take away with every other test still green.
+
+describe('a marked cell', () => {
+  const marked = (w) => w.findAll('[data-testid="preview-mark"]')
+
+  it('marks nothing at all when no marks are given', async () => {
+    const w = await render(pretendRows(5))
+
+    expect(marked(w)).toHaveLength(0)
+    expect(w.findAll('[data-testid="preview-row"]')).toHaveLength(5)
+  })
+
+  it('marks exactly the cells it was given, and keeps their text', async () => {
+    const w = await render(pretendRows(5), { marks: [new Set([1, 3]), null] })
+
+    expect(marked(w)).toHaveLength(2)
+    // The original text is the whole point: the count stops being a dead end
+    // because the reader can see *what* did not read.
+    expect(marked(w).map((td) => td.text())).toEqual(['Nr-0-1', 'Nr-0-3'])
+  })
+
+  it('carries its reason as a title, so the colour is not the only signal', async () => {
+    const w = await render(pretendRows(3), {
+      marks: [new Set([0]), null],
+      markTitle: 'Unter dem bestätigten Typ nicht lesbar',
+    })
+
+    expect(marked(w)[0].attributes('title')).toBe('Unter dem bestätigten Typ nicht lesbar')
+    // …and an unmarked cell carries no stray title, which is what a binding
+    // written without the condition would produce on every cell in the grid.
+    const cells = w.findAll('[data-testid="preview-row"]')[0].findAll('td')
+    expect(cells[1].attributes('title')).toBeUndefined()
+  })
+
+  it('repaints when the marks arrive, without a new table and without losing the page', async () => {
+    // Confirming a type mints a new entry but not a new *table* — the values did
+    // not change, only what they are read as — so the table watcher cannot see
+    // it. Before the marks watcher existed, the marks appeared only after the
+    // next scroll.
+    const table = pretendRows(5)
+    const w = await render(table)
+    expect(marked(w)).toHaveLength(0)
+
+    await w.setProps({ marks: [new Set([2]), null] })
+    await nextTick()
+
+    expect(marked(w)).toHaveLength(1)
+    expect(marked(w)[0].text()).toBe('Nr-0-2')
   })
 })

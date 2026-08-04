@@ -28,13 +28,20 @@ import {
   TEXT,
   TIME,
   bestFormat,
+  booleanParts,
   candidatesFor,
   canonicalTypeGaps,
   dateCandidates,
+  dateParts,
+  datetimeParts,
   dayIndex,
   detectColumn,
   detectTable,
+  durationParts,
   expandTwoDigitYear,
+  partsFor,
+  sift,
+  timeParts,
   MONTH_CONTEXTS,
   MONTH_LOCALES,
   MONTH_WIDTHS,
@@ -2646,5 +2653,249 @@ describe('a whole table', () => {
     }
 
     expect(unresolvedColumns(answered)).toEqual([])
+  })
+})
+
+// ------------------------------------------- the extractors story 6 converts through
+//
+// Story 6a's frozen sentence: "Conversion reads every value exactly as detection
+// counted it." That is not a promise a conversion can keep by being written
+// carefully — it is kept by calling the same readers, and it is *checked* here.
+//
+// The pair is a predicate and its parts-extractor. The predicates are private, so
+// the predicate side is observed where the product observes it: `scoreColumn`'s
+// counts, which is the number the card shows and the number the user confirms.
+// The extractor side is `partsFor`, which is what the conversion calls. Every
+// candidate of every type is driven over one corpus, and the two must not differ
+// by a single value — because the day they do, a Source reports "842 von 900
+// lesbar" and the Table holds some other number of readable cells, with nothing
+// on screen to say so.
+//
+// The corpus is deliberately a *mixture* rather than a clean column: almost every
+// candidate reads a handful of these and refuses the rest, which is what makes
+// the equality say something. It also carries the shapes that have their own
+// rules — an accounting negative, an affixed amount, a leading zero, a value past
+// `MAX_SAFE_INTEGER`, end-of-day `24:00`, a nine-digit fraction, an offset, a
+// month name, a two-digit triple — so a reader that drifts on one of them fails
+// here rather than in a user's file.
+const READING_CORPUS = Object.freeze([
+  // numbers, both locales, with and without the wrappers
+  '1.234,56',
+  '1,234.56',
+  '80,00',
+  '80.00',
+  '42',
+  '0',
+  '-500',
+  '(1.234,56)',
+  '1.234,56-',
+  '12,5 %',
+  '12.5 %',
+  '-$1,234.56',
+  '1.000.000',
+  '0123',
+  '9007199254740993',
+  '1,2345678901234567890',
+  // dates, every separator and both widths, plus month names
+  '31.12.2025',
+  '03.04.2025',
+  '12.31.2025',
+  '31.12.25',
+  '01.13.03',
+  '31/12/2025',
+  '12/31/2025',
+  '12/31/25',
+  '25/12/31',
+  '31-12-2025',
+  '12-31-2025',
+  '12-31-25',
+  '2025-12-31',
+  '25-12-31',
+  '29.02.2024',
+  '29.02.2025',
+  '2. Aug. 2026',
+  '31. Juli 2026',
+  'Aug 2, 2026',
+  'Aug 2nd, 2026',
+  '2 Aug 2026',
+  // datetimes, extended and basic, fraction, offset, end of day
+  '2025-06-15T12:00:00+02:00',
+  '2025-12-31T24:00:00Z',
+  '2026-02-13 15:57:35.4616727',
+  '2026-02-13T15:57:35,461',
+  '20251231T1430',
+  '31.12.2025 24:00',
+  '31.12.2025 9:05',
+  '31.12.25 14:30',
+  '2. Aug. 2026 04:44:34',
+  '2025-06-15T12:00:00-00:00',
+  '2025-06-15T12:00:00+15:00',
+  // clocks
+  '14:30',
+  '00:00',
+  '23:59:59',
+  '24:00',
+  '25:00',
+  '100:30:15',
+  // booleans, both cases and both vocabularies
+  'ja',
+  'nein',
+  'WAHR',
+  'falsch',
+  'true',
+  'false',
+  '1',
+  // and the things that read as nothing at all
+  'Anna Meier Schmidt',
+  'demnächst',
+  '4711-',
+  '',
+  'n/a',
+  '-',
+])
+
+/** Every (type, reading) pair the product can score a column under. `time` and
+ *  `duration` carry no reading at all, which is the point of listing them: they
+ *  are the two types AD-21 gives distinct units, and a conversion dispatching on
+ *  the format rather than the type would reach them with `null` in its hand. */
+const READING_PAIRS = [
+  ...[NUMBER, DATE, DATETIME, BOOLEAN].flatMap((type) =>
+    candidatesFor(type).map((format) => [type, format]),
+  ),
+  [TIME, null],
+  [DURATION, null],
+]
+
+describe('a parts-extractor beside every reader', () => {
+  for (const [type, format] of READING_PAIRS) {
+    const reading = format?.pattern ?? format?.locale ?? '—'
+
+    it(`reads exactly what detection counts: ${type} / ${reading}`, () => {
+      const column = { type, format, missingTokens: DEFAULT_MISSING, domain: TEXT }
+      const scored = scoreColumn(READING_CORPUS, column)
+      const read = partsFor(READING_CORPUS, column)
+
+      // The same split detection makes, from the same function — a conversion
+      // that trimmed differently would disagree about `' n/a '` before it
+      // disagreed about anything interesting.
+      const { values } = sift(READING_CORPUS, DEFAULT_MISSING)
+      const parsed = values.filter((value) => read(value) !== null).length
+
+      expect(parsed).toBe(scored.counts.parsed)
+      expect(values.length - parsed).toBe(scored.counts.unparsed)
+      // Not vacuous in either direction: a corpus where nothing read, or where
+      // everything did, would pass the equality above while proving nothing.
+      expect(parsed).toBeGreaterThan(0)
+      expect(parsed).toBeLessThan(values.length)
+    })
+  }
+
+  it('has none for a text column, because there is nothing to fail', () => {
+    const read = partsFor(READING_CORPUS, {
+      type: TEXT,
+      format: null,
+      missingTokens: DEFAULT_MISSING,
+      domain: TEXT,
+    })
+
+    expect(read).toBeNull()
+  })
+
+  it('refuses a reading-less confirmed column rather than converting it as text', () => {
+    // A caller's bug, not a state of the data: the gate refuses an unresolved
+    // column and every proposal that is not `text` carries its reading. Silently
+    // treating it as text would report zero unparsed values on a column nothing
+    // had read — a rubber stamp with a number on it.
+    expect(() =>
+      partsFor(['1'], { type: NUMBER, format: null, missingTokens: [], domain: TEXT }),
+    ).toThrow(TypeError)
+  })
+
+  it('reads a natively typed column canonically, and counts the same (AD-20)', () => {
+    // A native column's cells are the machine-shaped text the reader wrote, its
+    // `format` is `null` by construction, and a locale reading here would count
+    // every value unparsed on a column detection counted as whole.
+    const cells = ['1234.5', 'Anna', '0.5', '9007199254740993']
+    const detected = detectColumn(cells, { domain: 'native:number' })
+    const read = partsFor(cells, {
+      type: NUMBER,
+      format: null,
+      missingTokens: detected.missingTokens,
+      domain: 'native:number',
+    })
+    const { values } = sift(cells, detected.missingTokens)
+
+    expect(values.filter((v) => read(v) !== null).length).toBe(detected.counts.parsed)
+    expect(detected.counts.unparsed).toBe(2)
+  })
+})
+
+describe('what an extractor hands back', () => {
+  it('expands a two-digit year through the fixed pivot, once', () => {
+    // The caller must never re-apply the pivot, so the year on the record is the
+    // real one — Excel's fixed 00–29 → 20yy, 30–99 → 19yy, which is what makes a
+    // Recipe read the same date in 2031 as it did in 2026.
+    const candidate = dateCandidates().find((c) => c.pattern === 'dd.MM.yy')
+
+    expect(dateParts('31.12.25', candidate)).toEqual({ year: 2025, month: 12, day: 31 })
+    expect(dateParts('31.12.30', candidate)).toEqual({ year: 1930, month: 12, day: 31 })
+    expect(dateParts('31.13.25', candidate)).toBeNull()
+  })
+
+  it('reads a month name off its position rather than off an ordering', () => {
+    const candidate = dateCandidates().find((c) => c.monthName)
+
+    expect(dateParts('2. Aug. 2026', candidate)).toEqual({ year: 2026, month: 8, day: 2 })
+    expect(dateParts('Aug 2, 2026', candidate)).toEqual({ year: 2026, month: 8, day: 2 })
+    expect(dateParts('2 Aug 2026', candidate)).toEqual({ year: 2026, month: 8, day: 2 })
+  })
+
+  it('leaves end-of-day and the offset unfolded, because both are the conversion’s', () => {
+    // A parts extractor that quietly turned 24 into 0 would drop the day it
+    // belongs to, and `31.12.2025 24:00` would come out a year early.
+    const dmy = candidatesFor(DATETIME).find((c) => c.pattern === 'dd.MM.yyyy HH:mm')
+    const iso = candidatesFor(DATETIME).find((c) => c.iso)
+
+    expect(datetimeParts('31.12.2025 24:00', dmy)).toMatchObject({
+      year: 2025,
+      month: 12,
+      day: 31,
+      hour: 24,
+      minute: 0,
+      offsetMinutes: 0,
+    })
+    expect(datetimeParts('2025-06-15T12:00:00+02:00', iso)).toMatchObject({
+      hour: 12,
+      offsetMinutes: 120,
+    })
+    expect(datetimeParts('2025-06-15T12:00:00-05:30', iso)).toMatchObject({
+      offsetMinutes: -330,
+    })
+  })
+
+  it('keeps a fractional second as the digits that were written', () => {
+    // `.5` and `.500000000` are the same quantity at two widths, and padding
+    // them to nanoseconds is arithmetic rather than reading. Nine digits is the
+    // representation's own resolution (AD-21) and a tenth is not read at all.
+    const iso = candidatesFor(DATETIME).find((c) => c.iso)
+
+    expect(datetimeParts('2026-02-13T15:57:35.4616727Z', iso).fraction).toBe('4616727')
+    expect(datetimeParts('2026-02-13T15:57:35.123456789Z', iso).fraction).toBe('123456789')
+    expect(datetimeParts('2026-02-13T15:57:35.1234567890Z', iso)).toBeNull()
+  })
+
+  it('tells a clock position from a duration quantity', () => {
+    expect(timeParts('14:30')).toMatchObject({ hour: 14, minute: 30, second: 0 })
+    expect(timeParts('24:00')).toBeNull() // no day has that hour
+    expect(durationParts('25:00')).toEqual({ hours: 25, minutes: 0, seconds: 0 })
+    expect(durationParts('100:30:15')).toEqual({ hours: 100, minutes: 30, seconds: 15 })
+  })
+
+  it('answers which of a pair’s two words a boolean is', () => {
+    const pair = candidatesFor(BOOLEAN).find((p) => p.pattern === 'ja/nein')
+
+    expect(booleanParts('ja', pair)).toEqual({ value: true })
+    expect(booleanParts('NEIN', pair)).toEqual({ value: false })
+    expect(booleanParts('true', pair)).toBeNull()
   })
 })

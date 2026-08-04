@@ -80,11 +80,52 @@
  */
 
 /**
+ * @typedef {object} EngineColumn
+ * One column on the way into an engine Table — what Step zero hands over.
+ * @property {string} name
+ * @property {string} type one of `core/types/catalog.js`'s codes; what `schema()` reports
+ * @property {Array<unknown>} values one entry per row, in row order
+ * @property {ReadonlyArray<number>} unparsed the indices of `values` the adapter boxes
+ */
+
+/**
  * @typedef {object} TableEngine
  * AD-19 — the adapter absorbs the measured hazards, not the Step kinds. Null join
  * keys drop rows silently while the obvious sentinel fix multiplies them; a
  * column-set mismatch on concatenation drops columns silently; the engine's own
  * CSV entry points are not used, since parsing belongs to SourceReader.
+ *
+ * **`fromColumns` is Step zero's one door into the engine** (CAP-9, AD-7): a
+ * confirmed Source is converted column by column and handed over here. There is
+ * deliberately no row-shaped entry point — an intermediate array of row objects
+ * is 30.6 MB of row-object overhead at the NFR-3 shape that nothing ever needs to
+ * exist, so the absence of the door is what keeps it from being built.
+ *
+ * **Two hazards live behind this signature and neither reaches a Step kind.**
+ *
+ *   1. THE BOX (AD-22). A value that does not parse under its confirmed type is
+ *      held as a box carrying the original text, in the cell itself, so it
+ *      survives joins and aggregates by construction. **The box representation is
+ *      private to the adapter and `core/` never constructs one** — which is why
+ *      the column arrives split rather than boxed: at every index in `unparsed`,
+ *      `values` holds the *original text*, and the adapter boxes exactly those
+ *      positions. **At the edges a boxed cell materializes as its original
+ *      text** — the same text export writes — so `rows()` and `column(name)`
+ *      never hand a box out. Box identity is observable only through engine
+ *      operations and through the caller's own `unparsed` map.
+ *   2. `BigInt` (AD-21). Every temporal column holds nanoseconds as a `BigInt` —
+ *      a date UTC-midnight epoch ns, a datetime UTC epoch ns, a `time` ns since
+ *      midnight, a `duration` plain ns. `BigInt` and `Number` do not mix in
+ *      arithmetic, so a mean over a temporal column throws rather than coerces,
+ *      and absorbing that is the adapter's job under this rule rather than every
+ *      Step author's.
+ *
+ * **`values` is handed over, not borrowed.** The adapter takes ownership of each
+ * array and boxes in place; the caller must not read or reuse it afterwards. That
+ * is what keeps the converted column at one copy rather than two — the registry's
+ * raw text (AD-7) is the only other one, and nothing ever holds a third.
+ *
+ * @property {(columns: ReadonlyArray<EngineColumn>) => Table} fromColumns
  */
 
 /**

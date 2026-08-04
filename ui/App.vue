@@ -24,6 +24,9 @@ const props = defineProps({
   buildVersion: { type: String, required: true },
   store: { type: Object, required: true },
   graph: { type: Object, required: true },
+  /** The `TableEngine` implementation, passed through to the pane that needs it.
+   *  `app/` is the only place that names one (AD-1); this layer only forwards. */
+  engine: { type: Object, required: true },
   /** The `GraphView` implementation. `app/` is the only place that names one. */
   canvas: { type: [Object, Function], required: true },
 })
@@ -75,6 +78,7 @@ const TABS = [
       v-show="view === 'sources'"
       :store="props.store"
       :on-changed="onSourcesChanged"
+      :engine="props.engine"
       class="mt-8"
     />
 

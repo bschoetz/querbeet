@@ -103,11 +103,29 @@
 //      so there is no question to ask. Asked anyway, it would block the gate on
 //      almost every real table, over the most common column type there is.
 //
+//      Story 6a's parts extractors cost **about +5 %** on top, and it is the one
+//      regression in this list that bought something rather than merely paying
+//      for a candidate: measured on the same Mix A at the same shape, four paired
+//      runs in alternating order, best of three per run — **1.286/1.275/1.277/
+//      1.320 s before against 1.360/1.350/1.355/1.361 s after**. (Those absolutes
+//      are again a different machine from the ones above and mean nothing beside
+//      them; the pairing carries the finding, which is the rule this header
+//      already states.) The cause is structural and is the whole design: every
+//      reader below now *is* its parts extractor and every predicate is
+//      `parts !== null`, exactly as `readsAsNumber` has always been — so a value
+//      that matches allocates one small object per candidate that matches it.
+//      What it buys is that a conversion cannot read a value differently from
+//      the way this file counted it, because there is no second reader to drift.
+//      Paying it in two readers instead would be a wrong number rather than a
+//      slow one.
+//
 //   3. NOTHING HERE CONVERTS A VALUE. This module decides what a column *is*
 //      and counts what would parse. Turning cells into numbers and into epoch
 //      nanoseconds as a `BigInt` happens on the way into a Table (AD-21, AD-22),
-//      in story 6, because the raw text has to survive for the preview and the
-//      damage report to keep reading it.
+//      in `core/exec/convert.js` — story 6a — because the raw text has to survive
+//      for the preview and the damage report to keep reading it. What this file
+//      owes that conversion is the *readings*: `numberParts` and the five
+//      extractors beside it, bound to a column by `partsFor`.
 //
 // Pure, framework-free, browser-free (AD-1, AD-2). `Intl` is a JS built-in of
 // ECMA-402, not a browser API, and it is where the separators come from — a
@@ -125,6 +143,7 @@ import {
   TYPES,
   declaredNativeType,
   isNativeType,
+  nativeTypeOf,
 } from './catalog.js'
 
 // The vocabulary is declared in catalog.js and re-exported here so a caller that
@@ -1016,47 +1035,62 @@ function readsAsDayToken(token) {
  * reads, and no exporter writes it. Refusing it would cost a rule and buy no
  * correctness, because the date it yields is right either way.
  */
-function readsAsMonthNameDate(parts) {
+function monthNameDateParts(parts) {
   // The year test stands first because it is the cheapest thing that can refuse
   // a value, and this candidate is scored on every column carrying a space —
   // which is nearly every text column in a report. One regex against the last
   // token rejects `Anna Meier Schmidt` before three lowercasings and three map
   // lookups are paid for it.
-  if (!FOUR_DIGITS.test(parts[2])) return false
+  if (!FOUR_DIGITS.test(parts[2])) return null
 
   let monthAt = -1
   let month = 0
   for (let i = 0; i < 3; i += 1) {
     const found = MONTHS.byName[normalizeMonthToken(parts[i])]
     if (found === undefined) continue
-    if (monthAt !== -1) return false
+    if (monthAt !== -1) return null
     monthAt = i
     month = found
   }
-  if (monthAt !== 0 && monthAt !== 1) return false
+  if (monthAt !== 0 && monthAt !== 1) return null
 
   const day = readsAsDayToken(parts[monthAt === 0 ? 1 : 0])
-  if (day === null) return false
+  if (day === null) return null
 
-  return isRealDate(Number(parts[2]), month, day)
+  const year = Number(parts[2])
+  return isRealDate(year, month, day) ? { year, month, day } : null
 }
 
-/** Does `text` read as a date under this pattern? Deliberately strict about
- *  width: `3.4.2025` is not `dd.MM.yyyy`, because accepting a loose width would
- *  make two patterns agree on values that distinguish them. A two-digit year is
- *  its own pattern with its own width, never a loosening of the four-digit one. */
-function readsAsDate(text, { separator, order, shortYear = false, monthName = false }) {
+/**
+ * What a date value's three fields are under this pattern — `{ year, month, day
+ * }`, or `null` where the value is not a date under it.
+ *
+ * **This is the reading, and `readsAsDate` is a question asked of it**, exactly
+ * as `readsAsNumber` is a question asked of `numberParts`. Story 6 converts a
+ * confirmed column by calling this and must read every value precisely as
+ * detection counted it; a second parser beside the predicate would be a second
+ * opinion, and a predicate written as `parts !== null` cannot become one.
+ *
+ * Deliberately strict about width: `3.4.2025` is not `dd.MM.yyyy`, because
+ * accepting a loose width would make two patterns agree on values that
+ * distinguish them. A two-digit year is its own pattern with its own width,
+ * never a loosening of the four-digit one — and it expands through the fixed
+ * pivot in `expandTwoDigitYear`, never a sliding one.
+ *
+ * `year` is the **expanded** year, so a caller never re-applies the pivot.
+ */
+export function dateParts(text, { separator, order, shortYear = false, monthName = false }) {
   const parts = text.split(separator)
-  if (parts.length !== 3) return false
+  if (parts.length !== 3) return null
 
   // The month-name candidate splits on a space and reads its own ordering off
   // the value, so it never reaches the width table or the part order below.
-  if (monthName) return readsAsMonthNameDate(parts)
+  if (monthName) return monthNameDateParts(parts)
 
   const yearWidth = shortYear ? 2 : 4
   const widths = order === 'ymd' ? [yearWidth, 2, 2] : [2, 2, yearWidth]
   for (let i = 0; i < 3; i += 1) {
-    if (parts[i].length !== widths[i] || !DIGITS.test(parts[i])) return false
+    if (parts[i].length !== widths[i] || !DIGITS.test(parts[i])) return null
   }
 
   const [a, b, c] = parts.map(Number)
@@ -1064,11 +1098,18 @@ function readsAsDate(text, { separator, order, shortYear = false, monthName = fa
   // unreachable until the 2026-08-03 amendment gave `yyyy-MM-dd` its mirror. The
   // branch was kept through that whole period rather than deleted to reach
   // coverage, and this is the day it would otherwise have had to be written back.
-  if (order === 'ymd') return isRealDate(shortYear ? expandTwoDigitYear(a) : a, b, c)
+  if (order === 'ymd') {
+    const year = shortYear ? expandTwoDigitYear(a) : a
+    return isRealDate(year, b, c) ? { year, month: b, day: c } : null
+  }
   const year = shortYear ? expandTwoDigitYear(c) : c
-  if (order === 'dmy') return isRealDate(year, b, a)
-  return isRealDate(year, a, b)
+  const day = order === 'dmy' ? a : b
+  const month = order === 'dmy' ? b : a
+  return isRealDate(year, month, day) ? { year, month, day } : null
 }
+
+/** Does `text` read as a date under this pattern? */
+const readsAsDate = (text, candidate) => dateParts(text, candidate) !== null
 
 // ------------------------------------------------- datetime, time, duration
 //
@@ -1172,6 +1213,25 @@ function readsAsOffset(offset) {
   return minutes <= 59 && hours * 60 + minutes <= OFFSET_MAX_MINUTES
 }
 
+/**
+ * How far from UTC this offset stands, in signed minutes — `+02:00` is `120`,
+ * `-05:30` is `-330`, and `Z`, `z` and an absent offset are all `0`.
+ *
+ * It reads the same four spellings `readsAsOffset` validates and lives beside
+ * it for that reason: the offset grammar has one owner, so a conversion cannot
+ * disagree with detection about what `+0530` means. It is *only* meaningful on
+ * an offset `readsAsOffset` has already accepted — `clockParts` is the one
+ * caller and it checks first.
+ */
+function offsetMinutesOf(offset) {
+  if (offset === undefined || offset === 'Z' || offset === 'z') return 0
+  const digits = offset.slice(1).replace(':', '')
+  const hours = Number(digits.slice(0, 2))
+  const minutes = digits.length === 2 ? 0 : Number(digits.slice(2))
+  const total = hours * 60 + minutes
+  return offset[0] === '-' ? -total : total
+}
+
 /** Is `24` the end of the day rather than an hour no day has? ISO 8601 permits
  *  `24:00` as the next day's midnight, and only that: the minutes, the seconds
  *  and any fraction must all be zero, so `24:01` stays unreadable. */
@@ -1181,25 +1241,54 @@ const readsAsEndOfDay = (minute, second, fraction) =>
   (fraction === undefined || /^0+$/.test(fraction))
 
 /**
- * Does `text` read as a clock, in the spelling `form` names?
+ * What a clock value's fields are in the spelling `form` names — `{ hour,
+ * minute, second, fraction, offsetMinutes }`, or `null` where `text` is not a
+ * clock under it.
  *
  * `CLOCK_TIME` is the standalone `time` type and takes the bare shape, hours
  * 00–23. The other two are a datetime's clock — `DATETIME_CLOCK` extended and
  * `BASIC_CLOCK` basic — and they take the fraction, the zone and end-of-day
  * `24:00` as well. The rule a regex cannot state is applied once, here, for all
  * three, rather than per spelling.
+ *
+ * `second` is `0` where the value carries none, because a clock without seconds
+ * is a clock at second zero. `fraction` is the **digits as written**, `''` where
+ * there are none — never a number, because `.5` and `.500000000` are the same
+ * quantity written to different widths and the padding to nanoseconds is the
+ * conversion's arithmetic rather than the reading's.
  */
-function readsAsClockTime(text, form) {
+function clockParts(text, form) {
   const m = form.exec(text)
-  if (m === null) return false
+  if (m === null) return null
 
   const [, hour, minute, second, fraction, offset] = m
-  if (form === CLOCK_TIME) return Number(hour) <= 23
-  if (Number(hour) > 23 && !(Number(hour) === 24 && readsAsEndOfDay(minute, second, fraction))) {
-    return false
+  const h = Number(hour)
+  if (form === CLOCK_TIME) {
+    if (h > 23) return null
+  } else {
+    if (h > 23 && !(h === 24 && readsAsEndOfDay(minute, second, fraction))) return null
+    if (!readsAsOffset(offset)) return null
   }
-  return readsAsOffset(offset)
+
+  // `hour` is left as read, `24` included: end-of-day is the *next day's*
+  // midnight and rolling it there is calendar arithmetic, which belongs to the
+  // conversion rather than to the reading. A parts extractor that quietly turned
+  // 24 into 0 would drop the day it belongs to on the floor.
+  return {
+    hour: h,
+    minute: Number(minute),
+    second: second === undefined ? 0 : Number(second),
+    fraction: fraction ?? '',
+    offsetMinutes: offsetMinutesOf(offset),
+  }
 }
+
+// There is deliberately no `readsAsClockTime` beside this. Every other reader in
+// this file keeps its predicate, because the predicate is what `score` calls over
+// a whole column; a clock is different — it is never a candidate of its own.
+// `timeParts` is the standalone `time` reading and `datetimeParts` composes the
+// other two spellings with a date, so both callers want the parts, and a
+// predicate here would have exactly no caller.
 
 /**
  * Where the date stops and the clock starts.
@@ -1245,37 +1334,89 @@ const clockStart = (text, candidate) =>
       ? text.lastIndexOf(' ')
       : text.indexOf(' ')
 
-/** ISO 8601 refuses a basic date in front of an extended clock and the other way
- *  round, so the two halves are read as a pair rather than each on its own. */
-function readsAsDateTime(text, candidate) {
+/**
+ * A datetime read **as one value** — `{ year, month, day, hour, minute, second,
+ * fraction, offsetMinutes }`, or `null`.
+ *
+ * ISO 8601 refuses a basic date in front of an extended clock and the other way
+ * round, so the two halves are read as a pair rather than each on its own.
+ *
+ * The fields are as written and nothing is folded: `hour` may be `24`
+ * (end-of-day, which is the next calendar day's midnight) and `offsetMinutes`
+ * has not been applied. Both are calendar arithmetic and both belong to the
+ * conversion — a date part plus separate clock arithmetic is exactly the shape
+ * that puts `31.12.2025 24:00` in the wrong year.
+ */
+export function datetimeParts(text, candidate) {
   const at = clockStart(text, candidate)
-  if (at === -1) return false
+  if (at === -1) return null
 
-  const date = text.slice(0, at)
-  const clock = text.slice(at + 1)
+  const dateText = text.slice(0, at)
+  const clockText = text.slice(at + 1)
 
-  const basic = candidate.iso ? BASIC_DATE.exec(date) : null
+  const basic = candidate.iso ? BASIC_DATE.exec(dateText) : null
   if (basic !== null) {
-    return (
-      isRealDate(Number(basic[1]), Number(basic[2]), Number(basic[3])) &&
-      readsAsClockTime(clock, BASIC_CLOCK)
-    )
+    const year = Number(basic[1])
+    const month = Number(basic[2])
+    const day = Number(basic[3])
+    if (!isRealDate(year, month, day)) return null
+    const clock = clockParts(clockText, BASIC_CLOCK)
+    return clock === null ? null : { year, month, day, ...clock }
   }
-  return readsAsDate(date, candidate.date) && readsAsClockTime(clock, DATETIME_CLOCK)
+
+  const date = dateParts(dateText, candidate.date)
+  if (date === null) return null
+  const clock = clockParts(clockText, DATETIME_CLOCK)
+  return clock === null ? null : { ...date, ...clock }
 }
 
-const readsAsTime = (text) => readsAsClockTime(text, CLOCK_TIME)
+const readsAsDateTime = (text, candidate) => datetimeParts(text, candidate) !== null
 
-const readsAsDuration = (text) => CLOCK_DURATION.test(text)
+/** A standalone clock — `{ hour, minute, second, … }` with hours 00–23, or
+ *  `null`. `fraction` is always `''` and `offsetMinutes` always `0` here: the
+ *  bare shape carries neither, and they are on the record because there is one
+ *  clock reader rather than two. */
+export const timeParts = (text) => clockParts(text, CLOCK_TIME)
+
+const readsAsTime = (text) => timeParts(text) !== null
+
+/** A duration — the same shape with the hours unbounded, `{ hours, minutes,
+ *  seconds }` or `null`. Named in the plural because these are *quantities*
+ *  rather than positions on a clock face: `25:00` is twenty-five hours, and
+ *  there is no such hour of any day. */
+export function durationParts(text) {
+  const m = CLOCK_DURATION.exec(text)
+  if (m === null) return null
+  return {
+    hours: Number(m[1]),
+    minutes: Number(m[2]),
+    seconds: m[3] === undefined ? 0 : Number(m[3]),
+  }
+}
+
+const readsAsDuration = (text) => durationParts(text) !== null
 
 const readsAsClock = (text, candidate) =>
   candidate.type === TIME ? readsAsTime(text) : readsAsDuration(text)
 
-function readsAsBoolean(text, { truthy, falsy, words }) {
-  if (text.length > BOOLEAN_TOKEN_MAX) return false
+/** The two answers a boolean pair has, shared rather than allocated. A boolean
+ *  reading carries no value beyond which of the two it is, and this reader runs
+ *  over every value of every column in the table (see the module header on what
+ *  the four pairs already cost) — a fresh object per hit would be an allocation
+ *  bought for nothing. */
+const READS_TRUE = Object.freeze({ value: true })
+const READS_FALSE = Object.freeze({ value: false })
+
+/** Which of a pair's two words this is — `{ value }` or `null`. The word pairs
+ *  match case-insensitively: German Excel writes `WAHR`/`FALSCH` and that is the
+ *  same pair as `wahr`/`falsch`, not a fifth one. */
+export function booleanParts(text, { truthy, falsy, words }) {
+  if (text.length > BOOLEAN_TOKEN_MAX) return null
   const value = words ? text.toLowerCase() : text
-  return value === truthy || value === falsy
+  return value === truthy ? READS_TRUE : value === falsy ? READS_FALSE : null
 }
+
+const readsAsBoolean = (text, pair) => booleanParts(text, pair) !== null
 
 const EMPTY = Object.freeze([])
 
@@ -1341,37 +1482,66 @@ function affixScan(values, readings, present) {
 
 /** Shortest round-trip decimal, and nothing else. `String(Number(text))` is
  *  exactly the form the readers emit, so requiring the round trip both rejects
- *  a stray string and catches the digits no JS number can hold. */
-function readsAsCanonicalNumber(text) {
-  if (text === '') return false
+ *  a stray string and catches the digits no JS number can hold.
+ *
+ *  It is the one canonical reader whose parts are **not** the shape its locale
+ *  sibling returns: `numberParts` answers `{ digits, fraction, negative }`, and
+ *  a canonical number can be written in exponential form (`1e+21` round-trips),
+ *  which has no digit string to hand back. So it answers with the number itself
+ *  and story 6's conversion branches on the field rather than pretending. */
+function canonicalNumberParts(text) {
+  if (text === '') return null
   const n = Number(text)
-  return Number.isFinite(n) && String(n) === text
+  return Number.isFinite(n) && String(n) === text ? { value: n } : null
 }
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
-function readsAsCanonicalDate(text) {
-  if (!ISO_DATE.test(text)) return false
+function canonicalDateParts(text) {
+  if (!ISO_DATE.test(text)) return null
   const [year, month, day] = text.split('-').map(Number)
-  return isRealDate(year, month, day)
+  return isRealDate(year, month, day) ? { year, month, day } : null
 }
 
 /** ISO 8601 in UTC, as `Date.prototype.toISOString` writes it. The round trip is
  *  the whole check: it rejects a local-zone offset, a missing `Z`, an impossible
- *  day, and the `yyyy-MM-dd` form that belongs to a date column instead. */
-function readsAsCanonicalDateTime(text) {
-  if (text === '') return false
+ *  day, and the `yyyy-MM-dd` form that belongs to a date column instead.
+ *
+ *  The parts come back in `datetimeParts`' own shape — read off the instant the
+ *  round trip already validated — so a conversion has one datetime arithmetic
+ *  rather than one per domain. `toISOString` is millisecond-resolution by
+ *  construction, so the fraction is exactly three digits wide. */
+function canonicalDateTimeParts(text) {
+  if (text === '') return null
   const at = Date.parse(text)
-  return Number.isFinite(at) && new Date(at).toISOString() === text
+  if (!Number.isFinite(at) || new Date(at).toISOString() !== text) return null
+
+  const d = new Date(at)
+  return {
+    year: d.getUTCFullYear(),
+    month: d.getUTCMonth() + 1,
+    day: d.getUTCDate(),
+    hour: d.getUTCHours(),
+    minute: d.getUTCMinutes(),
+    second: d.getUTCSeconds(),
+    fraction: String(d.getUTCMilliseconds()).padStart(3, '0'),
+    offsetMinutes: 0,
+  }
 }
 
-const readsAsCanonicalBoolean = (text) => text === 'true' || text === 'false'
+const canonicalBooleanParts = (text) =>
+  text === 'true' ? READS_TRUE : text === 'false' ? READS_FALSE : null
 
+/**
+ * The reader a natively typed column is swept and converted with, per type
+ * (AD-20). Keyed by catalogue code; `canonicalTypeGaps` is what keeps it
+ * complete.
+ */
 const CANONICAL = Object.freeze({
-  [NUMBER]: readsAsCanonicalNumber,
-  [DATE]: readsAsCanonicalDate,
-  [DATETIME]: readsAsCanonicalDateTime,
-  [BOOLEAN]: readsAsCanonicalBoolean,
+  [NUMBER]: canonicalNumberParts,
+  [DATE]: canonicalDateParts,
+  [DATETIME]: canonicalDateTimeParts,
+  [BOOLEAN]: canonicalBooleanParts,
 })
 
 /**
@@ -1586,7 +1756,7 @@ export function detectColumn(cells, options = {}) {
   if (nativeType !== null) {
     const reads = CANONICAL[nativeType]
     let parsed = 0
-    for (const value of values) if (reads(value)) parsed += 1
+    for (const value of values) if (reads(value) !== null) parsed += 1
     return record({ type: nativeType, counts: counts(parsed) })
   }
 
@@ -1876,10 +2046,25 @@ function shortYearVerdict(values, candidate) {
   return 'unresolved'
 }
 
-/** Split a column into the values that count and the ones the user declared
- *  missing. Shared so a re-score and a detection never disagree about which
- *  cells the hit rate is a share of. */
-function sift(cells, missingTokens) {
+/**
+ * Split a column into the values that count and the ones the user declared
+ * missing. Shared so a re-score and a detection never disagree about which
+ * cells the hit rate is a share of.
+ *
+ * **Exported for story 6**, and for the same reason `numberParts` is: the
+ * conversion has to draw the missing/present line exactly where the count the
+ * user confirmed drew it, and the line is not only the token list — it is the
+ * token list *after* `String(cell ?? '').trim()`, which is where ` n/a ` becomes
+ * missing and where a `null` cell becomes `''`. A conversion re-deriving that
+ * rule would be a second answer to "is this cell empty", and the first thing it
+ * would get wrong is the whitespace.
+ *
+ * `values` drops the missing cells and therefore loses their positions, which is
+ * why the conversion walks the cells itself and asks `tokens` rather than
+ * consuming `values`. Both callers here want the compacted list; the one that
+ * wants positions wants the rule, not the list.
+ */
+export function sift(cells, missingTokens) {
   const tokens = Object.freeze([...(missingTokens ?? DEFAULT_MISSING)])
   const missingSet = new Set(tokens)
 
@@ -1934,6 +2119,65 @@ const readerFor = (type, affix, present = null) =>
             : type === DURATION
               ? readsAsDuration
               : null
+
+/**
+ * The parts-extractor a **confirmed column** is converted through — `readerFor`'s
+ * dispatch, one field over, answering with what a value *is* instead of whether
+ * it reads.
+ *
+ * Story 6 turns a confirmed Source into an engine Table and "must read every
+ * value exactly as detection counted it". That is not a promise a conversion can
+ * keep by re-parsing: it keeps it by calling the same readers, bound to the same
+ * column-level facts, from the one file that owns them. So the binding happens
+ * here rather than at the call site —
+ *
+ *   - **the affix and the accounting permission are re-derived**, exactly as
+ *     `scoreColumn` re-derives them (`marksPresent` → `numberReadings` →
+ *     `affixScan`, and `carriesAccountingEvidence` under the format in force).
+ *     Neither is part of a format and neither rides on the record: the affix is a
+ *     property of the values, and the accounting evidence answers whether `(500)`
+ *     is a negative number *in this column*;
+ *   - **a natively typed column is read canonically** (AD-20). Its cells are the
+ *     machine-shaped text the readers wrote — `1234.5`, `2025-08-01`, ISO 8601
+ *     UTC — and its `format` is `null` by construction, so a locale reading here
+ *     would count every value unparsed on a column detection counted as whole;
+ *   - **the dispatch is on `type`, never on `format`** — `time` and `duration`
+ *     have no format at all, and they are the two types AD-21 gives distinct
+ *     units, so a format-dispatched converter would crash on them first.
+ *
+ * `null` means "this column has no reading": a `text` column, where every cell is
+ * already its own value. A type that needs a format and has none is a caller's
+ * bug rather than a state of the data — the gate refuses an unresolved column and
+ * every proposal that is not `text` carries its reading — so it throws.
+ *
+ * @param {ReadonlyArray<string>} cells the column's cells as the registry holds them
+ * @param {{type: string, format: object|null, missingTokens: ReadonlyArray<string>,
+ *          domain: string}} column the confirmed column record
+ * @returns {((text: string) => object|null) | null}
+ */
+export function partsFor(cells, { type, format, missingTokens, domain }) {
+  const native = nativeTypeOf(domain)
+  if (native !== null) return CANONICAL[native] ?? null
+
+  if (type === TEXT) return null
+  if (type === TIME) return timeParts
+  if (type === DURATION) return durationParts
+
+  if (format == null) {
+    throw new TypeError(`a confirmed ${type} column has no reading to convert under`)
+  }
+  if (type === DATE) return (text) => dateParts(text, format)
+  if (type === DATETIME) return (text) => datetimeParts(text, format)
+  if (type === BOOLEAN) return (text) => booleanParts(text, format)
+  if (type === NUMBER) {
+    const { values } = sift(cells, missingTokens)
+    const present = marksPresent(values)
+    const affix = affixScan(values, numberReadings(present), present).affix
+    const accounting = carriesAccountingEvidence(present, format)
+    return (text) => numberParts(text, format, affix, accounting)
+  }
+  return null
+}
 
 /**
  * Every settable type this file cannot score a value against. Empty is the rule,

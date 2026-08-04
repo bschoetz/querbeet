@@ -13,6 +13,7 @@ import { createGraphStore } from '@core/graph/graph-store.js'
 import { csvReader } from '@adapters/csv/csv-reader.js'
 import { xlsxReader } from '@adapters/xlsx/xlsx-reader.js'
 import { parquetReader } from '@adapters/parquet/parquet-reader.js'
+import { createArqueroEngine } from '@adapters/arquero/engine.js'
 import GraphCanvas from '@adapters/vueflow/GraphCanvas.vue'
 
 // Substituted by vite.config.js at compile time: the package version, the commit
@@ -30,6 +31,18 @@ const store = createSourceStore({ csv: csvReader, xlsx: xlsxReader, parquet: par
 // direction, never minted twice.
 const graph = createGraphStore()
 
+// The `TableEngine` port's implementation, named here and nowhere else (AD-1).
+// It is what turns a confirmed Source into a typed Table as Step zero, and it is
+// the only module in the tree that knows the engine's name, that a boxed cell
+// exists, or that a temporal value is a `BigInt` (AD-19, AD-21, AD-22).
+const engine = createArqueroEngine()
+
 // The `GraphView` port's implementation, named here and nowhere else (AD-1).
 // `ui/EditorPane.vue` receives it as a prop and knows nothing about Vue Flow.
-createApp(App, { buildVersion: BUILD_VERSION, store, graph, canvas: GraphCanvas }).mount('#app')
+createApp(App, {
+  buildVersion: BUILD_VERSION,
+  store,
+  graph,
+  engine,
+  canvas: GraphCanvas,
+}).mount('#app')

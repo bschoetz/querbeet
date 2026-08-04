@@ -10,6 +10,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { TYPES } from '@core/types/catalog.js'
+import { detectColumn } from '@core/types/typing.js'
 import SourcesPane, { readingLabelGaps } from './SourcesPane.vue'
 import { settableTypeLabels, typeLabel, typeLabelGaps } from './type-labels.js'
 
@@ -65,8 +66,15 @@ const stubStore = (entry, { unresolved = [], formats = ['csv', 'xlsx', 'parquet'
   }
 }
 
-const render = async (store) => {
-  const w = mount(SourcesPane, { props: { store } })
+/** A `TableEngine` stub. The pane never reads a converted Table — it reads which
+ *  cells failed — so what matters here is only that Step zero has *something* to
+ *  hand its columns to. The real adapter is exercised in
+ *  `adapters/arquero/engine.test.js`; mounting the pane against it would test
+ *  that file twice and this one less, exactly as the store stub above. */
+const stubEngine = () => ({ fromColumns: (columns) => ({ columns }) })
+
+const render = async (store, engine = stubEngine()) => {
+  const w = mount(SourcesPane, { props: { store, engine } })
   await nextTick()
   return w
 }
@@ -1282,5 +1290,54 @@ describe('the typing diagnostics in German', () => {
 
     await select.setValue('text')
     expect(store.calls).toContainEqual(['setColumnTyping', 'src:daten', 0, { type: 'text' }])
+  })
+})
+
+// ------------------------------------------- the count, followed to the rows
+//
+// CAP-9's panel says how many values are unreadable; until story 6 it could not
+// show which. What only a render function executes is the hand-off: the pane asks
+// Step zero for the conversion of a *confirmed* Source and passes the failing row
+// indices to the preview. The conversion itself is core's and is tested there;
+// what is asserted here is that the pane asks at all, that it stops asking when
+// the Source is not confirmed, and that the sentence on a marked cell is German.
+
+describe('the unreadable values, marked in the preview', () => {
+  const AMOUNTS = ['1.234,56', '80,00', '12,50', '7,25', '0,99', '3,00', '45,10', '9,90', '100,00']
+
+  /** A Source whose `Betrag` column carries nine readable amounts and one that
+   *  is not — 90 %, which is the threshold, so the column really is a `number`
+   *  column with one failure rather than a `text` column. */
+  const withOneUnreadable = (confirmed) => {
+    const cells = [...AMOUNTS, 'abc']
+    const typed = detectColumn(cells)
+    return source([{ ...column('Betrag'), ...typed, annotation: '', chosen: null }], {
+      table: { columns: [{ name: 'Betrag', domain: 'text', cells }], rowCount: cells.length },
+      typing: {
+        columns: [{ name: 'Betrag', annotation: '', chosen: null, ...typed }],
+        confirmed,
+      },
+    })
+  }
+
+  it('marks exactly the value the count is about, and shows its original text', async () => {
+    const entry = withOneUnreadable(true)
+    expect(entry.typing.columns[0].counts.unparsed).toBe(1)
+
+    const w = await render(stubStore(entry))
+    const marked = w.findAll('[data-testid="preview-mark"]')
+
+    expect(marked).toHaveLength(1)
+    expect(marked[0].text()).toBe('abc')
+    expect(marked[0].attributes('title')).toBe('Unter dem bestätigten Typ nicht lesbar')
+  })
+
+  it('marks nothing until the types are confirmed — AD-29’s first gate', async () => {
+    const w = await render(stubStore(withOneUnreadable(false)))
+
+    expect(w.findAll('[data-testid="preview-mark"]')).toHaveLength(0)
+    // …and the preview is genuinely rendered, so the assertion above is about
+    // the marks rather than about a component that drew nothing.
+    expect(w.findAll('[data-testid="preview-row"]').length).toBe(10)
   })
 })

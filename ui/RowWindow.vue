@@ -34,6 +34,12 @@
 // position in the window — `odd:` would restripe every row each time the window
 // slid, which reads as the whole grid flickering while scrolling.
 //
+// Marks are a projection *alongside* the rows, never a change to them: `core/
+// view` answers which cells of the window are marked and this file renders that
+// as a class plus a `title`. Story 6a marks the cells that did not parse under a
+// confirmed type; nothing here knows that, which is what lets a later caller mark
+// something else without touching the geometry.
+//
 // aria-rowcount / aria-rowindex are in table coordinates for the same reason
 // the counts line is: this story's promise is that what is reported is the
 // Source's total. A virtualized grid that stays silent tells a screen reader it
@@ -47,6 +53,16 @@ const props = defineProps({
   /** Accessible name for the scroll region — a preview and a Result table are
    *  not the same thing to someone navigating by landmark. */
   label: { type: String, default: 'Tabellenvorschau' },
+  /** One entry per column: a `Set` of row indices to mark, or `null`. Story 6a
+   *  passes the cells that did not parse under the confirmed type; this
+   *  component only knows that some cells are marked and what to call them. It
+   *  is a render, not a search — `core/view` projects the window's marked state
+   *  alongside its rows and the windowing arithmetic is untouched. */
+  marks: { type: Array, default: null },
+  /** What a marked cell says on hover and to a screen reader. German lives in
+   *  `ui/` (AD-13), and the sentence belongs to whoever knows *why* the cell is
+   *  marked, which is not this component. */
+  markTitle: { type: String, default: '' },
 })
 
 const scroller = useTemplateRef('scroller')
@@ -69,7 +85,7 @@ const nf = (n) => n.toLocaleString('de-DE')
 const rowsLabel = (n) => (n === 1 ? '1 Zeile' : `${nf(n)} Zeilen`)
 
 function update() {
-  view.value = buildWindow(props.table, page.value, scroller.value?.scrollTop ?? 0)
+  view.value = buildWindow(props.table, page.value, scroller.value?.scrollTop ?? 0, props.marks)
   page.value = view.value.page
 }
 
@@ -92,6 +108,16 @@ watch(
     if (scroller.value) scroller.value.scrollTop = 0
     update()
   },
+)
+
+// Confirming a type mints a new entry but not a new *table* — the values did not
+// change, only what they are read as — so the watcher above cannot see it and
+// the marks would appear only after the next scroll. This one repaints in place:
+// no page reset and no scroll reset, because nothing about which rows the user is
+// looking at has moved.
+watch(
+  () => props.marks,
+  () => update(),
 )
 </script>
 
@@ -162,10 +188,22 @@ watch(
               :class="(view.firstRow + i) % 2 === 1 ? 'bg-slate-50' : ''"
               :style="{ height: ROW_HEIGHT_PX + 'px' }"
             >
+              <!-- A marked cell keeps its original text and says why it stands
+                   out. The colour is not the whole signal: `title` carries the
+                   reason to a pointer and the same string is the accessible
+                   name, so a cell that is merely amber to one reader is a
+                   sentence to another. -->
               <td
                 v-for="(cell, c) in row"
                 :key="c"
-                class="whitespace-nowrap px-2 py-0 text-slate-700"
+                :data-testid="view.marked[i]?.[c] ? 'preview-mark' : null"
+                class="whitespace-nowrap px-2 py-0"
+                :class="
+                  view.marked[i]?.[c]
+                    ? 'bg-amber-100 text-amber-900 underline decoration-amber-500 decoration-wavy'
+                    : 'text-slate-700'
+                "
+                :title="view.marked[i]?.[c] ? props.markTitle : null"
                 :style="{ height: ROW_HEIGHT_PX + 'px' }"
               >
                 {{ cell }}

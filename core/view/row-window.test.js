@@ -15,6 +15,7 @@ import {
   pageCount,
   pageOffset,
   pageRowCount,
+  sliceMarks,
   sliceRows,
   windowBounds,
 } from './row-window.js'
@@ -333,5 +334,69 @@ describe('the whole projection', () => {
 
     expect(w.rows).toHaveLength(0)
     expect(w.pages).toBe(1)
+  })
+})
+
+// ------------------------------------------------------------------ the marks
+//
+// Story 6a marks the cells that did not parse under a confirmed type. What is
+// here is only the projection: which cells of the *window* are marked, in table
+// coordinates, so a mark on row 600,000 lands on the right row on the right page.
+// Nothing in this file knows why a cell is marked, and that is the seam — a later
+// caller marking something else needs no change here.
+
+describe('marks projected alongside the rows', () => {
+  const marksOf = (perColumn) => perColumn.map((rows) => (rows === null ? null : new Set(rows)))
+
+  it('are empty where nothing is marked, so the common case allocates nothing', () => {
+    const t = table(['a', 'b'], 10)
+
+    expect(buildWindow(t, 0, 0).marked).toEqual([])
+    expect(sliceMarks(null, 2, 0, 10)).toEqual([])
+  })
+
+  it('are the same shape as the rows, cell for cell', () => {
+    const t = table(['a', 'b', 'c'], 10)
+    const w = buildWindow(t, 0, 0, marksOf([[1, 3], null, [3]]))
+
+    expect(w.marked).toHaveLength(w.rows.length)
+    expect(w.marked.every((row) => row.length === 3)).toBe(true)
+    expect(w.marked[1]).toEqual([true, false, false])
+    expect(w.marked[3]).toEqual([true, false, true])
+    expect(w.marked[0]).toEqual([false, false, false])
+  })
+
+  it('read the row index in table coordinates, not window ones', () => {
+    // The window starts at row 20 here. A mark on row 22 must land on the third
+    // row of the window, and a mark on row 2 must land nowhere — which is the
+    // failure a window-relative lookup would produce, silently and on every
+    // scroll.
+    const t = table(['a'], 200)
+    const w = buildWindow(t, 0, 20 * ROW_HEIGHT_PX, marksOf([[2, 22]]))
+
+    expect(w.firstRow).toBe(20)
+    expect(w.marked[0]).toEqual([false])
+    expect(w.marked[2]).toEqual([true])
+    expect(w.marked.filter((row) => row[0]).length).toBe(1)
+  })
+
+  it('survive the page offset, which is where a window-relative lookup would break', () => {
+    const t = table(['a'], PAGE_ROWS + 100)
+    const w = buildWindow(t, 1, 0, marksOf([[PAGE_ROWS + 3]]))
+
+    expect(w.firstRow).toBe(PAGE_ROWS)
+    expect(w.marked[3]).toEqual([true])
+    expect(w.marked[0]).toEqual([false])
+  })
+
+  it('are frozen, so the projection a shallowRef holds cannot be edited under it', () => {
+    const w = buildWindow(table(['a'], 4), 0, 0, marksOf([[0]]))
+
+    expect(Object.isFrozen(w.marked)).toBe(true)
+    expect(Object.isFrozen(w.marked[0])).toBe(true)
+  })
+
+  it('mark nothing on a table with no columns', () => {
+    expect(sliceMarks(marksOf([[0]]), 0, 0, 5)).toEqual([])
   })
 })
