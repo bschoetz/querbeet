@@ -4,14 +4,14 @@
 
 ## Goal
 
-Epic 6 turns the graph the Editor draws into something that actually computes. It introduces the engine port and its adapter, applies the confirmed type mapping on the way into a Table, runs a linear pipeline end to end with the first two Step kinds, and shows each Step's own output with its counts and warnings. It also carries the follow-up work that the first hand test of that skeleton exposed: the Columns form at the column count a real report has, a row order that is data rather than a view, and node placement derived from measured cards. **This epic has no declared title or goal in the source material — both are derived from what stories 6a–6e have in common.** Two further facts about the set: story 6 was split by the project owner into 6a (engine, conversion, no execution) and 6b (execution over the Table 6a produces); 6c, 6d and 6e are stubs cut from the 6b hand test and review, and 6d additionally needs a new capability entry before it is buildable as specified.
+Epic 6 turns the graph the Editor draws into something that actually computes. It introduces the engine port and its adapter, applies the confirmed type mapping on the way into a Table, runs a linear pipeline end to end with the first two Step kinds, and shows each Step's own output with its counts and warnings. It also carries the follow-up work that the first hand test of that skeleton exposed: the Columns form at the column count a real report has, a row order that is data rather than a view, and node placement derived from measured cards. **This epic has no declared title or goal in the source material — both are derived from what stories 6a–6e have in common.** Two further facts about the set: story 6 was split by the project owner into 6a (engine, conversion, no execution) and 6b (execution over the Table 6a produces); 6c, 6d and 6e are stubs cut from the 6b hand test and review. 6d needed a new capability entry before it was buildable — **CAP-40 exists as of 2026-08-04 and 6d is done**; 6e is still open.
 
 ## Stories
 
 - Story 6a: The typed Table — engine adapter, conversion, and the values that did not read
 - Story 6b: Execution walking skeleton — Filter and Columns Steps, and the per-Step preview
 - Story 6c: The Columns Step at the width a report actually has
-- Story 6d: Sort and First-N Steps — a row order that is data
+- Story 6d: Sort and First-N Steps — a row order that is data **(done 2026-08-04; CAP-40 added, and the limit takes from either end)**
 - Story 6e: Node layout from measured cards, not from a constant
 
 ## Requirements & Constraints

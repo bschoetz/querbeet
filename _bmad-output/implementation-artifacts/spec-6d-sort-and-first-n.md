@@ -65,6 +65,9 @@ context:
 | N is not a count | `0`, `-1`, `2.5` from a loaded Recipe | refused; previous config in force | `step.config_invalid` |
 | Count field cleared | user empties the number input | nothing emitted; the stored count keeps computing | the panel says the previous setting stays in force |
 | Sort → First N | Sortieren desc, then Erste 3 | the three largest, in order | N/A |
+| Last N (added 2026-08-04, owner) | `{count:2, end:'last'}` over an ascending order | the two largest, **in ascending order** — a window, not a reversal | N/A |
+| Last N over unreadable rows (same) | `{count:2, end:'last'}` after a sort whose key holds a box | the rows are kept, and the Step says how many of them carry an unreadable value | `step.boxed_rows_kept` |
+| End without a count (same) | the select is changed while no count is set | nothing emitted; the end survives in the draft and travels with the count typed next | the panel's pending sentence, unchanged |
 
 </frozen-after-approval>
 
@@ -72,7 +75,7 @@ context:
 
 - `core/graph/kinds.js:27-43` — the seven codes and the `KINDS` list. Two records join it, `minInputs: 1, maxInputs: 1, addable: true`. The file's own header calls widening this an Ask First: the widening **is** this story.
 - `core/steps/index.js:24-33` — `REGISTRY`, the second table beside `kinds.js`. Two entries; `executorGaps()` then answers four instead of six and `steps.test.js:47-57` asserts exactly that list.
-- `core/steps/codes.js:14-27` — `CODE`. Two additions: `sortKeyRepeated` (configure time, beside `renameCollision`) and `boxedRowsLast` (execution). `rows_removed` is **reused** by First-N — its German already reads „N Zeilen entfernt, M übrig."
+- `core/steps/codes.js:14-27` — `CODE`. Two additions: `sortKeyRepeated` (configure time, beside `renameCollision`) and `boxedRowsLast` (execution) — plus `boxedRowsKept` when the limit gained its end flag. `rows_removed` is **reused** by First-N — its German already reads „N Zeilen entfernt, M übrig."
 - `core/steps/filter.js` — the template for `sort.js`: `OPERATORS`/`COMBINES` as closed exported vocabularies (`:43-62`), `validate` as shape-only (`:113-145`), `apply` collecting every refusal before evaluating any (`:157-184`), engine counts turned into Diagnostics (`:202-209`). `DIRECTIONS = ['asc','desc']` follows `COMBINES` exactly.
 - `core/steps/columns.js:91-110` — the template for `first.js`: identity returns the **input handle itself**, and an unknown column is an error with no table.
 - `ports/index.js:104-170` — the `TableEngine` typedef. `orderRows` and `firstRows` are documented here in the same voice, next to `filter`'s `{table, removed, boxed, unreadable}` contract.

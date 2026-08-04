@@ -315,29 +315,33 @@
 - id: "6d"
   title: Sort and First-N Steps — a row order that is data
   description: >-
-    STUB — a row order can be looked at today and never handed over. Story 11
-    sorts the view transiently, and no Step makes a row order part of the data,
-    so CAP-16 puts column order in every export with no equivalent for rows.
-    Two Steps, because sorting alone only reorders: Sortieren (order by a
-    column) and Erste N (keep the first N rows). The case that decided it — take
-    the 10 newest records and carry them on — is ordinary and is currently
-    inexpressible; Top-N exists only as a Dashboard Tile (CAP-35), and a Tile
-    cannot feed a Step. Needs a new capability entry; CAP-32 covers the view
-    only.
+    DONE 2026-08-04 — CAP-40, which this story added to the capability set: a
+    row order becomes data, travels in the Recipe and reaches the export. Two
+    Steps that compose — Sortieren (by one or several columns, each ascending or
+    descending) and Erste/Letzte N (a window on the order in force, from either
+    end). The case that decided it, take the 10 newest records and carry them
+    on, is now a Pipeline. CAP-32's view sorting is unchanged and stays
+    transient; the contradiction it carries is recorded in CAP-32's own entry
+    for story 11 to settle.
   invoke_dev_with: >-
-    Decisions and open points are in
-    _bmad-output/implementation-artifacts/stub-sort-and-limit-steps.md. Decided
-    with the project owner 2026-08-04: two Steps rather than one, and NO
-    promotion from the view into a Step — the header click in story 11 stays
-    looking, the Step is added by hand, because viewing and transformation stay
-    separated. That rule contradicts CAP-32 as written, which promises a single
-    action turning active view filters into a Filter Step; either the rule is
-    about sorting only or that promotion goes too, and story 11 meets this
-    either way. Not settled before cutting: the Arquero cost of orderby and
-    slice measured against C-3 the way the two existing verbs were, single
-    versus multi-column sort, where a box and a null sort (AD-22 speaks about
-    comparison, not ordering, so it does not answer this), whether stability is
-    promised, arity and German labels, and whether Erste N has a last-N twin.
+    Shipped. The spec is
+    _bmad-output/implementation-artifacts/spec-6d-sort-and-first-n.md and the
+    measurements behind it are
+    _bmad-output/planning-artifacts/spikes/arquero-order-2026-08-04/. What a
+    later story must not undo: the adapter installs its own row comparator
+    through create({ order }) rather than calling Arquero's orderby, which was
+    measured returning a different wrong order per browser around a box; a box,
+    an empty cell and NaN are placed last in both directions per key rather than
+    compared, and the Sort counts the rows a box put there; text compares
+    through Intl.Collator('de-DE'); the order is stable and an order already on
+    the input is refined rather than replaced, which is what makes "the first N"
+    reproducible; the limit is a BitSet over the ordered indices, never a slice
+    or a reify. Which end the limit takes from is a flag on the Step
+    (ENDS = first | last, added on the owner's request after the story shipped),
+    and it reports how many of the rows it kept carry an unreadable value —
+    every order places those at the end, which is the end Letzte N meets. Open
+    and deferred: no move controls for sort keys, and the box warning names a
+    count rather than a column (both in deferred-work.md).
 - id: "6e"
   title: Node layout from measured cards, not from a constant
   description: >-

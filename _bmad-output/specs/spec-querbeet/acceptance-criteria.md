@@ -184,6 +184,19 @@ Realizes UJ-1, UJ-3. The Author assembles a graph of Steps in the Editor, which 
 - Renaming to a name already in use is refused with a named reason.
 - Column order in the Step determines column order in this Step's output and, if it is the Result Step, in every export.
 
+### CAP-40 — Order rows and keep the first or last N
+
+*Realizes UJ-1, UJ-2.* Two Steps that compose: *Sortieren* makes a row order part of the data, *Erste/Letzte N* keeps a window of it.
+
+- Ordering is by one or several columns, each ascending or descending. A second key on a column already used is refused with a named reason.
+- **The order is stable:** rows whose keys are equal keep the order they arrived in, and an order already on the input is refined rather than replaced — which is what makes "the first N" reproducible.
+- Text compares under German collation, not by code unit, so `Äpfel` sorts beside `Apfel` and not behind `Zebra`.
+- **A cell that is empty or did not parse under its confirmed type is placed last in both directions rather than compared**, per key. The Sort Step reports how many rows an unreadable value put there.
+- The limit takes its rows from either end of the order in force, and which end is part of its configuration — reaching the other end by reversing the order upstream edits a different Step and turns everything downstream of it around too. It is not a reversal: the kept rows come out in the order they were already in.
+- Because every order places unreadable values at the end, the limit reports how many of the rows it **kept** carry one. Reported, never refused: reading exactly those rows is a reason to ask for them.
+- A count at or above the row count keeps every row and is not an error; a Step with no count set, and a Sort with no key, let every row through unchanged.
+- Both the order and the limit travel in the Recipe and reach every export.
+
 ### CAP-17 — Add a computed column
 
 *Realizes UJ-1, UJ-2.* No formula language exists in the MVP (C-9).
