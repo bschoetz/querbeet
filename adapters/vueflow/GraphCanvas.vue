@@ -208,13 +208,24 @@ function reflow() {
   reflowArmed = false
   if (disposed) return
   // **Position from the model, size from the library, and the split is the point.**
-  // The library assigns `node.position` itself on its clamp path, so reading a
-  // position out of its store and emitting it as a `move` would make it an
-  // inbound writer of model state — the mirror image of the rule that keeps this
-  // file from writing positions into it. Only the measurement is the library's to
-  // give: `offsetWidth`/`offsetHeight`, layout pixels in the same space as the
-  // position, because the canvas transform lives on an ancestor and does not
-  // scale them. A client rect is in the other space and is deliberately unused.
+  // Reading a position out of the library's store and emitting it as a `move`
+  // would make it an inbound writer of model state — the mirror image of rule 1,
+  // which keeps this file from writing positions into it. Only the measurement is
+  // the library's to give: `offsetWidth`/`offsetHeight` (`vue-flow-core.mjs:3500`),
+  // layout pixels in the same space as the position, because the canvas transform
+  // lives on an ancestor and does not scale them. A client rect is in the other
+  // space and is deliberately unused.
+  //
+  // **It is an ownership rule and not a bug fix, and the difference is worth
+  // stating.** The library does assign `node.position` itself — `clampPosition`
+  // (`:3509`, watcher at `:9548`) and `useDrag` (`:4933`) — but the first fires
+  // only from `node.extent` / `nodeExtent`, which this application never sets, and
+  // the second only during a gesture, which never triggers a pass. So no
+  // divergence is reachable today and none is tested; what the split buys is that
+  // a later edit reintroducing one cannot silently write it back into the model.
+  // The hazard it takes on in exchange: clearance is now computed from the model
+  // while the library renders from its own store, and if those ever drift the unit
+  // suite cannot see it — Playwright is the only witness.
   const measured = new Map(getNodes.value.map((node) => [node.id, node.dimensions]))
   const boxes = props.nodes.map((node) => ({
     id: node.id,

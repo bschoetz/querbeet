@@ -3,7 +3,7 @@ title: 'Story 6e — Node layout from measured cards, not from a constant'
 type: 'bugfix'
 created: '2026-08-04'
 status: 'done'
-review_loop_iteration: 1
+review_loop_iteration: 2
 baseline_commit: '93bcc8c499bab04a68c767d2ed094ef00bb7bb01'
 context:
   - '_bmad-output/planning-artifacts/architecture/architecture-querbeet-2026-08-02/ARCHITECTURE-SPINE.md'
@@ -117,11 +117,34 @@ context:
 
 **Deferred rather than fixed** (both in `deferred-work.md`): a node the reflow moves can leave the fitted viewport with no pan after it, and a cascade of `k` moves is `k` model mutations where the port shape says a move is one node. **Rejected:** a guard on a non-finite `gap` argument (internal-only, and `moveNode` already throws loudly), a pointer gate on the pass (the trigger cannot fire during a gesture — measured, and the drag case asserts it), and the untested `disposed` branch (the reviewer probed it and could not establish a regression from removing it).
 
+**2026-08-04 — review round 2, run because the round-1 fixes were never themselves reviewed.** 274 lines had changed after the reviewers saw the diff; the same three ran again against only those lines. **The finding that mattered: the round-1 fix for P5 did not fix P5.** Measured by a reviewer rather than argued — with `reflowMoves`'s inner bound clamped to two passes per node, the entire tree stayed green, and four coincident cards came out with two of them exactly on top of each other. The 60-arrangement case was 60 samples of *one shape*: a grid of distinct cells, where every node settles in a single move, so the loop it was written to exercise never ran.
+
+| # | What was false or missing | Where it is fixed |
+| --- | --- | --- |
+| Q1 | The 60-arrangement generator never worked the loop, so the convergence claim was still pinned by exactly one fixture. | The generator now stacks cards under a **roof** taller than the pitch and at coincident points, which is what makes a node land on something it did not first hit. Plus three explicit cases: three-under-a-roof, four coincident cards, and the cross-column one below. |
+| Q2 | `reflowMoves` had no post-condition: if the bound were ever wrong the loop fell out with the node still overlapping and took idempotence with it. | A guard after the loop places the node below every settled bottom, which is clear by construction. **It also made the bound untestable inside one column** — the guard lands on the same answer there — so the case that discriminates puts a very tall card in the neighbouring column, where "below what I hit" and "below everything" part company. Probed: `pass <= 1` fails exactly that case. |
+| Q3 | The 282 px fixture width was right and its stated reason was false: it is `content-box` plus `px-3` plus the border, not the wrapper and the handles — which are `position: absolute` and contribute nothing. The comment mispredicted change in both directions. | Corrected, measured, with what moves the number and what does not. |
+| Q4 | „raising this number past 50 would have the emptiest possible graph reflow itself on mount" — wrong. Measured: a Source card is 39 px (93 with an orphan mark), so the empty graph survives a gap of 161 (107 with marks). The 50 was borrowed from story 6b's 151 px Filter. | Replaced with the measured numbers. |
+| Q5 | The `gap <= dy - tallest card` bound was framed as a threshold cards mostly sit under. Measured: a bare Union is 177 px and a Union with one added slot row **203 — taller than `dy` itself**, so for a card the user can grow the bound has no solution. And the nudge is not a corner case: on two Sources plus a Union, the Filter added next is placed at (360, 240) and renders at (360, 267). | Rewritten with those measurements, and the honest reading stated: the grid is an opening guess whose spacing this constant overrides, not a spacing the two agree on. |
+| Q6 | `O(n³)` was given as "the cost" — the loosest bound, in a file whose convention is measured numbers — and "`n` is bounded by what a person can hold in a graph" is a belief about users, not a property (nothing in `core/graph/` caps the node count). | `O(n²)` per report named as the shape that occurs, `O(n³)` as the loose worst case, no measurement claimed where none was taken, and the belief removed. |
+| Q7 | The clamp-path citation justifying the P3 split rests on `clampPosition`, which fires from `node.extent` / `nodeExtent` — neither of which this application sets. The change is right on ownership grounds; as written it rested on dead code. Nor did it name the hazard it takes on. | Lines cited, the path stated as unreachable today, the change rested on ownership, and the new hazard named: clearance now comes from the model while the library renders from its store, and only Playwright could see a drift. |
+| Q8 | `pairwiseClear` is `clear` restated, so it can only ever catch non-convergence — never a wrong definition of "clear". Its comment sold it as checking the promise. | Comment says what it cannot catch and points at the explicit cases that pin the definition. |
+| Q9 | No test constructed a **partial** horizontal overlap — the exact branch `clear`'s new comment was added to document — and its user-visible price was written down nowhere. | A case, plus the price stated in `clear`: a card dragged 20 px sideways is still the same column and is shoved a whole card height down. |
+| Q10 | The P10 case would pass with `measured()` reduced to its `> 0` checks; `Number.isFinite` on the dimensions was unpinned, `width: Infinity` had no case, and four scenarios shared one `it` with no messages. | Split into two cases, one field per assertion, each with a message. |
+| Q11 | The drag case depends on card heights nobody recorded: change them enough and the pass moves the Source instead, failing for an unrelated reason. | The ordering the case rests on is now asserted, with the reason. |
+| Q12 | „and after a plain view switch" was claimed in a comment and covered by nothing — and re-entering the Editor is the more common way a user meets this. | Its own e2e case. |
+| Q13 | The zoom case asserted `scale < 0.95` against a fit that already zooms out, so the wheel was never proven to do anything; and it did not check the two Unions share a column. | Both relative to the state before the wheel, plus the same-column assertion the other case already had. |
+| Q14 | The 24 px was pinned only in unit fixtures — a pass leaving 1 px of clearance passed both e2e cases — in a story whose premise is that arithmetic over card heights is not measurement. | Observed on screen once, as `24 * zoom`, in the zoomed case. |
+| Q15 | The two deferred entries interact and neither said so: never pulling back up plus never panning means a column drifts downward monotonically across a session. | Named in the first entry, which had claimed to be bounded. |
+| Q16 | The layout is path-dependent — the positions depend on the order cards grew — and those positions are model state a Recipe will carry. Said nowhere. | Its own ledger entry, with the choice story 14 has to make. |
+
+**Not fixed, and recorded as such:** the P3 split is an architectural rule with no test — a reviewer reverted it and could not construct an observable regression, since the library's own position writes are unreachable in this application. `moves a Source exactly like a Step` cannot discriminate (the pass has no notion of kind); its comment now says so, and the wiring is covered end to end instead. The `?.` in the box mapping guards a path a reviewer instrumented and measured at zero occurrences.
+
 ## Design Notes
 
 **Why the adapter and not `ui/`.** The measurement exists only in the library's node store, so `ui/` could only reach it through a widened `GraphView` port — a second event or a dimensions prop, and then the same arithmetic one layer further from the numbers. The adapter already owns "absorb the library's hazards" (AD-19) and already has the seam for exactly this: `move` is on the port, `EditorPane.onMove` turns it into `moveStep`, and `ui/EditorPane.test.js` drives the pane through a stub canvas that emits it. So the whole story is two files in `adapters/vueflow/` plus a comment in `core/`.
 
-**Why there is no pointer guard**, recorded because its absence looks like an omission. A reflow that moved a card out from under a pressed pointer would be the defect `createFocusGate` already exists to prevent. It cannot happen: the reflow is triggered by `type: 'dimensions'` changes only, a drag emits `type: 'position'`, and the library's ResizeObserver watches a node element's *box size* — dragging moves the element and resizes nothing. The one growth a user can trigger by hand, `Eingang hinzufügen`, fires on `click`, which is after `pointerup`.
+**Why there is no pointer guard**, recorded because its absence looks like an omission. A reflow that moved a card out from under a pressed pointer would be the defect `createFocusGate` already exists to prevent. It cannot happen: the reflow is triggered by `type: 'dimensions'` changes only, a drag emits `type: 'position'`, and the library's ResizeObserver watches a node element's *box size* — dragging moves the element and resizes nothing. **What makes the argument complete is the trigger, not a list of growths.** A card grows from `Eingang hinzufügen` and equally from a mark appearing, which `connect`, `disconnect`, `configureStep`, `setResult` and `syncSources` can all cause — but every one of them is a command, and a command is dispatched from a `click` or a `change`, both of which land after the release. There is no path from a held pointer to a size change at all. Review round 2 asked for a `dragging` guard anyway; it is refused for the same reason the round-1 review refused the untested `disposed` branch its author could not make fire — a defensive branch guarding an unreachable path is a branch no test can hold honest.
 
 **Why idempotence is the termination argument.** `updateNodeDimensions` is also called with `forceUpdate: true` from two watchers, which emits a `dimensions` change even when the size is unchanged. So the reflow must be expected to run on its own output, and "no overlap ⇒ no moves" is what keeps that from being a loop. The pass itself terminates for a separate reason: each node is placed against the already-settled ones and only ever moves to a strictly greater `y` drawn from a finite set, so the inner resolution is bounded by the settled count.
 
@@ -149,7 +172,7 @@ for (const node of ordered) {
 - `npx vitest run --project ui` -- expected: green and unchanged; `ui/` is not edited by this story
 - `npm run build && npm run assert` -- expected: one HTML file, structural gate green
 - `npm run verify` -- expected: lint, both Vitest projects and Playwright in Chromium and Firefox green
-- **The two mutation probes, if the e2e cases are ever rewritten** -- replace `armReflow()` in `GraphCanvas.vue`'s `onNodesChange` with a no-op: expected 6 failures, three cases in two engines. Then multiply the mapped `width`/`height` by `viewport.zoom`: expected exactly the zoomed case failing, in both engines. A test for this mechanism that survives either probe is not testing it.
+- **Three mutation probes, if any of this is ever rewritten.** Measured 2026-08-04, all three re-run after review round 2. (1) Replace `armReflow()` in `GraphCanvas.vue`'s `onNodesChange` with a no-op: expected **8 failures**, four e2e cases in two engines. (2) Multiply the mapped `width`/`height` by `viewport.zoom`: expected **exactly the zoomed case**, in both engines. (3) Clamp `reflowMoves`'s inner bound to `pass <= 1`: expected exactly `moves a card as little as it must, not to the floor of the graph`. A test for this mechanism that survives its probe is not testing it — which is how round 2 found that the first version of the 60-arrangement case was green at `pass <= 1`.
 
 **Manual checks (if no CLI):**
 
@@ -159,22 +182,25 @@ for (const node of ordered) {
 
 **The pass itself, which is the whole story**
 
-- Entry point: the three properties it is written for, and why the loop ends.
-  [`canvas-logic.js:327`](../../adapters/vueflow/canvas-logic.js#L327)
+- Entry point: the three properties it is written for, and what the contract rests on.
+  [`canvas-logic.js:348`](../../adapters/vueflow/canvas-logic.js#L348)
 
-- What "not on top of each other" means — vertical gap, horizontal touch allowed.
-  [`canvas-logic.js:283`](../../adapters/vueflow/canvas-logic.js#L283)
+- The guard that makes an overlapping result impossible by construction, not by argument.
+  [`canvas-logic.js:369`](../../adapters/vueflow/canvas-logic.js#L369)
 
-- The constant that is not independent of `PLACEMENT.dy`, with the bound stated.
-  [`canvas-logic.js:259`](../../adapters/vueflow/canvas-logic.js#L259)
+- What "not on top of each other" means, and what "down only" costs sideways.
+  [`canvas-logic.js:299`](../../adapters/vueflow/canvas-logic.js#L299)
+
+- The constant that overrides the grid's spacing rather than agreeing with it — measured.
+  [`canvas-logic.js:265`](../../adapters/vueflow/canvas-logic.js#L265)
 
 **What triggers it, and what it is allowed to read**
 
 - Measurement is the only trigger; a drag reports positions and starts nothing.
   [`GraphCanvas.vue:153`](../../adapters/vueflow/GraphCanvas.vue#L153)
 
-- Position from the model, size from the library — the split keeps the library outbound-only.
-  [`GraphCanvas.vue:207`](../../adapters/vueflow/GraphCanvas.vue#L207)
+- Position from the model, size from the library — an ownership rule, with its own hazard named.
+  [`GraphCanvas.vue:210`](../../adapters/vueflow/GraphCanvas.vue#L210)
 
 - The rule the owner resolved: a trigger rule, not a promise that an overlap survives.
   [`GraphCanvas.vue:169`](../../adapters/vueflow/GraphCanvas.vue#L169)
@@ -184,16 +210,22 @@ for (const node of ordered) {
 - Same numbers, different job: an opening guess, with the promise named elsewhere.
   [`graph.js:576`](../../core/graph/graph.js#L576)
 
-**The tests that had to be shown to fail**
+**The tests, each shown to fail with what it tests removed**
+
+- The only case that can tell the pass loop from the guard after it.
+  [`canvas-logic.test.js:400`](../../adapters/vueflow/canvas-logic.test.js#L400)
+
+- Arrangements that actually work the loop — the first version never did.
+  [`canvas-logic.test.js:429`](../../adapters/vueflow/canvas-logic.test.js#L429)
 
 - Both halves in one case, because either alone survives the mechanism's removal.
   [`step-graph.spec.js:609`](../../tests/e2e/step-graph.spec.js#L609)
 
-- The only case that can see the measurement space: at scale 1 the two coincide.
-  [`step-graph.spec.js:677`](../../tests/e2e/step-graph.spec.js#L677)
+- The path a user meets more often than growth: leave the Editor and come back.
+  [`step-graph.spec.js:682`](../../tests/e2e/step-graph.spec.js#L682)
 
-- Convergence checked over 60 arrangements rather than argued in a comment.
-  [`canvas-logic.test.js:346`](../../adapters/vueflow/canvas-logic.test.js#L346)
+- The only case that can see the measurement space, and the only one that observes the 24 px.
+  [`step-graph.spec.js:720`](../../tests/e2e/step-graph.spec.js#L720)
 
-- The 11 px nudge on an already-clear grid, asserted instead of glossed over.
-  [`canvas-logic.test.js:300`](../../adapters/vueflow/canvas-logic.test.js#L300)
+- The price of "down only", asserted instead of glossed over.
+  [`canvas-logic.test.js:488`](../../adapters/vueflow/canvas-logic.test.js#L488)

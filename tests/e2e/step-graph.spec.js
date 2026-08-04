@@ -656,6 +656,11 @@ test('a drag starts nothing, and the next measurement separates what it overlapp
   const b = await wrapper(page, quelle).boundingBox()
   expect(a.y).toBeLessThan(b.y + b.height)
   expect(b.y).toBeLessThan(a.y + a.height)
+  // Stated rather than assumed: the pass sorts by y and moves the lower node, so
+  // the assertions below are about the Filter only while it *is* the lower one.
+  // Card heights decide that, and nothing else in this file records them — without
+  // this line a taller Source would turn the case red for an unrelated reason.
+  expect(a.y, 'the drop must leave the Filter below the Source').toBeGreaterThan(b.y)
 
   // Now grow a card that has nothing to do with either of them. This half is what
   // fails if `armReflow` is deleted — the assertions above would not have noticed.
@@ -672,6 +677,44 @@ test('a drag starts nothing, and the next measurement separates what it overlapp
       return moved.y >= source.y + source.height
     })
     .toBe(true)
+})
+
+test('a remount measures everything again, so an overlap does not survive one', async ({ page }) => {
+  // The other half of the same rule, and the one a user meets more often: leaving
+  // the Editor unmounts every node, re-entering measures them all, and the pass
+  // runs over the whole graph. Asserted because the comment in `GraphCanvas.vue`
+  // claims it — „and after a plain view switch" — and nothing covered it.
+  await pick(page, TWO_SOURCES)
+  await toEditor(page)
+
+  await page.getByRole('button', { name: '+ Filter' }).click()
+  await card(page, 'Filter: Filter').getByLabel('Name').fill('Beweglich')
+  await card(page, 'Filter: Filter').getByLabel('Name').blur()
+
+  const filter = await idOf(page, 'Filter: Beweglich')
+  const quelle = await idOf(page, 'Quelle: Umsatz Q1')
+
+  for (let i = 0; i < 8; i += 1) {
+    const a = await wrapper(page, filter).boundingBox()
+    const b = await wrapper(page, quelle).boundingBox()
+    const dx = b.x + 20 - a.x
+    const dy = b.y + 20 - a.y
+    if (Math.abs(dx) < 6 && Math.abs(dy) < 6) break
+    await page.mouse.move(a.x + 6, a.y + 6)
+    await page.mouse.down()
+    await page.mouse.move(a.x + 6 + dx, a.y + 6 + dy, { steps: 10 })
+    await page.mouse.up()
+  }
+  const dropped = await positionOf(page, filter)
+
+  await toSources(page)
+  await expect(nodes(page)).toHaveCount(0)
+  await toEditor(page)
+
+  await expect.poll(async () => (await positionOf(page, filter)).y).toBeGreaterThan(dropped.y)
+  const moved = await wrapper(page, filter).boundingBox()
+  const source = await wrapper(page, quelle).boundingBox()
+  expect(moved.y).toBeGreaterThanOrEqual(source.y + source.height)
 })
 
 test('the reflow measures in flow space, so it still clears the cards when zoomed out', async ({
@@ -694,13 +737,20 @@ test('the reflow measures in flow space, so it still clears the cards when zoome
   await card(page, 'Union: Union').getByLabel('Name').fill('Unten')
   await card(page, 'Union: Union').getByLabel('Name').blur()
 
+  // Relative to the scale in force, not to a literal: the initial fit already
+  // zooms out for a graph this tall, so `< 0.95` would pass with the wheel doing
+  // nothing at all.
+  const scaleBefore = await viewportScale(page)
   const box = await canvas(page).boundingBox()
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
   await page.mouse.wheel(0, 400)
-  await expect.poll(() => viewportScale(page)).toBeLessThan(0.95)
+  await expect.poll(() => viewportScale(page)).toBeLessThan(scaleBefore * 0.95)
+  const zoom = await viewportScale(page)
 
   const oben = await idOf(page, 'Union: Oben')
   const unten = await idOf(page, 'Union: Unten')
+  // One column, so the clearance below is the pass's doing and not the grid's.
+  expect((await positionOf(page, oben)).x).toBe((await positionOf(page, unten)).x)
   for (let i = 0; i < 3; i += 1) {
     await card(page, 'Union: Oben').getByRole('button', { name: 'Eingang hinzufügen' }).click()
   }
@@ -712,6 +762,14 @@ test('the reflow measures in flow space, so it still clears the cards when zoome
       return b.y >= a.y + a.height
     })
     .toBe(true)
+
+  // The headline constant, observed on screen once rather than only in unit
+  // fixtures: 24 flow-space pixels, so `24 * zoom` here. A pass that left a 1 px
+  // clearance satisfies the non-overlap check above and fails this one.
+  const a = await wrapper(page, oben).boundingBox()
+  const b = await wrapper(page, unten).boundingBox()
+  expect(b.y - (a.y + a.height)).toBeGreaterThan(24 * zoom - 2)
+  expect(b.y - (a.y + a.height)).toBeLessThan(24 * zoom + 2)
 
   await wrapper(page, unten).evaluate((el) => el.focus())
   const badge = card(page, 'Union: Unten').getByRole('button', {

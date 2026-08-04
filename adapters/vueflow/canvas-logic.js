@@ -244,14 +244,20 @@ export const isTypingTarget = (element) =>
  * (`a.x + a.width === b.x`) are clear, because a column is a place and the gap is
  * about stacking. Nothing horizontal is ever adjusted anyway — see `reflowMoves`.
  *
- * **It is not independent of `PLACEMENT.dy` in `core/graph/graph.js`, and the
- * bound is `gap <= dy - the tallest card`.** With `dy: 200` that leaves 176 px, so
- * any card above that height makes the reflow nudge the grid the model just placed
- * on: a 187 px card — the height story 6b measured for a slot row plus a mark —
- * moves the cell below it from y=240 to y=251, an 11 px shove on a layout that was
- * already free of overlap. That is the pass enforcing the clearance rather than a
- * defect, but it does mean the grid is not self-consistent, and raising this
- * number past 50 would have the emptiest possible graph reflow itself on mount.
+ * **It is not independent of `PLACEMENT.dy` in `core/graph/graph.js`: the grid is
+ * clear of itself only while `gap <= dy - the tallest card`, and for a card the
+ * user can grow there is no such number.** Measured in the built artefact on
+ * 2026-08-04: a Source card is 39 px, a bare Union 177, a Union with one added
+ * slot row **203 — taller than `dy` itself**. So this is not a threshold cards
+ * mostly sit under. It fires in an ordinary session: on two Sources plus a Union,
+ * the Filter added next is placed by the model at (360, 240) and renders at
+ * (360, 267), because 40 + 177 + 24 is 241. The pass is enforcing the clearance
+ * rather than repairing an overlap, and the honest reading is that the grid is an
+ * opening guess whose spacing this constant overrides — not that the two agree.
+ *
+ * Raising it is bounded from the other side by the emptiest graph there is, two
+ * Source cards one pitch apart: 39 px each leaves room up to 161, and 93 px once
+ * each carries an orphan mark leaves 107.
  *
  * The same number as `VIEW_MARGIN` and still a separate constant: one is what
  * "inside the pane" means and the other what "not stacked on" means.
@@ -275,11 +281,21 @@ const measured = (node) =>
   node.width > 0 &&
   node.height > 0
 
-/** Whether two measured boxes leave each other alone. The horizontal clauses come
- *  first and carry the whole column idea: a vertical overlap between two nodes in
- *  different columns is not an overlap at all. They are bare — the gap is vertical
- *  by definition (see `LAYOUT`), so columns that touch are clear and columns that
- *  genuinely intersect fall through to the vertical test like anything else. */
+/**
+ * Whether two measured boxes leave each other alone.
+ *
+ * The horizontal clauses come first and carry the whole column idea: a vertical
+ * overlap between two nodes in different columns is not an overlap at all. They
+ * are bare — the gap is vertical by definition (see `LAYOUT`) — so two columns
+ * that exactly touch are clear.
+ *
+ * **What that costs, stated because it is user-visible:** columns that merely
+ * *partly* intersect fall through to the vertical test like anything else, so a
+ * card dragged 20 px sideways is still the same column and is shoved a whole card
+ * height down rather than the 20 px it would take to clear sideways. That is the
+ * "down only" property doing what it says; the alternative is a sideways nudge,
+ * which takes the column meaning `freePosition` put there away.
+ */
 const clear = (a, b, gap) =>
   a.x + a.width <= b.x ||
   b.x + b.width <= a.x ||
@@ -314,15 +330,20 @@ const clear = (a, b, gap) =>
  * definition of overlapping — and that value is always one of finitely many
  * settled bottoms. There are at most `settled.length` of those, so at most that
  * many increases can happen, and the loop is given one iteration more than that:
- * the last check cannot find a hit. The test beside this asserts the result is
- * pairwise clear over a spread of arrangements rather than trusting the argument.
+ * the last check cannot find a hit. **The argument is not what the contract rests
+ * on.** A node that jumps clear of everything it hit can land on something settled
+ * below that it did not hit, so more than one pass is ordinary — and if the bound
+ * were ever wrong the loop would fall out with the node still overlapping and take
+ * idempotence with it. The line after the loop makes that impossible by
+ * construction rather than by reasoning.
  *
- * **Cost is `O(n³)` in the worst case** — the settled scan is inside the pass loop,
- * per node — and it runs on every measurement report, including the ones that
- * changed nothing (the library forces those). `n` is the node count, which the
- * whole product bounds at what a person can hold in a graph, so it is nowhere near
- * the row counts C-3 is about; if that ever stops being true it is this line that
- * has to be measured rather than the pass that has to be rewritten.
+ * **Cost.** `O(n²)` per report in the shape that actually occurs — one settled
+ * scan per node — with `O(n³)` as the loose worst case, since the scan sits inside
+ * the pass loop. It runs on every measurement report, including the ones that
+ * changed nothing, because the library forces those. Nothing in `core/graph/` caps
+ * the node count, so `n` is bounded by nothing but the graph a user builds; no
+ * measurement has been taken, and this is the line to measure if a graph ever gets
+ * big enough for it to matter.
  */
 export function reflowMoves(nodes, gap = LAYOUT.gap) {
   const ordered = (Array.isArray(nodes) ? nodes : [])
@@ -332,13 +353,23 @@ export function reflowMoves(nodes, gap = LAYOUT.gap) {
 
   const settled = []
   const moves = []
+  const overlapping = (node) => settled.filter((other) => !clear(node, other, gap))
+
   for (const node of ordered) {
     const was = node.y
-    for (let pass = 0; pass <= settled.length; pass += 1) {
-      const hit = settled.filter((other) => !clear(node, other, gap))
-      if (hit.length === 0) break
+    let hit = overlapping(node)
+    for (let pass = 0; hit.length > 0 && pass <= settled.length; pass += 1) {
       node.y = Math.max(...hit.map((other) => other.y + other.height)) + gap
+      hit = overlapping(node)
     }
+    /* c8 ignore start -- unreachable while the bound above is exact, and kept
+       anyway: below every settled bottom is clear of all of them by construction,
+       so the one failure this function must never have — returning a layout that
+       overlaps, silently — cannot happen even if the reasoning is wrong. */
+    if (hit.length > 0) {
+      node.y = Math.max(...settled.map((other) => other.y + other.height)) + gap
+    }
+    /* c8 ignore stop */
     settled.push(node)
     if (node.y !== was) moves.push(Object.freeze({ id: node.id, x: node.x, y: node.y }))
   }

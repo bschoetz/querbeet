@@ -252,22 +252,31 @@ describe('the shortfall pan', () => {
 
 describe('the reflow', () => {
   /**
-   * A measured card.
+   * A measured card, at the width the built artefact actually renders.
    *
-   * 282 px wide is the **node wrapper**, measured in the built artefact — not the
-   * 256 px of `ui/StepCard.vue`'s `w-64`, because what the library observes is the
-   * wrapper around the card and the handles on its sides. The distinction matters
-   * for one case below: against `PLACEMENT.dx` of 320 the real clearance between
-   * two columns is 38 px, not 64, so a fixture written at the card's width would
-   * be checking a wider gutter than ships.
+   * **282 px, and not the 256 px of `ui/StepCard.vue`'s `w-64`.** Measured
+   * 2026-08-04: the card's computed `box-sizing` is `content-box`, so `px-3`
+   * (2 × 12) and the 1 px border sit outside the declared width. The node wrapper
+   * reports the same 282 — the handles cannot add to it, being `position:
+   * absolute` (`@vue-flow/core/dist/style.css`), which is worth knowing because it
+   * says what moves this number and what does not: editing the padding, the border
+   * or the box-sizing does, restyling a handle does not. It matters for one case
+   * below: against `PLACEMENT.dx` of 320 the real gutter between two columns is
+   * 38 px, not 64.
    *
    * The height is the interesting axis either way: it grows with every slot row
    * and every mark, which is the whole reason this function exists.
    */
   const box = (id, x, y, height, width = 282) => ({ id, x, y, width, height })
 
-  /** Whether a settled layout keeps its own promise, asserted rather than argued.
-   *  Two boxes are clear when they miss horizontally or are `gap` apart. */
+  /**
+   * Whether a settled layout overlaps anywhere.
+   *
+   * **It is `clear` restated, and that bounds what it can catch:** the loop
+   * failing to converge, yes; a wrong definition of "clear", never — it would be
+   * wrong in the same direction. The cases that pin the definition itself are the
+   * explicit ones above and below, with their numbers written out.
+   */
   const pairwiseClear = (nodes, gap = LAYOUT.gap) =>
     nodes.every((a, i) =>
       nodes.slice(i + 1).every(
@@ -278,6 +287,30 @@ describe('the reflow', () => {
           b.y + b.height + gap <= a.y,
       ),
     )
+
+  /**
+   * An arrangement built to make the inner pass loop work.
+   *
+   * A **roof** — one card far taller than the pitch — with several short cards
+   * starting inside it. Each of those clears the roof by jumping to the same place
+   * the one before it went, so it lands on *that* one and has to jump again: the
+   * second and third passes the first version of this generator never produced,
+   * because a grid of distinct cells settles every node in a single move.
+   */
+  const roofArrangement = (seed) => {
+    const nodes = []
+    for (let column = 0; column <= seed % 3; column += 1) {
+      const x = 40 + column * 320
+      nodes.push(box(`s${seed}-c${column}-roof`, x, 40, 200 + ((seed * 37 + column * 11) % 4) * 90))
+      for (let i = 0; i < 2 + ((seed + column) % 4); i += 1) {
+        // Several of them at exactly the same point, which is the coincidence a
+        // user produces by dropping one card on another.
+        const y = 50 + ((seed + i) % 2) * 10
+        nodes.push(box(`s${seed}-c${column}-u${i}`, x, y, 20 + ((seed * 13 + i * 7) % 4) * 30))
+      }
+    }
+    return nodes
+  }
 
   const applyMoves = (nodes, moves) => {
     const by = new Map(moves.map((m) => [m.id, m]))
@@ -343,24 +376,79 @@ describe('the reflow', () => {
     }
   })
 
-  it('comes out pairwise clear over a spread of arrangements, not just one', () => {
-    // The convergence argument lives in a doc comment and the function has no
-    // post-condition, so the loop running out of passes would return a layout
-    // violating its own contract and take idempotence with it. This is the check
-    // that argument does not have: many shapes, and each result verified.
-    const heights = [40, 150, 187, 260, 400, 900]
+  it('needs a third pass for the third card under a tall one, and takes it', () => {
+    // The arrangement written out, because it is the one the bound is about. The
+    // roof is 200 tall at y=0; b, c and d start inside it. Each clears the roof by
+    // landing where the previous one went, so b settles in one pass, c in two and
+    // d in three. This case pins the *result*, not the bound: measured, it stays
+    // green with the loop clamped, because inside one column the guard after the
+    // loop lands on the same answer. The case below is the one that can tell them
+    // apart.
+    const moves = reflowMoves([
+      box('a-roof', 360, 0, 200),
+      box('b', 360, 10, 20),
+      box('c', 360, 20, 20),
+      box('d', 360, 30, 20),
+    ])
+    expect(moves).toEqual([
+      { id: 'b', x: 360, y: 224 },
+      { id: 'c', x: 360, y: 268 },
+      { id: 'd', x: 360, y: 312 },
+    ])
+  })
+
+  it('moves a card as little as it must, not to the floor of the graph', () => {
+    // The case that can tell the pass loop from the guard after it. Inside one
+    // column the two agree — "below everything settled" and "below what I hit"
+    // are the same place — so a single column cannot see a broken bound at all.
+    // Put a very tall card in the *neighbouring* column and they part company:
+    // `d` belongs 24 px under `c`, and the guard alone would send it past a card
+    // it never touched, to y=1024. Three cards under the roof rather than two,
+    // because `d` is the one that needs a third pass — with two, `b` and `c` still
+    // come out right and only `d` drops to the floor.
+    //
+    // Measured: clamping the loop to two passes or fewer fails exactly this case.
+    // It does not pin the bound *exactly* — no arrangement here needs a fourth
+    // pass — and it does not have to, because an under-bound is caught by the
+    // guard and costs a card its nearest position rather than the layout its
+    // correctness.
+    const moves = reflowMoves([
+      box('deep-other-column', 40, 0, 1000),
+      box('a-roof', 360, 0, 200),
+      box('b', 360, 10, 20),
+      box('c', 360, 20, 20),
+      box('d', 360, 30, 20),
+    ])
+    expect(moves).toEqual([
+      { id: 'b', x: 360, y: 224 },
+      { id: 'c', x: 360, y: 268 },
+      { id: 'd', x: 360, y: 312 },
+    ])
+  })
+
+  it('comes out pairwise clear over a spread of arrangements that work the loop', () => {
+    // The convergence argument lives in a doc comment. This is the check that
+    // argument does not have — and the first version of it was 60 samples of one
+    // shape: a grid of distinct cells, where every node settles in a single move,
+    // so clamping the bound to two passes left the whole tree green. These
+    // arrangements stack cards under a roof and at coincident points, which is
+    // what makes the loop iterate.
     for (let seed = 0; seed < 60; seed += 1) {
-      const nodes = Array.from({ length: 7 }, (_, i) => {
-        // Deterministic and spread over columns, pitches and heights alike — no
-        // clock and no randomness, so a failure is reproducible from its seed.
-        const column = (seed + i) % 3
-        const height = heights[(seed * 3 + i * 5) % heights.length]
-        return box(`n${seed}-${i}`, 40 + column * 320, 40 + ((seed * 7 + i * 11) % 5) * 200, height)
-      })
+      const nodes = roofArrangement(seed)
       const settled = applyMoves(nodes, reflowMoves(nodes))
       expect(pairwiseClear(settled), `seed ${seed}`).toBe(true)
       expect(reflowMoves(settled), `seed ${seed}`).toEqual([])
     }
+  })
+
+  it('separates a stack of four coincident cards, one under the next', () => {
+    // What the owner's 2026-08-04 decision produces: cards dropped on one another
+    // are separated at the next measurement, and three or more of them is the case
+    // a two-move bound leaves two cards exactly on top of each other.
+    const stack = ['a', 'b', 'c', 'd'].map((id) => box(id, 360, 40, 40))
+    const settled = applyMoves(stack, reflowMoves(stack))
+    expect(settled.map((n) => n.y)).toEqual([40, 104, 168, 232])
+    expect(pairwiseClear(settled)).toBe(true)
   })
 
   it('produces no moves over its own output', () => {
@@ -397,10 +485,21 @@ describe('the reflow', () => {
     expect(reflowMoves([box('left', 40, 40, 600), box('right', 322, 40, 600)])).toEqual([])
   })
 
-  it('moves a Source exactly like a Step — the pass knows nothing about kinds', () => {
-    // Sources sit in their own column and grow with their own marks. `moveStep`
-    // takes one (it is `removeStep` that refuses a Source), so nothing here needs
-    // to know which is which — but nothing says so anywhere else either.
+  it('shoves a card that intersects a column only partly, by a whole card height', () => {
+    // The branch `clear`'s comment is about, and the price of "down only": 20 px
+    // sideways would separate these two, and the pass moves the lower one 620 px
+    // down instead, because a sideways nudge would take the column meaning away.
+    expect(reflowMoves([box('a', 40, 40, 600), box('b', 60, 100, 600)])).toEqual([
+      { id: 'b', x: 60, y: 664 },
+    ])
+  })
+
+  it('has no notion of kind, so a Source is moved like anything else', () => {
+    // Sources sit in their own column and grow with their own marks, and `moveStep`
+    // takes one where `removeStep` refuses it. This case cannot *discriminate* —
+    // the ids are the only thing about it that says Source — so what it pins is
+    // that nothing here filters by kind. That Sources actually reach the pass is
+    // asserted end to end, where excluding them from `boxes` goes red.
     expect(reflowMoves([box('source-1', 40, 40, 400), box('source-2', 40, 240, 90)])).toEqual([
       { id: 'source-2', x: 40, y: 464 },
     ])
@@ -412,15 +511,23 @@ describe('the reflow', () => {
   })
 
   it('ignores a node the library has not measured, as obstacle and as subject', () => {
-    // Vue Flow leaves `dimensions` at zero until its ResizeObserver has reported,
-    // and hands this function `undefined` for a node it has never seen at all.
-    // Treating either as a box would stack the whole graph on the first frame.
-    expect(reflowMoves([box('unmeasured', 360, 40, 0), box('b', 360, 45, 150)])).toEqual([])
-    expect(reflowMoves([box('a', 360, 40, 400), box('unmeasured', 360, 45, 0, 0)])).toEqual([])
-    expect(reflowMoves([{ id: 'x', x: 360, y: 40, width: undefined, height: undefined }])).toEqual(
-      [],
-    )
-    expect(reflowMoves([{ id: 'x', x: 360, y: Number.NaN, width: 282, height: 150 }])).toEqual([])
+    // Vue Flow leaves `dimensions` at zero until its ResizeObserver has reported.
+    // Treating that as a box would stack the whole graph on the first frame.
+    expect(reflowMoves([box('unmeasured', 360, 40, 0), box('b', 360, 45, 150)]), 'zero height as obstacle').toEqual([])
+    expect(reflowMoves([box('a', 360, 40, 400), box('unmeasured', 360, 45, 0, 0)]), 'zero box as subject').toEqual([])
+  })
+
+  it('refuses a number that is not one, on every field, rather than emitting it', () => {
+    // `moveNode` throws on a non-finite position, inside a microtask with no
+    // handler above it — so each field is pinned separately. `Infinity` is the one
+    // that a `> 0` check alone would let through.
+    const bad = (over) => reflowMoves([{ id: 'x', x: 360, y: 40, width: 282, height: 150, ...over }])
+    expect(bad({ width: undefined }), 'undefined width').toEqual([])
+    expect(bad({ height: undefined }), 'undefined height').toEqual([])
+    expect(bad({ width: Number.POSITIVE_INFINITY }), 'infinite width').toEqual([])
+    expect(bad({ height: Number.POSITIVE_INFINITY }), 'infinite height').toEqual([])
+    expect(bad({ y: Number.NaN }), 'NaN y').toEqual([])
+    expect(bad({ x: Number.NaN }), 'NaN x').toEqual([])
   })
 
   it('takes the gap as an argument, so the rule is one number and not a habit', () => {
