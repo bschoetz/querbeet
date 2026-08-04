@@ -122,7 +122,8 @@ const props = defineProps({
   /**
    * AD-8's per-Step cache, also `ui/App.vue`'s — held here for exactly one
    * reason: **a withdrawn Source has to withdraw the tables computed from it**
-   * (AD-29), and this pane owns the two commands that withdraw one.
+   * (AD-29), and this pane owns every command that withdraws one. See `withdraw`
+   * below for which those are and why it is a function rather than a line.
    *
    * The Step-zero store does that per Source id. The run cache cannot: it is
    * content-keyed on purpose and has no id to release by, so the honest
@@ -684,8 +685,8 @@ const remove = (id) => {
   stepZero.release(id)
   markMemo.delete(id)
   // And every Step's table computed from it, which the run cache has no id to
-  // release by (see the `runCache` prop).
-  props.runCache?.clear()
+  // release by (see `withdraw`).
+  withdraw()
   refresh()
 }
 // The three commands that re-parse are awaited: a binary reader cannot be
@@ -723,6 +724,13 @@ const reparse = async (id, control, run) => {
     const rest = { ...parsing.value }
     delete rest[id]
     parsing.value = rest
+    // Both re-parses commit `confirmed: false` through `retype` in the store, so
+    // both withdraw the confirmation and both clear (AD-29). It is in the
+    // `finally` rather than on the success path because a *failed* re-read also
+    // commits — keeping the previous table under the parse config that failed —
+    // and clearing a cache that did not need clearing is a miss, never a wrong
+    // answer.
+    withdraw()
     refresh()
   }
 }
@@ -766,6 +774,32 @@ const clearRefusal = (id) => {
 
 // Columns are addressed by position, not by name: a header may repeat a name,
 // and the store refuses to guess which of them a command meant.
+/**
+ * **The rule, in one place: every command that commits `confirmed: false` clears
+ * the run cache** (AD-29 — a table computed from types nobody vouches for must
+ * not survive the withdrawal).
+ *
+ * It is a function rather than a line repeated at each call site because review
+ * round 2 found the line at two of the five commands that withdraw: the store
+ * commits `confirmed: false` in `retype` (reached from every `reRead`, so both
+ * re-parses), in `withColumn(..., false)` (every `setColumnTyping`) and in
+ * `unconfirmTyping`. A sixth command added later inherits the rule by calling
+ * this, and a reader looking for "what withdraws" finds one answer.
+ *
+ * The Step-zero cache is not cleared here: it is keyed by Source id and releases
+ * its own conversion the next time it is asked about an unconfirmed entry, which
+ * is a tighter rule than this one and already correct.
+ */
+const withdraw = () => props.runCache?.clear()
+
+/** A typing command, with the withdrawal the store is about to commit. */
+const retype = (id, at, patch) => {
+  props.store.setColumnTyping(id, at, patch)
+  withdraw()
+  clearRefusal(id)
+  refresh()
+}
+
 const setType = (id, at, type) => {
   // The empty value is the reset, not a type: it withdraws the user's choice
   // and puts the column back to whatever detection proposes — including back to
@@ -774,17 +808,13 @@ const setType = (id, at, type) => {
   // No format is passed either way. The user picked a type and left the reading
   // to detection, which scores the candidates — handing over the first one
   // would give an Anglo column the German reading and a collapsed hit rate.
-  props.store.setColumnTyping(id, at, type === '' ? { type: null } : { type })
-  clearRefusal(id)
-  refresh()
+  retype(id, at, type === '' ? { type: null } : { type })
 }
 
 const setFormat = (id, column, at, key) => {
   const format = formatChoices(column.type).find((f) => (f.pattern ?? f.locale) === key)
   if (!format) return // the placeholder, which is not an answer
-  props.store.setColumnTyping(id, at, { type: column.type, format })
-  clearRefusal(id)
-  refresh()
+  retype(id, at, { type: column.type, format })
 }
 
 const MISSING_EMPTY = '(leer)'
@@ -800,9 +830,7 @@ const setMissing = (id, at, raw) => {
     .map((t) => t.trim())
     .filter((t) => t !== '')
     .map((t) => (t.toLowerCase() === MISSING_EMPTY ? '' : t))
-  props.store.setColumnTyping(id, at, { missingTokens: [...new Set(tokens)] })
-  clearRefusal(id)
-  refresh()
+  retype(id, at, { missingTokens: [...new Set(tokens)] })
 }
 
 const missingText = (column) =>
@@ -821,12 +849,7 @@ const confirm = (id) => {
 
 const unconfirm = (id) => {
   props.store.unconfirmTyping(id)
-  // AD-29's gate closing again. `stepZero.of` releases its own conversion on the
-  // next read, because an unconfirmed entry is one it refuses to convert; the run
-  // cache is content-keyed and would simply go on holding every Step's table
-  // until the row bound pushed it out. Withdrawing the confirmation withdraws
-  // them now.
-  props.runCache?.clear()
+  withdraw()
   refresh()
 }
 </script>

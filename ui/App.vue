@@ -31,6 +31,24 @@ const props = defineProps({
   engine: { type: Object, required: true },
   /** The `GraphView` implementation. `app/` is the only place that names one. */
   canvas: { type: [Object, Function], required: true },
+  /**
+   * AD-8's per-Step cache. **Owned here in the product** — `app/main.js` passes
+   * nothing and the default factory below mints one per instance — and injectable
+   * for exactly one reason: the withdrawal rule (AD-29) is a statement about what
+   * this cache *holds*, and a test that cannot hold the cache cannot observe it.
+   *
+   * Review round 2 established that the hard way. `ui/App.test.js`'s removal case
+   * asserted the engine was not called again, which is true whether the cache was
+   * cleared, not cleared, or never passed at all — a removed Source refuses at the
+   * frontier and the engine is called zero times either way — so deleting
+   * `:run-cache` below left the whole suite green.
+   *
+   * A prop and not a `defineExpose`, because a component's public instance is a
+   * worse place for a test seam than its props are, and because everything else
+   * this component holds — the store, the graph, the engine, the canvas — already
+   * arrives the same way.
+   */
+  runCache: { type: Object, default: () => createRunCache() },
 })
 
 // Step zero's cache, **one of them**, created here and handed to both panes
@@ -50,23 +68,24 @@ const props = defineProps({
 // releases its conversion, which the Sources pane still asks for.
 const stepZero = createStepZeroCache(props.engine)
 
-// AD-8's per-Step cache, and it is created **here** for the same two reasons the
-// line above it is. It must outlive the Editor: `EditorPane` is `v-if`, so it is
-// genuinely unmounted on every trip to the Sources pane, and a cache owned there
-// would be thrown away by a view switch — which is exactly the moment a user
-// comes back to a graph they have not changed. And it holds `Table` handles, so
-// it may not enter `ref`, `reactive` or a `computed` (AD-6); `setup` is where a
-// value can be held without becoming reactive.
-//
-// The bounds are the defaults (`core/exec/cache.js` says where each number comes
-// from). They are not props and not configurable: a memory plan the interface
-// can dial is a memory plan nobody can reason about.
+// AD-8's per-Step cache is the `runCache` prop above, and it belongs at this
+// level for the same two reasons the line above does. It must outlive the
+// Editor: `EditorPane` is `v-if`, so it is genuinely unmounted on every trip to
+// the Sources pane, and a cache owned there would be thrown away by a view
+// switch — which is exactly the moment a user comes back to a graph they have
+// not changed. And it holds `Table` handles, so it may never enter `ref`,
+// `reactive` or a `computed` (AD-6); props are shallow-reactive, so the object
+// crosses as itself and nothing inside it is converted, which is the same
+// footing `stepZero`, `store` and `engine` already stand on.
 //
 // It goes to **both** panes, and the second one is not a symmetry. `EditorPane`
-// reads and writes it; `SourcesPane` only ever clears it, because removing a
-// Source or unconfirming its typing has to withdraw the tables computed from it
+// reads and writes it; `SourcesPane` only ever clears it, because every command
+// that withdraws a confirmation has to withdraw the tables computed from it
 // (AD-29) and a content-keyed store has no id to release by.
-const runCache = createRunCache()
+//
+// The bounds are `core/exec/cache.js`'s defaults, which is where the reasoning
+// for each number is. Neither is configurable from here: a memory plan the
+// interface can dial is a memory plan nobody can reason about.
 
 const view = shallowRef('sources')
 
@@ -116,7 +135,7 @@ const TABS = [
       :store="props.store"
       :on-changed="onSourcesChanged"
       :step-zero="stepZero"
-      :run-cache="runCache"
+      :run-cache="props.runCache"
       class="mt-8"
     />
 
@@ -127,7 +146,7 @@ const TABS = [
       :canvas="props.canvas"
       :engine="props.engine"
       :step-zero="stepZero"
-      :cache="runCache"
+      :cache="props.runCache"
       class="mt-8"
     />
   </main>

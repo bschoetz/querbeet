@@ -188,19 +188,21 @@ export default [
     },
   },
 
-  // The one file under core/ that may name `console`, and the allowance is
-  // scoped to it so the door does not open everywhere.
+  // **The enumeration the architecture's Cross-cutting — logging row points at.**
   //
-  // The consistency table says diagnostics are the only reporting channel and
-  // that there is no logging framework — both still hold. `keyOrNull` contains a
-  // `canonical` refusal so it cannot escape onto a render path, and a refusal is
-  // the one thing the cache may not silently swallow: it means a config exists
-  // that no key can describe, which is a programming or Recipe-format error the
-  // user can do nothing about and a developer must not have to guess at. A
-  // Diagnostic would be the wrong shape — it would put a German sentence on a
-  // card about a cache the product does not otherwise mention (story 7a, review
-  // round 1). Like TextDecoder/TextEncoder above, `console` is present in Node
-  // and in every engine, so this costs the core none of its testability.
+  // That row was amended on 2026-08-05 by owner decision (story 7a, review round
+  // 2) to admit one narrow exception to "diagnostics are the only reporting
+  // channel": a contained programming-error signal may go to `console.warn`,
+  // under four conditions together — no user can cause or correct the state, it
+  // would otherwise be swallowed entirely, a Diagnostic would be the wrong shape,
+  // and it is emitted once per distinct message. The row names this list as the
+  // register of files that may do it, so **adding one here is an amendment to
+  // that row and not a lint edit**; the argument for the exception lives there
+  // and is deliberately not restated here, because the first version of this
+  // block argued the case afresh while asserting the unamended row still held.
+  //
+  // Today there is exactly one file: `keyOrNull` contains a `canonical` refusal
+  // that would otherwise escape onto a render path.
   {
     files: ['core/exec/cache-key.js'],
     languageOptions: { globals: { console: 'readonly' } },

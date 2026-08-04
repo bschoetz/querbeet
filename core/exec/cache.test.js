@@ -198,11 +198,31 @@ describe('the entry ceiling', () => {
     expect(cache.rows()).toBe(20)
   })
 
-  it('does not bind before the row ceiling in any shape the research describes', () => {
-    // 30 retained intermediates at half a million rows is the design scale (R4)
-    // and is 15 million rows — the row bound exactly, at 30 entries. This
-    // ceiling only ever binds on entries that cost no rows.
-    expect(DEFAULT_MAX_ENTRIES).toBe(1_000)
+  it('crosses over with the row ceiling at maxRows / maxEntries rows per entry', () => {
+    // **The arithmetic, asserted rather than described.** Round 1's comment
+    // claimed this ceiling "only ever binds on entries that cost no rows", which
+    // the division disproves: below `maxRows / maxEntries` rows per entry — 15,000
+    // at the defaults — the entry ceiling binds *first* and the row ceiling never
+    // runs at all. That is the intended behaviour and this is what pins it, so a
+    // future change to either constant has to face the crossover rather than a
+    // sentence about it.
+    const crossover = DEFAULT_MAX_ROWS / DEFAULT_MAX_ENTRIES
+
+    const small = createRunCache()
+    for (let i = 0; i < DEFAULT_MAX_ENTRIES + 50; i += 1) small.set(`k${i}`, entry(crossover / 2))
+    expect(small.size()).toBe(DEFAULT_MAX_ENTRIES) // entries bound it
+    expect(small.rows()).toBeLessThan(DEFAULT_MAX_ROWS) // rows never came close
+
+    const large = createRunCache()
+    for (let i = 0; i < 40; i += 1) large.set(`k${i}`, entry(crossover * 40))
+    expect(large.rows()).toBeLessThanOrEqual(DEFAULT_MAX_ROWS) // rows bound it
+    expect(large.size()).toBeLessThan(DEFAULT_MAX_ENTRIES) // entries never came close
+  })
+
+  it('holds the whole design scale without evicting anything', () => {
+    // 30 retained intermediates at half a million rows is the shape R4 measured
+    // and is 15 million rows — the row bound exactly, at 30 of 1,000 entries. So
+    // neither ceiling touches the configuration the memory plan is written for.
     const cache = createRunCache()
     for (let i = 0; i < 30; i += 1) cache.set(`k${i}`, entry(500_000))
     expect(cache.size()).toBe(30)

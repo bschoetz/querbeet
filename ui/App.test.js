@@ -19,6 +19,7 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { h, nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
+import { createRunCache } from '@core/exec/cache.js'
 import { createSourceStore } from '@core/exec/source-store.js'
 import { createGraphStore } from '@core/graph/graph-store.js'
 import App from './App.vue'
@@ -101,9 +102,15 @@ const wired = async () => {
   return { store, graph, sourceId: source.id, filter }
 }
 
-const render = async (store, graph, engine) => {
+/** The cache is passed in rather than left to `App`'s own default, so the test
+ *  can *observe* it. The withdrawal rule is a statement about what the cache
+ *  holds, and counting engine calls cannot see it: after a withdrawal the run
+ *  refuses at the frontier and calls the engine zero times whether or not
+ *  anything was cleared, which is how the round-1 version of this file passed
+ *  with `:run-cache` deleted. */
+const render = async (store, graph, engine, runCache = createRunCache()) => {
   const w = mount(App, {
-    props: { buildVersion: 'test', store, graph, engine, canvas: StubCanvas },
+    props: { buildVersion: 'test', store, graph, engine, canvas: StubCanvas, runCache },
   })
   await flushPromises()
   await nextTick()
@@ -154,23 +161,34 @@ describe('the caches App owns', () => {
 
   it('lets go of everything derived from a Source that is removed', async () => {
     // AD-29 from the run cache's side: it is content-keyed and has no id to
-    // release by, so `ui/SourcesPane.vue` clears it. Observable here because the
-    // Editor is the pane that would otherwise answer from it.
+    // release by, so `ui/SourcesPane.vue` clears it.
     const { store, graph, sourceId } = await wired()
-    const engine = countingEngine()
-    const w = await render(store, graph, engine)
+    const cache = createRunCache()
+    const w = await render(store, graph, countingEngine(), cache)
 
     await show(w, 'Editor')
-    const afterFirstRun = engine.calls.filter
+    expect(cache.size()).toBeGreaterThan(0)
 
     await show(w, 'Quellen')
-    await w.find(`[aria-label="Entfernen: ${store.get(sourceId)?.name ?? 'umsatz'}"]`).trigger('click')
+    await w.find('[aria-label="Entfernen: umsatz"]').trigger('click')
     await nextTick()
 
-    // The Source is gone, so the run refuses at the frontier rather than hitting
-    // — what matters is that nothing was served out of the cleared cache.
-    await show(w, 'Editor')
-    expect(engine.calls.filter).toBe(afterFirstRun)
     expect(store.get(sourceId)).toBeNull()
+    expect(cache.size()).toBe(0)
+  })
+
+  it('lets go of everything derived from a typing that was withdrawn', async () => {
+    const { store, graph } = await wired()
+    const cache = createRunCache()
+    const w = await render(store, graph, countingEngine(), cache)
+
+    await show(w, 'Editor')
+    expect(cache.size()).toBeGreaterThan(0)
+
+    await show(w, 'Quellen')
+    await w.find('[aria-label="Bestätigung aufheben: umsatz"]').trigger('click')
+    await nextTick()
+
+    expect(cache.size()).toBe(0)
   })
 })

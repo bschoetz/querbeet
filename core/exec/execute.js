@@ -256,8 +256,15 @@ export function executeGraph({
       // is Step zero's, already cached by `createStepZeroCache` under this very
       // key, and its diagnostics live on the registry entry rather than in the
       // run — so there is nothing here to store and nothing to replay.
+      //
+      // Through `keyOrNull` like its neighbour below, because `sourceKey` is a
+      // **door**: `executeGraph` does not know what is on the other side of it,
+      // and `ui/EditorPane.vue`'s implementation happens to contain its own
+      // refusals only because `stepZeroKey` does. A door that throws is not a
+      // door, and the second caller — the one nobody has written yet — would
+      // find that out on a render path (review round 2).
       if (caching) {
-        const key = sourceKey(node.id)
+        const key = keyOrNull(() => sourceKey(node.id))
         if (typeof key === 'string') keys.set(node.id, key)
       }
       record(node, sourceTable(node.id), [])
@@ -387,7 +394,13 @@ export function executeGraph({
     // is the same nothing to replay and was being stored until review round 1.
     // The next run calls it again and records the same diagnostic, which is what
     // a user correcting the cause needs to see happen.
-    if (key !== null && outcome.table !== null) cache.set(key, results.get(node.id))
+    //
+    // The condition reads the **stored** entry rather than `outcome.table`, so it
+    // is a statement about what is going into the cache rather than about what
+    // `record` was handed a line earlier. The two agree today and there is no
+    // reason for a reader to have to check that they do (review round 2).
+    const stored = results.get(node.id)
+    if (key !== null && stored.table !== null) cache.set(key, stored)
   }
 
   // **One sentence about the run as a whole, and it is here because the cards

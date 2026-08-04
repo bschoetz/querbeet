@@ -39,12 +39,29 @@ export const DEFAULT_MAX_ROWS = 15_000_000
  * Filter result is an ordinary state — the user narrowed a condition too far —
  * and at a keystroke's frequency it is a leak.
  *
- * 1,000 because it must not bind before the row ceiling does in any shape the
- * research describes: at the design scale the row bound holds 30 entries of half
- * a million rows, and the Editor's own geometry makes a graph of hundreds of
- * Steps something nobody has built. So this ceiling only ever binds on entries
- * that cost no rows, which is exactly the class it exists for, and a thousand of
- * those is far more than a session of editing produces.
+ * **What 1,000 actually does, as arithmetic rather than as a hope.** The two
+ * ceilings cross at `maxRows / maxEntries` = 15,000 rows per entry: **above that
+ * average the row ceiling binds first, below it this one does.** So for an
+ * ordinary departmental CSV — a few thousand rows — this is the ceiling that
+ * runs, and the row ceiling never does. Review round 2 found the first version of
+ * this comment claiming the opposite ("only ever binds on entries that cost no
+ * rows"), which the arithmetic disproves.
+ *
+ * That is the intended behaviour, now that it is stated. What the number has to
+ * be large enough for is a *working set*, not a session's history: the entries
+ * beyond it are the least recently used, which are the configs the user moved
+ * away from, and 1,000 is ~33 distinct configs per Step across a 30-Step graph —
+ * far more than any live working set, and reached only by a user who has tried a
+ * thousand different Steps without the row ceiling intervening. Correctness is
+ * untouched either way, because an eviction is a miss and never a wrong answer;
+ * what the number buys is that the `Map` cannot grow without limit for a class of
+ * entries the row ceiling cannot see.
+ *
+ * It is deliberately **not** raised to 15,000 — the value that would make the row
+ * ceiling bind first at a thousand rows an entry. Fifteen thousand retained
+ * tables is a slot bound that bounds nothing anyone would notice, and each entry
+ * pins its input's columns against collection (see the ledger), so "cheap" here
+ * is about the entry rather than about what the entry holds alive.
  */
 export const DEFAULT_MAX_ENTRIES = 1_000
 

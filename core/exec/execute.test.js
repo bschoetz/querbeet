@@ -8,6 +8,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { CODE, executeGraph } from './execute.js'
 import { createRunCache } from './cache.js'
+import { canonical, forgetRefusals } from './cache-key.js'
 import { createGraphStore } from '../graph/graph-store.js'
 
 const { createArqueroEngine } = await import('../../adapters/arquero/engine.js')
@@ -606,12 +607,20 @@ describe('the per-Step cache', () => {
     const first = runCached(graph, { cache: tiny, engine: e })
     // The Filter's insert evicts **nothing** — eviction stops at one entry, so an
     // entry over the bound stands alone rather than being refused. It is the
-    // Columns insert that pushes the size to two and evicts the Filter, and the
-    // survivor counted here is therefore Columns.
+    // Columns insert that pushes the size to two and evicts the Filter, so the
+    // survivor is Columns.
     expect(tiny.size()).toBe(1)
+    expect(e.calls).toEqual({ filter: 1, selectColumns: 1 })
     const second = runCached(graph, { cache: tiny, engine: e })
 
-    expect(e.calls.filter).toBe(2) // evicted, so recomputed
+    // **Both counters, because both are the claim.** `filter: 2` says the Filter
+    // did not survive run 1 — had the survivor been the Filter instead of Columns
+    // it would have hit and stayed at 1. `selectColumns: 2` says Columns did not
+    // survive run 2 either: recomputing the Filter re-stores it, which evicts
+    // Columns in turn. A bound that fits one entry over a two-entry chain
+    // thrashes, and thrashing is a miss and never a wrong answer — which is the
+    // rest of this case.
+    expect(e.calls).toEqual({ filter: 2, selectColumns: 2 })
     expect(second.results.get(filter).rowCount).toBe(first.results.get(filter).rowCount)
     expect(second.results.get(filter).diagnostics).toEqual(first.results.get(filter).diagnostics)
     expect([...second.results.get(columns).table.rows()]).toEqual([
@@ -655,6 +664,34 @@ describe('the per-Step cache', () => {
 
     expect(out.ok).toBe(false)
     expect(cache.size()).toBe(0)
+  })
+
+  it('contains a refusal from the `sourceKey` door as it does from its own key', () => {
+    // `sourceKey` is a **door**: `executeGraph` does not know what is behind it.
+    // `ui/EditorPane.vue`'s implementation contains its own refusals because
+    // `stepZeroKey` does, so this was a hole in the contract rather than a live
+    // defect — and a hole a second caller would have found on a render path
+    // (review round 2). The two doors now behave alike.
+    const { graph, columns } = configured()
+    const cache = createRunCache()
+    const e = countingEngine()
+
+    forgetRefusals()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const out = runCached(graph, {
+        cache,
+        engine: e,
+        sourceKey: () => canonical({ at: new Date(0) }), // a door that throws
+      })
+
+      expect(out.ok).toBe(true)
+      expect(out.results.get(columns).rowCount).toBe(2)
+      expect(cache.size()).toBe(0)
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('caches nothing below a Source it cannot key, rather than guessing one', () => {
@@ -705,6 +742,7 @@ describe('the per-Step cache', () => {
     graph.setResult(first)
     expect(graph.configureStep(first, { count: 3, end: undefined }).ok).toBe(true)
 
+    forgetRefusals() // each distinct message is warned once, so start from silence
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       const uncached = executeGraph({

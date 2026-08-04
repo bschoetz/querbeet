@@ -15,8 +15,17 @@
 //   tested here, because no store command can produce that state: a new file is
 //   a new `addSource` with a newly minted id, and AD-14 never reuses one.
 
-import { describe, expect, it } from 'vitest'
-import { canonical, digest, digestBytes, sourceKey, stepKey } from './cache-key.js'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  CanonicalRefusal,
+  canonical,
+  digest,
+  digestBytes,
+  forgetRefusals,
+  keyOrNull,
+  sourceKey,
+  stepKey,
+} from './cache-key.js'
 
 const utf8 = (s) => new TextEncoder().encode(s).buffer
 
@@ -226,5 +235,92 @@ describe('key(step)', () => {
 
   it('refuses a config the serializer cannot encode, rather than sharing a key', () => {
     expect(() => stepKey('filter', { at: new Date(0) }, [INPUT])).toThrow(/Date at/)
+  })
+})
+
+// ------------------------------------------- the containment (7a review r1/r2)
+//
+// `keyOrNull` is what keeps a `canonical` refusal from leaving the module that
+// asked for a key: both callers sit on a render path, so an escape is a blank
+// pane and it breaks the frozen rule that a cached run and an uncached run are
+// indistinguishable except in time. It is exported, so it is tested here rather
+// than only through its two callers.
+
+describe('keyOrNull', () => {
+  beforeEach(forgetRefusals)
+
+  it('passes a key straight through', () => {
+    expect(keyOrNull(() => 'abc')).toBe('abc')
+  })
+
+  it('turns a refusal into a miss and says so once', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(keyOrNull(() => canonical({ at: new Date(0) }))).toBeNull()
+      expect(warn).toHaveBeenCalledTimes(1)
+      expect(warn.mock.calls[0][0]).toMatch(/^querbeet: not cacheable — canonical: cannot serialize a Date at \$\.at$/)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('says each distinct message once and no more', () => {
+    // The architecture's amended logging row requires it, and the reason is
+    // frequency rather than tidiness: `stepZeroKey` runs per Source per run and
+    // `executeGraph` on every data-affecting command, so a warning per occurrence
+    // fires at keystroke frequency and buries the errors it sits among. Round 1
+    // argued for repetition and was overruled.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      for (let i = 0; i < 5; i += 1) keyOrNull(() => canonical({ at: new Date(0) }))
+      expect(warn).toHaveBeenCalledTimes(1)
+
+      keyOrNull(() => canonical({ somewhere: new Date(0) })) // a different path
+      expect(warn).toHaveBeenCalledTimes(2)
+
+      forgetRefusals()
+      keyOrNull(() => canonical({ at: new Date(0) }))
+      expect(warn).toHaveBeenCalledTimes(3)
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('does not swallow a caller bug — only a refusal is contained', () => {
+    // `stepKey`'s and `sourceKey`'s guards are documented programming errors, and
+    // the house rule is that the core throws only on one of those. Catching them
+    // alongside a refusal made both guards unable to fail, which is round 2's
+    // finding: three failure classes, one silent outcome.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      expect(() => keyOrNull(() => stepKey('filter', {}, [null]))).toThrow(/key for every input/)
+      expect(() => keyOrNull(() => stepKey(undefined, {}, []))).toThrow(/needs the Step kind/)
+      expect(() => keyOrNull(() => sourceKey({ parseConfig: null, encoding: null }))).toThrow(
+        /byteDigest/,
+      )
+      expect(warn).not.toHaveBeenCalled()
+    } finally {
+      warn.mockRestore()
+    }
+  })
+
+  it('does not swallow anything that is not an Error at all', () => {
+    // What the round-1 blanket `catch` turned into `[object Object]` in a warning
+    // and a silent `null`. Nothing throws a bare object today; the point is that
+    // the containment is a statement about one class and not about `try`.
+    expect(() => keyOrNull(() => { throw { why: 'not an Error' } })).toThrow()
+    expect(() =>
+      keyOrNull(() => {
+        throw new RangeError('something else entirely')
+      }),
+    ).toThrow(RangeError)
+  })
+
+  it('marks a refusal as its own class, which is what makes the narrowing possible', () => {
+    // A `TypeError` subclass, so every `toThrow(TypeError)` written before it
+    // existed still holds.
+    expect(() => canonical(undefined)).toThrow(CanonicalRefusal)
+    expect(() => canonical(undefined)).toThrow(TypeError)
+    expect(() => stepKey(undefined, {}, [])).not.toThrow(CanonicalRefusal)
   })
 })

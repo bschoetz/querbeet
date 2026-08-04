@@ -21,7 +21,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { BOOLEAN, DATE, DATETIME, DURATION, NUMBER, TEXT, TIME } from '../types/catalog.js'
 import { bestFormat, detectColumn, scoreColumn } from '../types/typing.js'
-import { digest } from './cache-key.js'
+import { digest, forgetRefusals } from './cache-key.js'
 import { convertSource, createStepZeroCache, stepZeroKey } from './convert.js'
 
 /** An engine that hands the columns straight back, so a test can read what the
@@ -668,6 +668,7 @@ describe('what stepZeroKey refuses to key', () => {
     // field yet is *not keyable*, which is ordinary, while a `canonical` refusal
     // means a config exists that no key can describe, which a developer has to
     // see. Warning about the first would bury the second.
+    forgetRefusals()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       expect(stepZeroKey(null)).toBeNull()
@@ -691,6 +692,7 @@ describe('what stepZeroKey refuses to key', () => {
       typing: { columns: [{ name: 'Betrag', detectedAt: new Date(0) }], confirmed: true },
     }
 
+    forgetRefusals()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       expect(stepZeroKey(hostile)).toBeNull()
@@ -711,6 +713,7 @@ describe('what stepZeroKey refuses to key', () => {
       },
     }
 
+    forgetRefusals()
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     try {
       expect(() => cache.of(hostile)).not.toThrow()

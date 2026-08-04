@@ -1544,16 +1544,63 @@ describe('a withdrawn Source withdraws the run cache', () => {
     expect(runCache.cleared.count).toBe(1)
   })
 
-  it('leaves it alone for every command that withdraws nothing', async () => {
-    // A rename, an annotation and a confirmation all change what the pane shows
-    // and none of them takes a vouched-for typing back. Clearing on those would
-    // make the cache useless without making anything safer.
+  it('clears it when a column is retyped, which unmakes the confirmation', async () => {
+    // `setColumnTyping` commits `confirmed: false` — a type the user changed is a
+    // typing nobody has vouched for yet — so it withdraws exactly as `unconfirm`
+    // does. Missed in round 1 because the rule had been written down as a list of
+    // two commands rather than as a rule.
+    const runCache = clearRecorder()
+    const store = stubStore(source([column('Betrag')]))
+    const w = await render(store, stubEngine(), runCache)
+
+    await w.find('select[aria-label="Typ: Betrag"]').setValue('number')
+
+    expect(store.calls).toContainEqual(['setColumnTyping', 'src:daten', 0, { type: 'number' }])
+    expect(runCache.cleared.count).toBe(1)
+  })
+
+  it('clears it when the Source is re-parsed under a new delimiter', async () => {
+    // A re-parse reaches `confirmed: false` through the store's `retype`, so both
+    // `reconfigureParse` and `overrideEncoding` withdraw — and they withdraw the
+    // *table* as well, which is the half a typing command does not.
+    const runCache = clearRecorder()
+    const store = stubStore(source([column('Betrag')]))
+    const w = await render(store, stubEngine(), runCache)
+
+    await w.find('select[aria-label="Trennzeichen"]').setValue(';')
+    await flushPromises()
+
+    expect(store.calls).toContainEqual(['reconfigureParse', 'src:daten', { delimiter: ';' }])
+    expect(runCache.cleared.count).toBe(1)
+  })
+
+  it('clears it when the encoding is overridden, which re-parses too', async () => {
+    const runCache = clearRecorder()
+    const store = stubStore(source([column('Betrag')]))
+    const w = await render(store, stubEngine(), runCache)
+
+    await w.find('select[aria-label="Zeichenkodierung"]').setValue('windows-1252')
+    await flushPromises()
+
+    expect(store.calls).toContainEqual(['overrideEncoding', 'src:daten', 'windows-1252'])
+    expect(runCache.cleared.count).toBe(1)
+  })
+
+  it('leaves it alone for a rename and a confirmation, which withdraw nothing', async () => {
+    // The complement of the rule, and it is narrower than its round-1 name
+    // ("every command that withdraws nothing") claimed: these two are the
+    // commands that leave a confirmation standing, and `annotateColumn` is the
+    // third. Clearing on those would make the cache useless without making
+    // anything safer.
     const runCache = clearRecorder()
     const w = await render(stubStore(source([column('Betrag')])), stubEngine(), runCache)
 
     const name = w.find('input[aria-label="Name"]')
     name.element.value = 'Umsatz'
     await name.trigger('change')
+    const note = w.find('input[aria-label="Notiz: Betrag"]')
+    note.element.value = 'in Euro'
+    await note.trigger('change')
     await w.find('[aria-label="Typen bestätigen: daten"]').trigger('click')
 
     expect(runCache.cleared.count).toBe(0)

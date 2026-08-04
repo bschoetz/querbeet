@@ -131,6 +131,26 @@ export function digest(text) {
   return hex(a) + hex(b) + hex(c) + hex(d)
 }
 
+/**
+ * What `canonical` throws, and **nothing else in this file throws it.**
+ *
+ * Three different failures reach a caller of this module and only one of them is
+ * a state of the data: a value the grammar cannot encode. The other two —
+ * `stepKey` handed a non-string kind, `sourceKey` handed an entry with no digest
+ * — are documented caller bugs, and the house rule is that the core throws only
+ * on a programming error. Before review round 2 `keyOrNull` caught all three
+ * alike, which turned both guards into a silent cache miss and made "a missing
+ * input key is a caller's bug rather than a state" a sentence with nothing behind
+ * it. A named class is the narrowest thing that tells them apart, and it is a
+ * `TypeError` subclass so every existing `toThrow(TypeError)` still holds.
+ */
+export class CanonicalRefusal extends TypeError {
+  constructor(message) {
+    super(message)
+    this.name = 'CanonicalRefusal'
+  }
+}
+
 const isPlainObject = (value) => {
   const proto = Object.getPrototypeOf(value)
   return proto === Object.prototype || proto === null
@@ -196,7 +216,7 @@ export function canonical(value, path = '$') {
 
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) {
-      throw new TypeError(`canonical: cannot serialize ${describe(value)} at ${path}`)
+      throw new CanonicalRefusal(`canonical: cannot serialize ${describe(value)} at ${path}`)
     }
     // `String` is the specified number-to-string algorithm — shortest round-
     // tripping decimal, identical on every engine. `-0` renders as `0`, which
@@ -228,7 +248,7 @@ export function canonical(value, path = '$') {
     return out
   }
 
-  throw new TypeError(`canonical: cannot serialize ${describe(value)} at ${path}`)
+  throw new CanonicalRefusal(`canonical: cannot serialize ${describe(value)} at ${path}`)
 }
 
 /**
@@ -279,6 +299,30 @@ export function stepKey(kind, config, inputKeys) {
 }
 
 /**
+ * Every refusal message already reported, so each is said once.
+ *
+ * Module state in `core/`, which this story otherwise refuses — both caches are
+ * closures handed in from outside for exactly that reason. It is admitted here
+ * because it is not domain state and no answer this module gives depends on it:
+ * clearing it changes what a developer sees and nothing else. It is bounded by
+ * the number of distinct *messages*, and a message names a path in a config
+ * rather than a value, so it cannot grow with the data.
+ */
+const reported = new Set()
+
+/**
+ * Forget which refusals have been reported.
+ *
+ * For a test — the same reason `createStepZeroCache().size` exists — because a
+ * suite that asserts the warning cannot afford to depend on which case ran
+ * first. Nothing in the product calls it; a session reset would be its second
+ * caller if one is ever built.
+ */
+export function forgetRefusals() {
+  reported.clear()
+}
+
+/**
  * A key, or `null` where one could not be minted — **the only form the two
  * callers use.**
  *
@@ -303,14 +347,25 @@ export function stepKey(kind, config, inputKeys) {
  * refusal unreachable *today* and leave it reachable the moment story 14 loads a
  * Recipe somebody else wrote.
  *
+ * **Only a `CanonicalRefusal` is contained.** `stepKey`'s and `sourceKey`'s own
+ * guards are documented caller bugs — a non-string kind, an input with no key, an
+ * entry with no digest — and the house rule is that the core throws only on a
+ * programming error. Catching those alongside a refusal turned three failure
+ * classes into one silent miss and left both guards unable to fail; narrowed in
+ * review round 2. Neither guard is reachable from either caller (the executor
+ * checks every input key is a string, `stepZeroKey` checks all four fields), so
+ * narrowing costs nothing and restores what the guards are for.
+ *
  * **The refusal is reported, not swallowed.** It is the one signal in this cache
  * that means a programming or format error rather than a cold entry, and a
  * developer who never sees it will conclude the cache works and wonder why it
- * never hits. It goes to `console.warn` and nowhere else: no Diagnostic is minted
- * (the frozen Never — no new code, no new German sentence), because the user has
- * nothing to do about it and the run they get is correct. That is the whole of
- * the exception to "diagnostics are the only reporting channel"; this file is the
- * only one in `core/` that names `console`, and the lint config says so.
+ * never hits. It goes to `console.warn` and nowhere else, under the four
+ * conditions the architecture's amended **Cross-cutting — logging** row states
+ * (owner decision, 2026-08-05) — including the fourth, **once per distinct
+ * message**, which is why the set below exists: `stepZeroKey` runs per Source per
+ * run and `executeGraph` runs on every data-affecting command, so an
+ * un-deduplicated warning fires at keystroke frequency and buries the errors it
+ * sits among. Round 1 argued the opposite and was overruled.
  *
  * @param {() => string} mint the key computation to contain
  * @returns {string|null}
@@ -319,10 +374,11 @@ export function keyOrNull(mint) {
   try {
     return mint()
   } catch (refusal) {
-    // Not de-duplicated, deliberately: a run repeats the refusal because the
-    // state repeats, and a warning that appears once and then goes quiet is one
-    // a developer scrolls past. The path is unreachable through the shipped UI.
-    console.warn(`querbeet: not cacheable — ${refusal?.message ?? refusal}`)
+    if (!(refusal instanceof CanonicalRefusal)) throw refusal
+    if (!reported.has(refusal.message)) {
+      reported.add(refusal.message)
+      console.warn(`querbeet: not cacheable — ${refusal.message}`)
+    }
     return null
   }
 }
