@@ -65,10 +65,20 @@
 // way (809,784 against 751,955). The decision to move to `ColumnTable` was taken
 // against the premise that the verbs exist only as its methods, which is true and
 // turned out not to be the constraint: `create` + `BitSet` is what those methods
-// reduce to, and it is public. The class is **not** changed here, because the
-// premise was the project owner's to weigh and reversing an approved decision on
-// a measurement they have not seen would be the wrong way round. The measurement
-// is in the deferred-work ledger with both numbers.
+// reduce to, and it is public.
+//
+// **Re-decided with the project owner on 2026-08-04, with that measurement in
+// front of them, and the answer is that `ColumnTable` stays.** Two reasons, both
+// checkable here. The bytes are measured against no gate — `scripts/assert-
+// single-file.mjs` prints the artefact size and asserts nothing about it, and no
+// artefact-size budget exists; memory is what is budgeted, and it is identical on
+// both classes. And the four Step kinds `executorGaps()` still names — union,
+// join, computed, aggregate — map onto methods that exist *only* on this class
+// (`union`/`concat`, `join`/`join_left`, `derive`, `groupby`+`rollup`), of which
+// only Computed is ruled out by AD-30 anyway. Dropping the class now to save
+// bytes nobody counts would most likely put it back at story 8. Should artefact
+// size ever become a product concern, the owner's answer is a separate light
+// viewer rather than shrinking this application. Ledger entry closed.
 //
 // **The two verbs are built from `create` and `BitSet` rather than from
 // `table.filter()` and `table.select()`, and that is a decision rather than an
