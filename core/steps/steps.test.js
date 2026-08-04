@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest'
 import { CODE, executorGaps, hasExecutor, stepKind } from './index.js'
 import { COMBINES, OPERATORS, valueKind } from './filter.js'
+import { DIRECTIONS } from './sort.js'
 
 const { createArqueroEngine } = await import('../../adapters/arquero/engine.js')
 
@@ -40,6 +41,8 @@ const DATES = {
 
 const filter = stepKind('filter')
 const columns = stepKind('columns')
+const sort = stepKind('sort')
+const first = stepKind('first')
 
 const codesOf = (diagnostics) => diagnostics.map((d) => d.code)
 const rowsOf = (t) => [...t.rows()]
@@ -52,6 +55,8 @@ describe('the registry', () => {
     expect(executorGaps()).toEqual(['union', 'join', 'computed', 'aggregate'])
     expect(hasExecutor('filter')).toBe(true)
     expect(hasExecutor('columns')).toBe(true)
+    expect(hasExecutor('sort')).toBe(true)
+    expect(hasExecutor('first')).toBe(true)
     expect(hasExecutor('source')).toBe(false)
   })
 
@@ -383,5 +388,295 @@ describe('a Columns execution', () => {
 
     expect(out.rowCount()).toBe(2)
     expect(rowsOf(out).map((r) => r.Kunde)).toEqual(['Anna', 'Carla'])
+  })
+})
+
+// ---------------------------------------------------------------------- Sort
+
+describe('a Sort’s configuration', () => {
+  it('starts empty, so a freshly added Step passes every row in input order', () => {
+    const config = sort.defaultConfig()
+    expect(config).toEqual({ keys: [] })
+    expect(sort.validate(config).ok).toBe(true)
+
+    const input = table([NAMES, AMOUNTS])
+    const { table: out, diagnostics } = sort.apply(engine, [input], config)
+
+    // The identity is the input handle itself: no copy, no comparator.
+    expect(out).toBe(input)
+    expect(diagnostics).toEqual([])
+  })
+
+  it('refuses a shape that is not a configuration, naming the field', () => {
+    const refusals = (config) => sort.validate(config).diagnostics.map((d) => d.values.field)
+
+    expect(refusals(null)).toEqual(['config'])
+    expect(refusals({ keys: 'nope' })).toEqual(['keys'])
+    expect(refusals({ keys: [{ column: '', direction: 'asc' }] })).toEqual(['key'])
+    expect(refusals({ keys: [{ column: 'Betrag', direction: 'aufwärts' }] })).toEqual(['direction'])
+  })
+
+  it('takes an absent direction as ascending, in one reader', () => {
+    expect(sort.validate({ keys: [{ column: 'Betrag' }] }).ok).toBe(true)
+    // …and the same reader decides it at execution, so the two cannot disagree.
+    const { table: out } = sort.apply(engine, [table([NAMES, AMOUNTS])], {
+      keys: [{ column: 'Betrag' }],
+    })
+    expect(rowsOf(out).map((r) => r.Betrag)).toEqual([250, 500, 1000, 1000])
+  })
+
+  it('refuses two keys naming one column, naming the column', () => {
+    // Refused at configure time, where the previous config stays in force and
+    // the user is still looking at the control that caused it — the same place
+    // CAP-16's rename collision is refused, and for the same reason: two equal
+    // keys are equal whatever flows through.
+    const { ok, diagnostics } = sort.validate({
+      keys: [
+        { column: 'Betrag', direction: 'asc' },
+        { column: 'Betrag', direction: 'desc' },
+      ],
+    })
+
+    expect(ok).toBe(false)
+    expect(diagnostics[0]).toMatchObject({
+      code: CODE.sortKeyRepeated,
+      values: { column: 'Betrag', at: 1 },
+    })
+  })
+
+  it('names a repeated column even where that key’s direction is wrong too', () => {
+    // The column is registered before the direction is judged. Returning early
+    // on the direction meant a config with both defects was refused twice,
+    // naming a different defect each time — so fixing the first one produced a
+    // *new* refusal, which reads as damage the fix caused.
+    const { ok, diagnostics } = sort.validate({
+      keys: [
+        { column: 'Betrag', direction: 'asc' },
+        { column: 'Betrag', direction: 'aufwärts' },
+      ],
+    })
+
+    expect(ok).toBe(false)
+    expect(codesOf(diagnostics)).toEqual([CODE.sortKeyRepeated, CODE.configInvalid])
+    expect(diagnostics[1].values).toMatchObject({ field: 'direction', at: 1 })
+  })
+
+  it('closes its direction vocabulary, because AD-30 forbids a formula surface', () => {
+    // Two words and no third: there is no "letzte N" downstream either, because
+    // descending plus *Erste N* is the same thing.
+    expect(DIRECTIONS).toEqual(['asc', 'desc'])
+  })
+})
+
+describe('a Sort’s execution', () => {
+  it('orders by one key in both directions, and removes nothing', () => {
+    const input = table([NAMES, AMOUNTS])
+
+    const down = sort.apply(engine, [input], { keys: [{ column: 'Betrag', direction: 'desc' }] })
+    expect(rowsOf(down.table).map((r) => r.Betrag)).toEqual([1000, 1000, 500, 250])
+    expect(down.table.rowCount()).toBe(4)
+    // A Sort takes nothing away, so it has nothing to report about counts.
+    expect(down.diagnostics).toEqual([])
+
+    const up = sort.apply(engine, [input], { keys: [{ column: 'Betrag', direction: 'asc' }] })
+    expect(rowsOf(up.table).map((r) => r.Betrag)).toEqual([250, 500, 1000, 1000])
+  })
+
+  it('puts a boxed value last in both directions, and says how many rows that was', () => {
+    const withBox = {
+      name: 'Betrag',
+      type: 'number',
+      values: [1000, 'ungefähr 500', 250, 'ca. 40'],
+      unparsed: [1, 3],
+    }
+    const input = table([NAMES, withBox])
+
+    for (const direction of ['asc', 'desc']) {
+      const { table: out, diagnostics } = sort.apply(engine, [input], {
+        keys: [{ column: 'Betrag', direction }],
+      })
+
+      // No row leaves — this is a placement, not an exclusion.
+      expect(out.rowCount()).toBe(4)
+      expect(rowsOf(out).slice(-2).map((r) => r.Kunde).sort()).toEqual(['Bernd', 'Dora'])
+      expect(diagnostics[0], `no warning going ${direction}`).toMatchObject({
+        severity: 'warning',
+        code: CODE.boxedRowsLast,
+        values: { rows: 2 },
+      })
+    }
+  })
+
+  it('puts an empty cell last in both directions, and reports nothing about it', () => {
+    // An empty cell is data the user can see in the preview and it lands where
+    // the form says it lands; a diagnostic about it would be a warning about
+    // nothing. `null < 1` is `true` in JavaScript, which is why it has to be
+    // *placed* rather than compared all the same.
+    const sparse = { name: 'Betrag', type: 'number', values: [1000, null, 250, null] }
+    const input = table([NAMES, sparse])
+
+    const up = sort.apply(engine, [input], { keys: [{ column: 'Betrag', direction: 'asc' }] })
+    expect(rowsOf(up.table).map((r) => r.Betrag)).toEqual([250, 1000, null, null])
+    expect(up.diagnostics).toEqual([])
+
+    const down = sort.apply(engine, [input], { keys: [{ column: 'Betrag', direction: 'desc' }] })
+    expect(rowsOf(down.table).map((r) => r.Betrag)).toEqual([1000, 250, null, null])
+  })
+
+  it('compares German text the way German reads it', () => {
+    const words = { name: 'Kunde', type: 'text', values: ['Äpfel', 'Apfel', 'Zebra', 'Öl'] }
+    const { table: out } = sort.apply(engine, [table([words])], {
+      keys: [{ column: 'Kunde', direction: 'asc' }],
+    })
+
+    expect(rowsOf(out).map((r) => r.Kunde)).toEqual(['Apfel', 'Äpfel', 'Öl', 'Zebra'])
+  })
+
+  it('lets a second key decide the ties the first one left', () => {
+    const groups = { name: 'Gruppe', type: 'text', values: ['b', 'a', 'b', 'a'] }
+    const { table: out } = sort.apply(engine, [table([groups, AMOUNTS])], {
+      keys: [
+        { column: 'Gruppe', direction: 'asc' },
+        { column: 'Betrag', direction: 'desc' },
+      ],
+    })
+
+    expect(rowsOf(out)).toEqual([
+      { Gruppe: 'a', Betrag: 500 },
+      { Gruppe: 'a', Betrag: 250 },
+      { Gruppe: 'b', Betrag: 1000 },
+      { Gruppe: 'b', Betrag: 1000 },
+    ])
+  })
+
+  it('keeps ties in input order, and that is promised rather than hoped for', () => {
+    const { table: out } = sort.apply(engine, [table([NAMES, AMOUNTS])], {
+      keys: [{ column: 'Betrag', direction: 'desc' }],
+    })
+
+    // Anna and Carla both hold 1000, and Anna came first.
+    expect(rowsOf(out).map((r) => r.Kunde)).toEqual(['Anna', 'Carla', 'Bernd', 'Dora'])
+  })
+
+  it('orders a temporal column, which the adapter holds as `BigInt` nanoseconds', () => {
+    const { table: out } = sort.apply(engine, [table([NAMES, DATES])], {
+      keys: [{ column: 'Datum', direction: 'desc' }],
+    })
+
+    // 01.03.2026, 31.12.2025, 15.06.2025, 31.12.2024.
+    expect(rowsOf(out).map((r) => r.Kunde)).toEqual(['Carla', 'Anna', 'Dora', 'Bernd'])
+  })
+
+  it('refines the order of a Sort upstream rather than replacing it', () => {
+    // Two Sort Steps in a row are an ordinary build — „nach Gruppe sortieren,
+    // darin das Größte zuerst" — and the second one must tie-break on the
+    // first's order rather than fall back to the input's. Without the chained
+    // comparator this read `500, 250, 1000, 1000` by Gruppe: the inner order was
+    // simply gone.
+    const groups = { name: 'Gruppe', type: 'text', values: ['b', 'a', 'b', 'a'] }
+    const inner = sort.apply(engine, [table([groups, AMOUNTS])], {
+      keys: [{ column: 'Betrag', direction: 'desc' }],
+    }).table
+    expect(rowsOf(inner).map((r) => r.Betrag)).toEqual([1000, 1000, 500, 250])
+
+    const { table: out } = sort.apply(engine, [inner], {
+      keys: [{ column: 'Gruppe', direction: 'asc' }],
+    })
+
+    expect(rowsOf(out)).toEqual([
+      { Gruppe: 'a', Betrag: 500 },
+      { Gruppe: 'a', Betrag: 250 },
+      { Gruppe: 'b', Betrag: 1000 },
+      { Gruppe: 'b', Betrag: 1000 },
+    ])
+
+    // …and „die ersten N" over the chain is still the first N of what is on
+    // screen, which is the whole reproducibility argument.
+    expect(rowsOf(first.apply(engine, [out], { count: 2 }).table)).toEqual([
+      { Gruppe: 'a', Betrag: 500 },
+      { Gruppe: 'a', Betrag: 250 },
+    ])
+  })
+
+  it('refuses a column its input no longer has, naming every one of them', () => {
+    const { table: out, diagnostics } = sort.apply(engine, [table([NAMES])], {
+      keys: [
+        { column: 'Betrag', direction: 'asc' },
+        { column: 'Datum', direction: 'asc' },
+      ],
+    })
+
+    expect(out).toBeNull()
+    expect(codesOf(diagnostics)).toEqual([CODE.unknownColumn, CODE.unknownColumn])
+    expect(diagnostics.map((d) => d.values.column)).toEqual(['Betrag', 'Datum'])
+  })
+})
+
+// ------------------------------------------------------------------- First N
+
+describe('a First-N’s configuration', () => {
+  it('starts without a count, so a freshly added Step lets every row through', () => {
+    const config = first.defaultConfig()
+    expect(config).toEqual({ count: null })
+    expect(first.validate(config).ok).toBe(true)
+
+    const input = table([NAMES, AMOUNTS])
+    const { table: out, diagnostics } = first.apply(engine, [input], config)
+
+    expect(out).toBe(input)
+    expect(diagnostics).toEqual([])
+  })
+
+  it('refuses anything that is not a count, and `null` is not one of them', () => {
+    // `0`, `-1` and `2.5` are shapes a Recipe out of a language model produces,
+    // and each would otherwise reach the engine as a row range nobody asked for.
+    // `null` says "no limit set" where `0` would have to mean either "no rows"
+    // or "not set", and only one of those can be true.
+    for (const count of [0, -1, 2.5, '3', Number.NaN, Infinity, {}]) {
+      expect(first.validate({ count }).ok, `accepted ${String(count)} as a count`).toBe(false)
+    }
+    expect(first.validate({ count: null }).ok).toBe(true)
+    expect(first.validate({}).ok).toBe(true)
+    expect(first.validate({ count: 1 }).ok).toBe(true)
+    // …and the refusal names the field the panel is showing.
+    expect(first.validate({ count: 0 }).diagnostics[0]).toMatchObject({
+      code: CODE.configInvalid,
+      values: { field: 'count' },
+    })
+    expect(first.validate(null).diagnostics[0].values.field).toBe('config')
+  })
+})
+
+describe('a First-N’s execution', () => {
+  it('keeps the first N rows and counts what went', () => {
+    const { table: out, diagnostics } = first.apply(engine, [table([NAMES, AMOUNTS])], { count: 3 })
+
+    expect(rowsOf(out).map((r) => r.Kunde)).toEqual(['Anna', 'Bernd', 'Carla'])
+    expect(diagnostics[0]).toMatchObject({
+      severity: 'info',
+      code: CODE.rowsRemoved,
+      values: { removed: 1, kept: 3 },
+    })
+  })
+
+  it('keeps every row for a count at or above the row count, and says nothing went', () => {
+    // Not an error: the honest limit is the data, so no upper bound is invented
+    // and the Step reports rather than refuses.
+    const { table: out, diagnostics } = first.apply(engine, [table([NAMES])], { count: 1000 })
+
+    expect(out.rowCount()).toBe(4)
+    expect(diagnostics[0]).toMatchObject({ code: CODE.rowsRemoved, values: { removed: 0, kept: 4 } })
+  })
+
+  it('takes the first N of the order a Sort upstream produced', () => {
+    // The owner's case, as two Steps: *take the three largest and carry them on*.
+    const ordered = sort.apply(engine, [table([NAMES, AMOUNTS])], {
+      keys: [{ column: 'Betrag', direction: 'desc' }],
+    }).table
+
+    const { table: out } = first.apply(engine, [ordered], { count: 3 })
+
+    expect(rowsOf(out).map((r) => r.Kunde)).toEqual(['Anna', 'Carla', 'Bernd'])
+    expect(rowsOf(out).map((r) => r.Betrag)).toEqual([1000, 1000, 500])
   })
 })

@@ -8,7 +8,15 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { createGraphStore } from '@core/graph/graph-store.js'
-import { graphLabelGaps, kindLabelGaps, operatorLabelGaps } from '@ui/graph-labels.js'
+import { error } from '@core/diagnostics/diagnostic.js'
+import { CODE } from '@core/steps/index.js'
+import {
+  directionLabelGaps,
+  graphLabelGaps,
+  graphText,
+  kindLabelGaps,
+  operatorLabelGaps,
+} from '@ui/graph-labels.js'
 import StepCard from './StepCard.vue'
 
 const step = (over = {}) => ({
@@ -46,6 +54,43 @@ describe('the German maps', () => {
     // the Filter's closed operator and combination vocabulary, which reaches the
     // screen as select options rather than as diagnostics.
     expect(operatorLabelGaps()).toEqual([])
+    // Story 6d added a fourth closed vocabulary behind the same invariant: a
+    // sort key's direction, which reaches the screen as a select option, so a
+    // missing word here would put a raw `asc` in front of the user.
+    expect(directionLabelGaps()).toEqual([])
+  })
+
+  it('names the column in the Sort’s refusal, and never the core’s own field name', () => {
+    // CAP-40's configure-time refusal is the one a loaded Recipe reaches: the
+    // form never offers a column another key already sorts by, so this sentence
+    // is what a Recipe out of a language model meets. It has to name the column,
+    // because "already taken" alone says nothing about what to change.
+    const said = graphText(error(CODE.sortKeyRepeated, { column: 'Betrag', at: 1 }))
+
+    expect(said).toContain('„Betrag“')
+    expect(said).toContain('bleibt in Kraft')
+
+    // The two kinds share `step.config_invalid`, and `at` alone cannot tell a
+    // sort key from a filter condition — so the field decides the word, and the
+    // field itself never reaches the screen (NFR-6).
+    const key = graphText(error(CODE.configInvalid, { field: 'key', at: 1 }))
+    expect(key).toContain('Sortierung 2')
+    expect(key).toContain('unvollständig')
+    expect(key).not.toContain('key')
+
+    // A key with no column has not finished; a key whose direction is neither
+    // word is complete and *wrong*, which is the shape a loaded Recipe arrives
+    // in. „Unvollständig" over the second would send its author looking for
+    // something missing — so the two states get two sentences.
+    const direction = graphText(error(CODE.configInvalid, { field: 'direction', at: 0, value: 'up' }))
+    expect(direction).toContain('Sortierung 1')
+    expect(direction).toContain('keine gültige Richtung')
+    expect(direction).not.toContain('unvollständig')
+    expect(direction).not.toMatch(/\b(asc|desc|direction|up)\b/)
+
+    const count = graphText(error(CODE.configInvalid, { field: 'count', value: '0' }))
+    expect(count).toContain('ganze Zahl ab 1')
+    expect(count).not.toContain('count')
   })
 })
 

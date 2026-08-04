@@ -203,6 +203,89 @@ test('a Step keeps its own preview while another Step is the Result', async ({ p
   await expect(panel(page).getByTestId('step-counts')).toHaveText('10 Zeilen, 3 Spalten')
 })
 
+// -------------------------------------------------------- the owner's case
+//
+// *Take the N largest records and carry them on.* Two Steps, because sorting
+// alone only reorders — and the row that could not be read is the one this case
+// exists for: it must be **last** rather than gone, and it must be said out loud
+// at the Step that placed it.
+
+test('Sortieren then Erste 3 carries the three largest on, with the unreadable row last', async ({
+  page,
+}) => {
+  await pick(page, REPORT)
+  await confirm(page, 'umsatz')
+  await toEditor(page)
+
+  await page.getByRole('button', { name: '+ Sortieren' }).click()
+  await card(page, 'Sortieren: Sortieren')
+    .getByLabel('Eingang 1', { exact: true })
+    .selectOption({ label: 'umsatz' })
+
+  await select(page, 'Sortieren: Sortieren')
+  // Unconfigured, so it is the identity — the chain stays readable while it is
+  // being built, exactly as a freshly added Filter does.
+  await expect(panel(page).getByTestId('sort-none')).toContainText(
+    'die Zeilen bleiben in der Reihenfolge des Eingangs',
+  )
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('10 Zeilen, 3 Spalten')
+
+  await panel(page).getByRole('button', { name: 'Sortierung hinzufügen' }).click()
+  await panel(page).getByLabel('Spalte der Sortierung 1').selectOption('Betrag')
+  await panel(page).getByLabel('Richtung der Sortierung 1').selectOption('desc')
+
+  // A Sort removes nothing.
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('10 Zeilen, 3 Spalten')
+  await expect(panel(page).getByTestId('step-preview-row').first()).toContainText('1.234,56')
+  // **The assertion the whole verb exists for.** `abc` is not a number, so the
+  // row is placed rather than compared — and it is placed *last*, in a
+  // descending order where the engine's own comparator put it in the middle and
+  // dragged unrelated rows with it, differently in each browser.
+  await expect(panel(page).getByTestId('step-preview-row').last()).toContainText('Jutta')
+  await expect(
+    panel(page).getByTestId('step-panel-mark').filter({ hasText: 'Warnung' }),
+  ).toContainText('1 Zeile hat in einer Sortierspalte einen Wert')
+
+  // …and the same row is still last the other way round, which is what makes
+  // the placement a rule rather than an accident of one direction.
+  await panel(page).getByLabel('Richtung der Sortierung 1').selectOption('asc')
+  await expect(panel(page).getByTestId('step-preview-row').first()).toContainText('0,99')
+  await expect(panel(page).getByTestId('step-preview-row').last()).toContainText('Jutta')
+  await panel(page).getByLabel('Richtung der Sortierung 1').selectOption('desc')
+
+  await page.getByRole('button', { name: '+ Erste N' }).click()
+  await card(page, 'Erste N: Erste N')
+    .getByLabel('Eingang 1', { exact: true })
+    .selectOption({ label: 'Sortieren' })
+  await card(page, 'Erste N: Erste N')
+    .getByRole('button', { name: 'Als Ergebnis-Step setzen' })
+    .click()
+
+  await select(page, 'Erste N: Erste N')
+  // No count yet, so it is the identity too.
+  await expect(panel(page).getByTestId('first-count-pending')).toContainText('alle Zeilen bleiben')
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('10 Zeilen, 3 Spalten')
+
+  await enter(panel(page).getByLabel('Anzahl Zeilen'), '3')
+
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('3 Zeilen, 3 Spalten')
+  await expect(panel(page)).toContainText('7 Zeilen entfernt, 3 Zeilen übrig.')
+  // 1.234,56 · 100,00 · 80,00 — the sorted order survives the limit, which is
+  // what makes „die 10 neuesten“ two ordinary Steps rather than a special case.
+  const shown = await panel(page).getByTestId('step-preview-row').allInnerTexts()
+  expect(shown).toHaveLength(3)
+  expect(shown[0]).toContain('Anna')
+  expect(shown[1]).toContain('Ingo')
+  expect(shown[2]).toContain('Bernd')
+
+  // An empty field leaves the stored count computing rather than lifting it.
+  await enter(panel(page).getByLabel('Anzahl Zeilen'), '')
+  await expect(panel(page).getByTestId('first-count-pending')).toContainText(
+    'die vorherige bleibt in Kraft',
+  )
+  await expect(panel(page).getByTestId('step-counts')).toHaveText('3 Zeilen, 3 Spalten')
+})
+
 // ------------------------------------------------------------- the refusals
 
 test('a Step whose column vanished refuses by name, and the Step downstream names it', async ({

@@ -29,15 +29,31 @@ export const UNION = 'union'
 export const JOIN = 'join'
 export const FILTER = 'filter'
 export const COLUMNS = 'columns'
+export const SORT = 'sort'
+export const FIRST = 'first'
 export const COMPUTED = 'computed'
 export const AGGREGATE = 'aggregate'
 
+// `sort` and `first` join the list beside `columns` rather than at the end, and
+// the position is the SPEC's: CAP-40 is written after CAP-16 because it is the
+// same promise about rows that CAP-16 makes about columns, and this list has
+// followed the capability order since it was cut. The order is what the toolbar
+// offers and what `executorGaps()` reports in, so it is a visible fact rather
+// than an internal one.
+//
+// **Two kinds rather than one**, decided 2026-08-04 with the project owner:
+// sorting alone only reorders and the owner's case — *take the ten newest
+// records and carry them on* — needs both, so each stays one verb and they
+// compose. There is deliberately no "letzte N": descending plus *Erste N* is the
+// same thing, and a second verb would be a second thing to explain.
 export const KINDS = Object.freeze([
   Object.freeze({ code: SOURCE, minInputs: 0, maxInputs: 0, addable: false }),
   Object.freeze({ code: UNION, minInputs: 2, maxInputs: Infinity, addable: true }),
   Object.freeze({ code: JOIN, minInputs: 2, maxInputs: 2, addable: true }),
   Object.freeze({ code: FILTER, minInputs: 1, maxInputs: 1, addable: true }),
   Object.freeze({ code: COLUMNS, minInputs: 1, maxInputs: 1, addable: true }),
+  Object.freeze({ code: SORT, minInputs: 1, maxInputs: 1, addable: true }),
+  Object.freeze({ code: FIRST, minInputs: 1, maxInputs: 1, addable: true }),
   Object.freeze({ code: COMPUTED, minInputs: 1, maxInputs: 1, addable: true }),
   Object.freeze({ code: AGGREGATE, minInputs: 1, maxInputs: 1, addable: true }),
 ])

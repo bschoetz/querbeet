@@ -582,6 +582,229 @@ describe('the Columns form', () => {
   })
 })
 
+// ---------------------------------------------------------------- Sortieren
+
+describe('the Sort form', () => {
+  const sortStep = (config = null) => step({ kind: 'sort', name: 'Neueste zuerst', config })
+  const keys = (w) => w.findAll('[data-testid="sort-key"]')
+
+  it('opens with no key at all, and says the rows keep their input order', async () => {
+    const w = await render({ step: sortStep(), label: 'Sortieren: Neueste zuerst' })
+
+    expect(keys(w)).toHaveLength(0)
+    expect(w.find('[data-testid="sort-none"]').text()).toContain(
+      'die Zeilen bleiben in der Reihenfolge des Eingangs',
+    )
+    expect(w.emitted('configure')).toBeUndefined()
+  })
+
+  it('adds a key over the first column, ascending, and sends it at once', async () => {
+    // Unlike a Filter condition there is nothing left to wait for: a key is a
+    // column and a direction, and both are chosen the moment it exists.
+    const w = await render({ step: sortStep(), label: 'Sortieren' })
+    await press(w, 'Sortierung hinzufügen').trigger('click')
+
+    expect(keys(w)).toHaveLength(1)
+    expect(configured(w)).toEqual({ keys: [{ column: 'Kunde', direction: 'asc' }] })
+  })
+
+  it('offers the two directions in German, never a raw `asc`', async () => {
+    const w = await render({
+      step: sortStep({ keys: [{ column: 'Betrag', direction: 'desc' }] }),
+      label: 'Sortieren',
+    })
+
+    const options = field(w, 'Richtung der Sortierung 1').findAll('option')
+    expect(options.map((o) => o.text())).toEqual([
+      'Aufsteigend (A–Z, klein → groß, alt → neu)',
+      'Absteigend (Z–A, groß → klein, neu → alt)',
+    ])
+    expect(field(w, 'Richtung der Sortierung 1').element.value).toBe('desc')
+  })
+
+  it('changes a key’s column and its direction through the same one command', async () => {
+    const w = await render({
+      step: sortStep({ keys: [{ column: 'Kunde', direction: 'asc' }] }),
+      label: 'Sortieren',
+    })
+
+    await field(w, 'Richtung der Sortierung 1').setValue('desc')
+    expect(configured(w)).toEqual({ keys: [{ column: 'Kunde', direction: 'desc' }] })
+
+    await field(w, 'Spalte der Sortierung 1').setValue('Datum')
+    expect(configured(w)).toEqual({ keys: [{ column: 'Datum', direction: 'desc' }] })
+  })
+
+  it('never offers a column another key already sorts by', async () => {
+    // A second key on one column is refused by the model, so the form does not
+    // offer the gesture: a control whose only outcome is a refusal should not be
+    // there. Each select still offers its *own* column, which is otherwise
+    // "used" and would vanish from the control showing it.
+    const w = await render({
+      step: sortStep({ keys: [{ column: 'Kunde', direction: 'asc' }] }),
+      label: 'Sortieren',
+    })
+    await press(w, 'Sortierung hinzufügen').trigger('click')
+
+    const offered = (n) =>
+      field(w, `Spalte der Sortierung ${n}`).findAll('option').map((o) => o.text())
+
+    // Key 2 took Betrag, the first column key 1 had left. So key 1 offers
+    // everything but Betrag, key 2 everything but Kunde, and each keeps its own.
+    expect(offered(1)).toEqual(['Kunde', 'Datum'])
+    expect(offered(2)).toEqual(['Betrag', 'Datum'])
+  })
+
+  it('shows the column the config holds, even after that column stopped arriving', async () => {
+    // A `<select>` whose value matches no option falls back to showing the first
+    // one — so a key naming a column an upstream rename took away put a
+    // *different* column on screen than the model held, and editing the
+    // direction beside it committed the invisible one. The Step already refuses
+    // by name at execution; this is the control the user has to fix it in.
+    const w = await render({
+      step: sortStep({ keys: [{ column: 'Umsatz', direction: 'desc' }] }),
+      label: 'Sortieren',
+    })
+
+    const select = field(w, 'Spalte der Sortierung 1')
+    expect(select.element.value).toBe('Umsatz')
+    expect(select.findAll('option').map((o) => o.text())).toContain('Umsatz')
+
+    // …and changing the direction sends the column that is on screen.
+    await field(w, 'Richtung der Sortierung 1').setValue('asc')
+    expect(configured(w)).toEqual({ keys: [{ column: 'Umsatz', direction: 'asc' }] })
+  })
+
+  it('disables the add button and states the reason once every column is a key', async () => {
+    const w = await render({
+      step: sortStep({
+        keys: [
+          { column: 'Kunde', direction: 'asc' },
+          { column: 'Betrag', direction: 'asc' },
+          { column: 'Datum', direction: 'asc' },
+        ],
+      }),
+      label: 'Sortieren',
+    })
+
+    expect(press(w, 'Sortierung hinzufügen').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-testid="sort-columns-exhausted"]').text()).toContain(
+      'bereits Sortierschlüssel',
+    )
+  })
+
+  it('removes a key through the same command, and an empty list is a real setting', async () => {
+    // `{ keys: [] }` is the identity in `core/steps/sort.js` — every row through
+    // in input order — which is exactly what "no sorting" means. So unlike the
+    // Columns Step's empty selection it is sent rather than withheld.
+    const w = await render({
+      step: sortStep({ keys: [{ column: 'Kunde', direction: 'asc' }] }),
+      label: 'Sortieren',
+    })
+
+    await field(w, 'Sortierung entfernen: 1').trigger('click')
+    expect(configured(w)).toEqual({ keys: [] })
+  })
+
+  it('names where an empty and an unreadable value land, in the form itself', async () => {
+    // An empty cell is data the user can see, so a diagnostic about it would be
+    // a warning about nothing — the rule belongs beside the control instead.
+    const w = await render({ step: sortStep(), label: 'Sortieren' })
+
+    const note = w.find('[data-testid="sort-placement-note"]').text()
+    expect(note).toContain('in beiden Richtungen hinter den lesbaren Werten')
+    expect(note).toContain('deutscher Sortierung')
+  })
+
+  it('names every new control, so the form is traversable by keyboard alone (C-7, NFR-6)', async () => {
+    const w = await render({
+      step: sortStep({ keys: [{ column: 'Kunde', direction: 'asc' }] }),
+      label: 'Sortieren',
+    })
+
+    for (const label of [
+      'Spalte der Sortierung 1',
+      'Richtung der Sortierung 1',
+      'Sortierung entfernen: 1',
+    ]) {
+      expect(field(w, label).exists(), label).toBe(true)
+    }
+    expect(press(w, 'Sortierung hinzufügen').attributes('disabled')).toBeUndefined()
+  })
+})
+
+// ------------------------------------------------------------------ Erste N
+
+describe('the First-N form', () => {
+  const firstStep = (config = null) => step({ kind: 'first', name: 'Top 10', config })
+
+  it('opens without a count, and says every row stays', async () => {
+    const w = await render({ step: firstStep(), label: 'Erste N: Top 10' })
+
+    expect(field(w, 'Anzahl Zeilen').element.value).toBe('')
+    expect(w.find('[data-testid="first-count-pending"]').text()).toContain(
+      'Noch keine Anzahl — alle Zeilen bleiben stehen.',
+    )
+    expect(w.emitted('configure')).toBeUndefined()
+  })
+
+  it('sends a count the moment one whole number is entered', async () => {
+    const w = await render({ step: firstStep(), label: 'Erste N' })
+
+    await field(w, 'Anzahl Zeilen').setValue('10')
+
+    expect(configured(w)).toEqual({ count: 10 })
+    expect(w.find('[data-testid="first-count-pending"]').exists()).toBe(false)
+  })
+
+  it('refuses an entry that is no count, beside the field and not in the config', async () => {
+    // `type="number"` keeps letters out; `0`, `-1` and `2.5` it does not. The
+    // precedent is the Filter's number field one screen up: an entry that has
+    // not finished is not a change to the config.
+    for (const entry of ['0', '-1', '2,5', '2.5']) {
+      const w = await render({ step: firstStep({ count: 5 }), label: 'Erste N' })
+      await field(w, 'Anzahl Zeilen').setValue(entry)
+
+      expect(w.emitted('configure'), `sent ${entry} to the model`).toBeUndefined()
+      const refusal = w.find('[data-testid="first-count-refusal"]')
+      expect(refusal.attributes('role')).toBe('status')
+      expect(refusal.text()).toContain('ganze Zahl ab 1')
+    }
+  })
+
+  it('emits nothing when the field is cleared, and says the stored count stays in force', async () => {
+    const w = await render({ step: firstStep({ count: 5 }), label: 'Erste N' })
+
+    await field(w, 'Anzahl Zeilen').setValue('')
+
+    expect(w.emitted('configure')).toBeUndefined()
+    // The sentence differs from a freshly added Step's on purpose: there the
+    // Step really does let every row through, here a stored count goes on
+    // computing, and one sentence covering both would be true of neither.
+    expect(w.find('[data-testid="first-count-pending"]').text()).toContain(
+      'die vorherige bleibt in Kraft',
+    )
+  })
+
+  it('offers its form even where the input has no columns — it names none', async () => {
+    // The one kind whose form is not about a column, so the guard that withholds
+    // the Filter's and the Columns' controls does not apply to it.
+    const w = await render({ step: firstStep(), inputSchema: [], label: 'Erste N' })
+
+    expect(w.find('[data-testid="step-config-first"]').exists()).toBe(true)
+    expect(w.find('[data-testid="step-panel-no-columns"]').exists()).toBe(false)
+    expect(field(w, 'Anzahl Zeilen').exists()).toBe(true)
+  })
+
+  it('names its one control, so the form is traversable by keyboard alone (C-7, NFR-6)', async () => {
+    const w = await render({ step: firstStep(), label: 'Erste N' })
+
+    expect(field(w, 'Anzahl Zeilen').attributes('type')).toBe('number')
+    expect(field(w, 'Anzahl Zeilen').attributes('min')).toBe('1')
+    expect(field(w, 'Anzahl Zeilen').attributes('disabled')).toBeUndefined()
+  })
+})
+
 // ------------------------------------------------------------- what it shows
 
 describe('what the Step produced', () => {
@@ -617,6 +840,32 @@ describe('what the Step produced', () => {
     expect(marks[0]).toContain('2 Zeilen entfernt, 2 Zeilen übrig.')
     expect(marks[1]).toContain('Warnung:')
     expect(marks[1]).toContain('3 Zeilen wurden nicht verglichen')
+  })
+
+  it('says a boxed row was placed, not dropped, where a Sort put it last', async () => {
+    // A different sentence from the Filter's on purpose: a box in a sort key is
+    // placed rather than excluded, so no row leaves the Step — and the verb has
+    // to follow the number, because one unreadable value is the ordinary case.
+    const one = await render({
+      step: step({ kind: 'sort' }),
+      result: result({ diagnostics: [warning('step.boxed_rows_last', { rows: 1 }, { stepId: 's1' })] }),
+    })
+    const many = await render({
+      step: step({ kind: 'sort' }),
+      result: result({ diagnostics: [warning('step.boxed_rows_last', { rows: 4 }, { stepId: 's1' })] }),
+    })
+
+    expect(one.find('[data-testid="step-panel-mark"]').text()).toContain(
+      '1 Zeile hat in einer Sortierspalte',
+    )
+    expect(one.find('[data-testid="step-panel-mark"]').text()).toContain(
+      'hinter die lesbaren Werte gestellt',
+    )
+    expect(many.find('[data-testid="step-panel-mark"]').text()).toContain(
+      '4 Zeilen haben in einer Sortierspalte',
+    )
+    // Placed, never dropped: the Filter's wording must not have leaked in.
+    expect(one.text()).not.toContain('ausgeschlossen')
   })
 
   it('renders every mark when one code appears twice', async () => {

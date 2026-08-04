@@ -21,15 +21,19 @@
 //   validate(config)              structural shape, checkable with no input table
 //   apply(engine, inputs, config) `{ table, diagnostics }`, pure and synchronous
 
-import { COLUMNS, FILTER, SOURCE, kindCodes } from '../graph/kinds.js'
+import { COLUMNS, FILTER, FIRST, SORT, SOURCE, kindCodes } from '../graph/kinds.js'
 import { columnsKind } from './columns.js'
 import { filterKind } from './filter.js'
+import { firstKind } from './first.js'
+import { sortKind } from './sort.js'
 
 export { CODE, STEP_CODES } from './codes.js'
 
 const REGISTRY = new Map([
   [FILTER, filterKind],
   [COLUMNS, columnsKind],
+  [SORT, sortKind],
+  [FIRST, firstKind],
 ])
 
 /** The executor for a kind, or `null` for a kind no file here implements.

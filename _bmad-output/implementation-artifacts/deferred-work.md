@@ -357,3 +357,15 @@ so a later reader can see what was decided rather than only what remains.
   summary: The preview sat between the file-name line and the parse-correction controls on every Source card, with no way to collapse it.
   evidence: A ~310 px scroll region per card pushed story 1's `Zeichenkodierung` / `Trennzeichen` / `Kopfzeile` controls roughly a screen apart with three Sources, and a wheel event over a card scrolled the preview instead of the pane.
   status: fixed 2026-08-02 — the grid moved below the controls and the diagnostics, so everything that explains or corrects the read comes first and the excluded-rows report sits directly under the table it is missing from. A collapse toggle was considered and rejected: more state and more clicks for a problem ordering already solves. Pinned by a geometric e2e assertion.
+
+- source_spec: `spec-6d-sort-and-first-n.md`
+  summary: The Sort form has no way to move a key up or down — the first key decides everything, so a user who added Betrag before Gruppe must remove and re-add both.
+  evidence: Story 6c gave the Columns Step explicit move controls for exactly this reason one story earlier, and neither the story's decision record nor the code notes the omission as a choice.
+
+- source_spec: `spec-6d-sort-and-first-n.md`
+  summary: The Sort Step's box warning names a number of rows but not the column, so with several keys the user is told a count and given nowhere to look.
+  evidence: The German reads „1 Zeile hat in einer Sortierspalte einen Wert …" with up to one key per input column; the adapter counts rows and would need per-column counts to name one.
+
+- source_spec: `spec-6d-sort-and-first-n.md`
+  summary: The adapter tests named for the shared-column memory rule cannot observe it — reimplementing the verb with a full copy would keep them green.
+  evidence: `engine.test.js`'s sharing tests for orderRows and firstRows assert only values; the Filter's own sharing test has the same shape, so this is a pre-existing convention rather than something story 6d introduced.

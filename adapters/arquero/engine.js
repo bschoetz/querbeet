@@ -80,9 +80,13 @@
 // size ever become a product concern, the owner's answer is a separate light
 // viewer rather than shrinking this application. Ledger entry closed.
 //
-// **The two verbs are built from `create` and `BitSet` rather than from
+// **The verbs are built from `create` and `BitSet` rather than from
 // `table.filter()` and `table.select()`, and that is a decision rather than an
-// oversight.** Both public methods reduce to exactly these two calls internally —
+// oversight.** Story 6d's two — `orderRows` and `firstRows` — are built the same
+// way and for a sharper reason still: `orderby` was measured producing a
+// *different wrong order per browser* around a box, so the comparator here is a
+// replacement rather than a wrapper (see the block above `orderRows`).
+// Both public methods reduce to exactly these two calls internally —
 // `_filter` builds a `BitSet` and calls `table.create({ filter })`, and `_select`
 // builds a column set and calls `table.create({ data, names })` — so the shared-
 // column behaviour the memory measurement licensed is the same behaviour, byte
@@ -420,6 +424,79 @@ function matches(op, cell, target) {
   }
 }
 
+// --- the ordering, and why it is written here rather than called -----------
+//
+// AD-19 again, and this time the hazard is not merely absorbed here but
+// *replaced* here: the engine's own `orderby` is one call and it was measured
+// wrong. With a single box among ten values, Node and Chromium produce
+// `1 2 3 4 5 7 8 9 BOX 6` and Firefox produces `1 2 7 8 9 BOX 3 4 5 6` — rows
+// with nothing to do with the box lose their order too, and which ones depends
+// on the engine. A box compares `false` in both directions, which makes the
+// comparator inconsistent, and a sort over an inconsistent comparator is
+// implementation-defined. C-10's failure mode exactly: no error, a plausible
+// order, a different wrong answer in the two browsers this product ships in.
+//
+// `create({ order })` — the door `orderby` itself reduces to — takes a row
+// comparator, so installing our own costs nothing structurally.
+//
+// **What it costs, stated in full rather than in its flattering half.** The
+// relational comparator is *cheaper* than the engine's, 57.8 ms against 83.8 ms
+// per 100,000 rows in Chromium, because it reads a column captured once instead
+// of going through the expression machinery per row. The **collated** one, which
+// every `text` column gets, is the most expensive option measured: 213.9 ms in
+// Chromium and 224 ms in Firefox, against `orderby`'s 83.9 / 148 — about 2.5×
+// the engine's. That is not a regression to be fixed, it is what a correct
+// German order costs, and `Äpfel` and `Öl` sorting behind `Zebra` is the
+// alternative. Naming only the first figure would make the trade look free when
+// it is the one place this file is slower than what it replaced.
+
+/**
+ * A value that has no place in an ordering.
+ *
+ * **The product has one definition of an empty cell and this is it** —
+ * `isEmptyCell` above, which counts `null`, the empty string and a whitespace-
+ * only string alike, as CAP-15 states and as the Filter's own German already
+ * tells the user. A second, narrower definition here would make the Sort form's
+ * sentence false over exactly the columns it is most likely to be read on: a
+ * `text` column whose blanks are `''` rather than `null`, which is what
+ * `core/exec/convert.js` produces the moment a user removes „(leer)" from a
+ * column's missing tokens.
+ *
+ * A box joins them (AD-22), and so does `NaN`. All three are *placed* rather
+ * than compared: `null < 1` and `'' < 'Alpha'` are both `true` in JavaScript, a
+ * box is `false` against everything, and every comparison against `NaN` is
+ * `false` — so each of them would otherwise make the comparator inconsistent,
+ * which is the one defect this whole verb exists to remove. `NaN` should be
+ * unreachable, because `core/exec/convert.js` boxes a number it could not read;
+ * the guard is here because nothing in the code would say so if that changed.
+ */
+const unordered = (value) =>
+  isEmptyCell(value) ||
+  value instanceof Unparsed ||
+  (typeof value === 'number' && Number.isNaN(value))
+
+/** `<` and `>`, which is the whole comparison for a number, a boolean and a
+ *  `BigInt` nanosecond alike. Written out rather than `a - b` because the
+ *  difference of two `BigInt`s is a `BigInt`, and a sort comparator must answer
+ *  with a `Number`. */
+const relational = (x, y) => (x < y ? -1 : x > y ? 1 : 0)
+
+/**
+ * German collation, built once per module rather than once per sort.
+ *
+ * `de-DE` is the locale `core/types/typing.js` already parses numbers and month
+ * names with, so this is the product's one locale rather than a second one. By
+ * code unit — the engine's default — the same eight words read
+ * `Apfel | Osten | Strasse | Straße | Zebra | apfel | Äpfel | Öl`: umlauts after
+ * `Z`, lowercase after uppercase. All three engines agree on the collated order,
+ * so this is not an engine lottery.
+ *
+ * **No numeric collation** (`Kunde 10` stays before `Kunde 9`) and no second
+ * locale: both would be a sort key carrying more than a column and a direction,
+ * which is a decision this story did not take.
+ */
+const COLLATOR = new Intl.Collator('de-DE')
+
 /**
  * The engine `app/` wires into the `TableEngine` port (AD-1).
  *
@@ -665,6 +742,174 @@ export function createArqueroEngine() {
       }
 
       return wrap(t.create({ data, names }), nextTypes)
+    },
+
+    /**
+     * The rows in the order the keys describe (CAP-40).
+     *
+     * **A box and an empty cell are placed last in both directions, per key**,
+     * and the rows a box put there are counted — which is why this returns a
+     * count rather than a bare Table. Only this side of the port can see a box,
+     * so only it can say how many rows carry one; `core/steps/sort.js` turns the
+     * number into a Diagnostic and `ui/` says it in German (AD-13).
+     *
+     * The comparator is installed through `create({ order })`, so the column
+     * arrays are **shared** with the input table and an ordered table costs one
+     * `Uint32Array` of row indices — the same memory rule `filter` follows.
+     * Nothing is reified and no row object is ever built.
+     *
+     * **Ties keep input order, and "input" includes an order already in force.**
+     * `indices()` rebuilds its index in ascending *backing* row order and then
+     * sorts it with this table's comparator alone — so a second Sort over an
+     * ordered table would silently *discard* the first one's order among its
+     * ties rather than refine it, and „nach Kunde sortieren, darin das Neueste
+     * zuerst" is two Steps a user builds from the toolbar. The incoming
+     * comparator is therefore captured and chained on as the final tie-break.
+     *
+     * Stability itself rests on the measurement rather than on a specification
+     * clause: arquero sorts a `Uint32Array` through
+     * `%TypedArray%.prototype.sort` — not `Array.prototype.sort`, whose ES2019
+     * stability requirement is the one usually quoted and does not cover this
+     * code — and ties were measured keeping input order in Node, Chromium and
+     * Firefox alike. That is what makes `firstRows` reproducible rather than
+     * merely quick.
+     */
+    orderRows(table, keys) {
+      const { t, types } = behind(table)
+
+      // No key is the identity, and the identity is the input handle itself.
+      // Written as a branch before anything else runs, because both of the
+      // alternatives are wrong: `create({ order })` with a comparator that
+      // always answers `0` *replaces* an order already in force with the
+      // backing row order, and the counting pass below would walk every row to
+      // find nothing. Measured before the guard: a table ordered `a b c` came
+      // back `c a b`.
+      if (keys.length === 0) return Object.freeze({ table, boxed: 0 })
+
+      // Every key prepared before a single comparison runs, and the column
+      // captured **once** rather than resolved per row — which is the whole of
+      // the measured advantage over the engine's own comparator.
+      const prepared = keys.map(({ column, direction }) => {
+        const type = types.get(column)
+        if (type === undefined) {
+          // Refused one layer up, against the input schema, where it can be a
+          // Diagnostic. Reaching here is a caller's bug.
+          throw new TypeError(`no column ${column} in this table`)
+        }
+        // The vocabulary is closed in `core/steps/sort.js` and `validate`
+        // refuses anything else, so this is an invariant guard — and it throws
+        // rather than defaulting, because the silent default was ascending: a
+        // typo in a stored config would have *reversed* an order with nothing to
+        // say so.
+        if (direction !== 'asc' && direction !== 'desc') {
+          throw new TypeError(`unknown sort direction: ${direction}`)
+        }
+        return {
+          values: t.column(column),
+          sign: direction === 'desc' ? -1 : 1,
+          // Text through the collator, everything else relationally. A `date`
+          // and a `duration` column both hold `BigInt` and both want `<`; only
+          // `text` wants a locale.
+          compare: type === 'text' ? COLLATOR.compare : relational,
+        }
+      })
+
+      // **How many rows a box put at the end**, counted over the rows actually
+      // in the table rather than over the backing array — a filtered table's
+      // hidden rows are not this Step's to report. The definition, stated so the
+      // German sentence can be true of it: a row carrying a box in *at least
+      // one* key column. Not "a box decided its position", because under two
+      // keys a box in the second one only moves the row within its group, and
+      // not one count per box, because a row with two unreadable keys is still
+      // one row.
+      const total = t.totalRows()
+      const mask = t.mask()
+      let boxed = 0
+      const count = (row) => {
+        for (const { values } of prepared) {
+          if (values.at(row) instanceof Unparsed) {
+            boxed += 1
+            return
+          }
+        }
+      }
+      if (mask) {
+        for (let i = mask.next(0); i >= 0; i = mask.next(i + 1)) count(i)
+      } else {
+        for (let i = 0; i < total; i += 1) count(i)
+      }
+
+      // The order already in force, captured **before** the new table exists.
+      // `undefined` where the input is unordered, which is the ordinary case.
+      const incoming = t.comparator()
+
+      /**
+       * The row comparator, over **backing row indices**.
+       *
+       * The unordered-last rule is applied per key and *before* the direction is
+       * applied, which is what makes "last in both directions" true: `sign`
+       * multiplies the comparison of two ordinary values and never the placement
+       * of an unordered one.
+       *
+       * Two unordered values on one key are equal on that key and the next key
+       * decides — `continue` rather than `return 0`. A row with an empty first
+       * key therefore sits behind every row that has one, and its second key
+       * still orders it against its equals.
+       *
+       * When every key is spent the upstream order decides, which is what makes
+       * "ties keep input order" true of a chain rather than only of a single
+       * Step. `data` is handed on rather than dropped: the incoming comparator
+       * is this file's own and ignores it, but the parameter is part of the
+       * engine's comparator contract and a caller reading it would be right to.
+       */
+      const order = (a, b, data) => {
+        for (const { values, sign, compare } of prepared) {
+          const x = values.at(a)
+          const y = values.at(b)
+          const rx = unordered(x) ? 1 : 0
+          const ry = unordered(y) ? 1 : 0
+          if (rx !== ry) return rx - ry
+          if (rx === 1) continue
+          const c = compare(x, y)
+          if (c !== 0) return sign * c
+        }
+        return incoming ? incoming(a, b, data) : 0
+      }
+
+      return Object.freeze({ table: wrap(t.create({ order }), types), boxed })
+    },
+
+    /**
+     * The first `count` rows of the order in force (CAP-40).
+     *
+     * **A `BitSet` over the ordered indices rather than a slice.** The engine's
+     * own `slice` ends in `reify(indices)`, which materializes every column — at
+     * 50,000 kept rows a full copy of the data. The mask keeps the columns
+     * shared and was measured at 0.8 ms for the first 50,000 of 100,000 rows,
+     * which is the same rule the Filter follows and the reason a chain of Steps
+     * costs ~0.0 MB.
+     *
+     * `indices()` is what honours both the filter and the order already on the
+     * table, so this composes with everything upstream without knowing what was
+     * there. A `count` at or above the row count keeps every row and reports
+     * nothing removed, which is not an error: the honest limit is the data.
+     */
+    firstRows(table, count) {
+      const { t, types } = behind(table)
+      // Refused one layer up, at configure time, where it can be a Diagnostic
+      // naming the value. Reaching here is a caller's bug.
+      if (!Number.isInteger(count) || count < 1) {
+        throw new TypeError(`not a row count: ${count}`)
+      }
+
+      const index = t.indices()
+      const keep = new BitSet(t.totalRows())
+      const n = Math.min(count, index.length)
+      for (let i = 0; i < n; i += 1) keep.set(index[i])
+
+      const before = t.numRows()
+      const next = wrap(t.create({ filter: keep }), types)
+      return Object.freeze({ table: next, removed: before - next.rowCount() })
     },
   }
 }

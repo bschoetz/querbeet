@@ -1,0 +1,351 @@
+{
+  "rows": 100000,
+  "engines": [
+    {
+      "name": "node",
+      "identity": {
+        "version": "v26.5.1",
+        "icu": "78.3"
+      },
+      "result": {
+        "rows": 100000,
+        "cost": {
+          "engineOrderbyNumber": 98.1,
+          "engineOrderbyText": 99,
+          "ownComparatorNumber": 73.2,
+          "ownComparatorBigInt": 82.7,
+          "ownComparatorCollated": 258,
+          "ownComparatorCodeUnit": 119.2,
+          "firstTenAfterOrder": 0.1,
+          "firstFiftyThousand": 0.8
+        },
+        "collation": {
+          "codeUnit": [
+            "Apfel",
+            "Osten",
+            "Strasse",
+            "Straße",
+            "Zebra",
+            "apfel",
+            "Äpfel",
+            "Öl"
+          ],
+          "collated": [
+            "apfel",
+            "Apfel",
+            "Äpfel",
+            "Öl",
+            "Osten",
+            "Strasse",
+            "Straße",
+            "Zebra"
+          ]
+        },
+        "box": {
+          "engineOrderby": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "7",
+            "8",
+            "9",
+            "BOX",
+            "6"
+          ],
+          "ownComparatorAsc": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "BOX"
+          ],
+          "ownComparatorDesc": [
+            "9",
+            "8",
+            "7",
+            "6",
+            "5",
+            "4",
+            "3",
+            "2",
+            "1",
+            "BOX"
+          ]
+        },
+        "nulls": {
+          "engineOrderbyAsc": [
+            "null",
+            "null",
+            "1",
+            "2",
+            "3"
+          ],
+          "ownComparatorAsc": [
+            "1",
+            "2",
+            "3",
+            "null",
+            "null"
+          ],
+          "ownComparatorDesc": [
+            "3",
+            "2",
+            "1",
+            "null",
+            "null"
+          ]
+        },
+        "stable": [
+          "a1",
+          "a3",
+          "a5",
+          "b0",
+          "b2",
+          "b4"
+        ],
+        "composition": {
+          "keepsOrder": true,
+          "rowCount": 3,
+          "limitOfLimit": 2
+        }
+      }
+    },
+    {
+      "name": "chromium",
+      "identity": {
+        "version": "151.0.7922.34"
+      },
+      "result": {
+        "rows": 100000,
+        "cost": {
+          "engineOrderbyNumber": 83.8,
+          "engineOrderbyText": 83.9,
+          "ownComparatorNumber": 57.8,
+          "ownComparatorBigInt": 71.5,
+          "ownComparatorCollated": 213.9,
+          "ownComparatorCodeUnit": 96.9,
+          "firstTenAfterOrder": 0.1,
+          "firstFiftyThousand": 0.8
+        },
+        "collation": {
+          "codeUnit": [
+            "Apfel",
+            "Osten",
+            "Strasse",
+            "Straße",
+            "Zebra",
+            "apfel",
+            "Äpfel",
+            "Öl"
+          ],
+          "collated": [
+            "apfel",
+            "Apfel",
+            "Äpfel",
+            "Öl",
+            "Osten",
+            "Strasse",
+            "Straße",
+            "Zebra"
+          ]
+        },
+        "box": {
+          "engineOrderby": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "7",
+            "8",
+            "9",
+            "BOX",
+            "6"
+          ],
+          "ownComparatorAsc": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "BOX"
+          ],
+          "ownComparatorDesc": [
+            "9",
+            "8",
+            "7",
+            "6",
+            "5",
+            "4",
+            "3",
+            "2",
+            "1",
+            "BOX"
+          ]
+        },
+        "nulls": {
+          "engineOrderbyAsc": [
+            "null",
+            "null",
+            "1",
+            "2",
+            "3"
+          ],
+          "ownComparatorAsc": [
+            "1",
+            "2",
+            "3",
+            "null",
+            "null"
+          ],
+          "ownComparatorDesc": [
+            "3",
+            "2",
+            "1",
+            "null",
+            "null"
+          ]
+        },
+        "stable": [
+          "a1",
+          "a3",
+          "a5",
+          "b0",
+          "b2",
+          "b4"
+        ],
+        "composition": {
+          "keepsOrder": true,
+          "rowCount": 3,
+          "limitOfLimit": 2
+        }
+      }
+    },
+    {
+      "name": "firefox",
+      "identity": {
+        "version": "153.0"
+      },
+      "result": {
+        "rows": 100000,
+        "cost": {
+          "engineOrderbyNumber": 216,
+          "engineOrderbyText": 148,
+          "ownComparatorNumber": 92,
+          "ownComparatorBigInt": 118,
+          "ownComparatorCollated": 224,
+          "ownComparatorCodeUnit": 168,
+          "firstTenAfterOrder": 0,
+          "firstFiftyThousand": 0
+        },
+        "collation": {
+          "codeUnit": [
+            "Apfel",
+            "Osten",
+            "Strasse",
+            "Straße",
+            "Zebra",
+            "apfel",
+            "Äpfel",
+            "Öl"
+          ],
+          "collated": [
+            "apfel",
+            "Apfel",
+            "Äpfel",
+            "Öl",
+            "Osten",
+            "Strasse",
+            "Straße",
+            "Zebra"
+          ]
+        },
+        "box": {
+          "engineOrderby": [
+            "1",
+            "2",
+            "7",
+            "8",
+            "9",
+            "BOX",
+            "3",
+            "4",
+            "5",
+            "6"
+          ],
+          "ownComparatorAsc": [
+            "1",
+            "2",
+            "3",
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "BOX"
+          ],
+          "ownComparatorDesc": [
+            "9",
+            "8",
+            "7",
+            "6",
+            "5",
+            "4",
+            "3",
+            "2",
+            "1",
+            "BOX"
+          ]
+        },
+        "nulls": {
+          "engineOrderbyAsc": [
+            "null",
+            "null",
+            "1",
+            "2",
+            "3"
+          ],
+          "ownComparatorAsc": [
+            "1",
+            "2",
+            "3",
+            "null",
+            "null"
+          ],
+          "ownComparatorDesc": [
+            "3",
+            "2",
+            "1",
+            "null",
+            "null"
+          ]
+        },
+        "stable": [
+          "a1",
+          "a3",
+          "a5",
+          "b0",
+          "b2",
+          "b4"
+        ],
+        "composition": {
+          "keepsOrder": true,
+          "rowCount": 3,
+          "limitOfLimit": 2
+        }
+      }
+    }
+  ]
+}

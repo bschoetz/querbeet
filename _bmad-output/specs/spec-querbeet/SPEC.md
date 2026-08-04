@@ -101,6 +101,10 @@ Each capability below states its intent and the single criterion that decides it
   - **intent:** The user chooses which columns survive, renames them, and sets their order.
   - **success:** Renaming to a name already in use is refused with a named reason, and the Step's column order determines the order of its output and of every export downstream of it.
 
+- **CAP-40** — Order rows and keep the first N
+  - **intent:** The user makes a row order part of the data — ordering by one or several columns, each ascending or descending — and keeps the first N rows of that order, so *take the ten newest records and carry them on* is a Pipeline rather than a look at a table. CAP-16 does this for column order; nothing did it for row order, and CAP-32's sorting is a view that is lost on reload.
+  - **success:** The order is **stable**, so "the first N" is reproducible; text compares under German collation rather than by code unit; a cell that is empty or did not parse under its confirmed type is **placed last in both directions rather than compared**, and the rows a box put there are counted and reported at that Step; the order and the limit are two separate Steps that compose, and both travel in the Recipe and reach every export.
+
 - **CAP-17** — Add a computed column
   - **intent:** The user derives a new column by choosing an operation and its inputs from fixed lists.
   - **success:** The resulting configuration is a plain data structure with no free text to parse, so a model can emit it and the system can validate it; division by zero and operations on unparsed values produce a marked empty cell, never a crash and never a silent zero.
@@ -174,6 +178,7 @@ Each capability below states its intent and the single criterion that decides it
 - **CAP-32** — Filter and sort the view, and promote a view filter into the Pipeline
   - **intent:** The user changes what the table shows without changing the Result, and can turn such a filter into data.
   - **success:** View filters apply to the full Result rather than the rendered window, are transient and unstored, are announced as a view while active, and convert into a Filter Step before the Result Step in a single action.
+  - **open contradiction, recorded 2026-08-04 with CAP-40:** the promotion in the sentence above is the one thing CAP-40 rules out for sorting — *viewing and transformation stay clearly separated*, so the view's sort is looking and the Sort Step is added by hand. Either that rule is about sorting specifically or this filter promotion goes with it. **Not settled here; story 11 settles it** and this entry's text is unchanged until it does.
 
 - **CAP-33** — Search the full dataset
   - **intent:** The user searches the Result and reaches matches that are not currently rendered.

@@ -25,6 +25,7 @@ import { GRAPH_CODES } from '@core/graph/graph.js'
 import { addableKinds, kindCodes } from '@core/graph/kinds.js'
 import { STEP_CODES } from '@core/steps/index.js'
 import { COMBINES, OPERATORS, VALUELESS_OPERATORS } from '@core/steps/filter.js'
+import { DIRECTIONS } from '@core/steps/sort.js'
 import { typeLabel } from '@ui/type-labels.js'
 
 const KIND = Object.freeze(
@@ -34,6 +35,11 @@ const KIND = Object.freeze(
     join: 'Join',
     filter: 'Filter',
     columns: 'Spalten',
+    // „Erste N" rather than „Begrenzen" or „Limit": the toolbar entry has to say
+    // what the Step does to a person who has never seen one, and the N is the
+    // whole of what they will set.
+    sort: 'Sortieren',
+    first: 'Erste N',
     computed: 'Berechnete Spalte',
     aggregate: 'Aggregation',
   }),
@@ -129,6 +135,29 @@ export const operatorLabelGaps = () => [
   ...COMBINES.filter((code) => !Object.hasOwn(COMBINE, code)),
 ]
 
+// ------------------------------------------------------- the Sort's two words
+//
+// The same relationship again, to the direction vocabulary closed in
+// `core/steps/sort.js`: a raw `asc` in a select is the core talking to the user,
+// and `directionLabelGaps()` is what fails instead.
+
+const DIRECTION = Object.freeze(
+  Object.assign(Object.create(null), {
+    asc: 'Aufsteigend (A–Z, klein → groß, alt → neu)',
+    desc: 'Absteigend (Z–A, groß → klein, neu → alt)',
+  }),
+)
+
+export const directionLabel = (code) =>
+  Object.hasOwn(DIRECTION, code) ? DIRECTION[code] : code
+
+/** `[code, label]` for the two directions a sort key offers, in the core's order. */
+export const directionLabels = () => DIRECTIONS.map((code) => [code, directionLabel(code)])
+
+/** Every direction the core offers that this file has no German word for. Empty
+ *  is the rule, and a test asserts it. */
+export const directionLabelGaps = () => DIRECTIONS.filter((code) => !Object.hasOwn(DIRECTION, code))
+
 const GERMAN = Object.freeze(
   Object.assign(Object.create(null), {
     'graph.cycle': (v, nameOf) =>
@@ -206,15 +235,51 @@ const GERMAN = Object.freeze(
     // field produced „… sind unvollständig (to)". The value stays in the
     // diagnostic as machine data; what a person is told is which control is
     // waiting for them.
-    'step.config_invalid': (v) =>
-      v.column !== undefined
-        ? `Für Spalte ${q(v.column)} fehlt der neue Name — die vorherige Einstellung bleibt in Kraft.`
-        : v.at !== undefined
-          ? `Bedingung ${v.at + 1} ist unvollständig — die vorherige Einstellung bleibt in Kraft.`
-          : 'Die Einstellungen dieses Steps sind unvollständig — die vorherigen bleiben in Kraft.',
+    'step.config_invalid': (v) => {
+      if (v.column !== undefined) {
+        return `Für Spalte ${q(v.column)} fehlt der neue Name — die vorherige Einstellung bleibt in Kraft.`
+      }
+      // The one refusal a loaded Recipe reaches and a form cannot: the number
+      // field only offers whole numbers from 1 upward, so `0`, `-1` and `2,5`
+      // arrive from outside. The sentence names what a count is rather than
+      // repeating what was wrong with the one that came.
+      if (v.field === 'count') {
+        return (
+          'Die Anzahl muss eine ganze Zahl ab 1 sein — die vorherige Einstellung bleibt in Kraft.'
+        )
+      }
+      // A Sort's keys and a Filter's conditions share this code, and `at` alone
+      // cannot tell them apart — so the field decides which word the user reads.
+      //
+      // Two sentences rather than one, because the two states are not the same
+      // state: a key with no column is an entry that has not finished, while a
+      // key whose direction is neither of the two words is complete and wrong —
+      // the shape a Recipe out of a language model arrives in. „Unvollständig"
+      // over the second would send its author looking for something missing.
+      if (v.field === 'direction') {
+        return (
+          `Sortierung ${v.at + 1} hat keine gültige Richtung — möglich sind „Aufsteigend“ und ` +
+          `„Absteigend“. Die vorherige Einstellung bleibt in Kraft.`
+        )
+      }
+      if (v.field === 'key') {
+        return `Sortierung ${v.at + 1} ist unvollständig — die vorherige Einstellung bleibt in Kraft.`
+      }
+      if (v.at !== undefined) {
+        return `Bedingung ${v.at + 1} ist unvollständig — die vorherige Einstellung bleibt in Kraft.`
+      }
+      return 'Die Einstellungen dieses Steps sind unvollständig — die vorherigen bleiben in Kraft.'
+    },
     'step.rename_collision': (v) =>
       `Der Name ${q(v.name)} ist in diesem Step bereits vergeben — zwei Spalten können nicht gleich ` +
       `heißen. Die vorherige Einstellung bleibt in Kraft.`,
+    // CAP-40's configure-time refusal. It names the column rather than the
+    // position, because the user chose a word and the word is what is already
+    // sorted by — and it says why a second key on one column cannot mean
+    // anything, since "already taken" alone reads as an arbitrary restriction.
+    'step.sort_key_repeated': (v) =>
+      `Nach Spalte ${q(v.column)} wird in diesem Step schon sortiert — eine zweite Sortierung nach ` +
+      `derselben Spalte ändert nichts. Die vorherige Einstellung bleibt in Kraft.`,
     'step.unknown_column': (v) =>
       `Es gibt keine Spalte ${q(v.column)} mehr im Eingang dieses Steps — bitte die Einstellungen prüfen.`,
     // CAP-15's refusal, and it names **both** types: one alone leaves the user
@@ -242,6 +307,20 @@ const GERMAN = Object.freeze(
           `ist — sie ist aus dem Ergebnis dieses Steps ausgeschlossen.`
         : `${rows(v.rows)} wurden nicht verglichen, weil ihr Wert unter dem bestätigten Typ nicht ` +
           `lesbar ist — sie sind aus dem Ergebnis dieses Steps ausgeschlossen.`,
+    // The Sort's counterpart, and it is a *different* sentence because a box in
+    // a sort key is placed rather than dropped: no row leaves this Step. The
+    // wording says „hinter die lesbaren Werte" rather than „ganz am Ende",
+    // because with two keys a box in the second one moves the row only within
+    // its group — and a sentence that is true of one key and false of two is
+    // exactly the kind of number this product must not print.
+    'step.boxed_rows_last': (v) =>
+      v.rows === 1
+        ? `1 Zeile hat in einer Sortierspalte einen Wert, der unter dem bestätigten Typ nicht ` +
+          `lesbar ist — sie wird nicht verglichen, sondern in beiden Richtungen hinter die ` +
+          `lesbaren Werte gestellt.`
+        : `${rows(v.rows)} haben in einer Sortierspalte einen Wert, der unter dem bestätigten Typ ` +
+          `nicht lesbar ist — sie werden nicht verglichen, sondern in beiden Richtungen hinter die ` +
+          `lesbaren Werte gestellt.`,
 
     // --------------------------------------------------------- the execution
     'exec.source_unconfirmed': (v, nameOf) =>

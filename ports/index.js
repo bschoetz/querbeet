@@ -164,9 +164,79 @@
  *     and at execution respectively, where the refusal can be a Diagnostic.
  *     Columns are shared with the input table rather than copied.
  *
+ * **`orderRows` and `firstRows` are the two operations story 6d added** (CAP-40),
+ * and they exist for the same reason the first two do: a Step kind never touches
+ * a cell, and where an unreadable one goes is a hazard this side absorbs.
+ *
+ *   orderRows(table, keys)
+ *     `keys` is `[{ column, direction }]`, `direction` one of `asc` / `desc`,
+ *     and **the first key that separates two rows decides**. No key at all is
+ *     the identity and the input handle itself comes back — the order already on
+ *     it included. An unknown column and a direction outside those two words are
+ *     both caller's bugs and throw; the first is refused one layer up against
+ *     the input schema, the second at configure time, where each can be a
+ *     Diagnostic.
+ *
+ *     **Three properties are promised rather than inherited, and each was
+ *     measured before it was promised** (spike `arquero-order-2026-08-04`).
+ *
+ *       PLACEMENT. A box (AD-22) and an empty cell are **placed last, in both
+ *       directions, per key**, never compared. "Empty" is the product's one
+ *       definition of it, the same `filter`'s `empty` operator uses above:
+ *       `null`, the empty string and a whitespace-only string alike — a `text`
+ *       column's blanks are `''` rather than `null` whenever a user removes
+ *       „(leer)" from its missing tokens, and a narrower rule here would sort
+ *       them to the front of every ascending order. `NaN` joins them, since
+ *       every comparison against it is `false`. The
+ *       engine's own comparator compares them, and one box among ten values was
+ *       measured reordering rows that have nothing to do with it, differently in
+ *       each browser: `1 2 3 4 5 7 8 9 BOX 6` in Chromium against
+ *       `1 2 7 8 9 BOX 3 4 5 6` in Firefox. Per key means a row whose first key
+ *       is empty sits behind every row that has one, and its second key still
+ *       orders it against its equals.
+ *
+ *       COLLATION. A `text` column compares through `Intl.Collator('de-DE')`,
+ *       every other type relationally. `de-DE` is the locale core/types already
+ *       parses with; by code unit `Äpfel` and `Öl` sort behind `Zebra`, which is
+ *       visibly wrong in the language this product speaks.
+ *
+ *       STABILITY. Ties keep input order, and **an order already on the table
+ *       is part of that input order**: a second `orderRows` refines the first
+ *       rather than replacing it, so *by customer, and within that newest
+ *       first* is two Steps. Measured identical in all three engines — the
+ *       promise rests on that measurement and not on the ES2019 stability
+ *       clause usually quoted, which is about `Array.prototype.sort` while the
+ *       code that runs sorts a `Uint32Array` through
+ *       `%TypedArray%.prototype.sort`. Without stability "the first N" is not
+ *       reproducible, and `firstRows` below is what makes that a promise
+ *       somebody depends on.
+ *
+ *     The return is `{ table, boxed }`. `boxed` is how many rows carry a box in
+ *     at least one key column — a plain number, because only this side can see a
+ *     box and only `core/` mints Diagnostics (AD-13). No row is removed, so
+ *     there is no count of removals to report. Columns are shared with the input
+ *     table: the comparator goes on through `create({ order })`, never through a
+ *     reified copy.
+ *
+ *   firstRows(table, count)
+ *     The first `count` rows **of the order in force**, so *Sortieren* →
+ *     *Erste N* is two ordinary Steps rather than a special case. `count` must
+ *     be an integer of at least 1 — `0`, `-1` and `2.5` are refused one layer up
+ *     and throw here. A `count` at or above the row count keeps every row and is
+ *     not an error: the honest limit is the data, and the return says how many
+ *     rows went.
+ *
+ *     The return is `{ table, removed }`. It is a `BitSet` over the first
+ *     `count` ordered indices rather than a slice: a slice reifies every column,
+ *     which is a full copy of the data at the NFR-3 shape, where the mask costs
+ *     ~12.5 kB and keeps the columns shared. The ordered table's own order
+ *     survives into the limited one.
+ *
  * @property {(columns: ReadonlyArray<EngineColumn>) => Table} fromColumns
  * @property {(table: Table, spec: { conditions: ReadonlyArray<{ column: string, op: string, value?: unknown }>, combine: 'all' | 'any' }) => { table: Table|null, removed: number, boxed: number, unreadable: ReadonlyArray<{ column: string, type: string, value: unknown }> }} filter
  * @property {(table: Table, ordered: ReadonlyArray<{ from: string, to: string }>) => Table} selectColumns
+ * @property {(table: Table, keys: ReadonlyArray<{ column: string, direction: 'asc' | 'desc' }>) => { table: Table, boxed: number }} orderRows
+ * @property {(table: Table, count: number) => { table: Table, removed: number }} firstRows
  */
 
 /**

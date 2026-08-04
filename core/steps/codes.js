@@ -15,6 +15,12 @@ export const CODE = Object.freeze({
   // configure time — structural, checkable without an input schema
   configInvalid: 'step.config_invalid',
   renameCollision: 'step.rename_collision',
+  // The Sort's own collision, and it is here beside the Columns Step's for the
+  // same reason that one is: two sort keys naming one column are in
+  // disagreement whatever flows through, so the refusal happens where the
+  // previous config can stay in force and the user is still looking at the
+  // control that caused it.
+  sortKeyRepeated: 'step.sort_key_repeated',
 
   // execution — checkable only once the input schema exists
   unknownColumn: 'step.unknown_column',
@@ -24,6 +30,11 @@ export const CODE = Object.freeze({
   // execution — what a Step did, as numbers (AD-13)
   rowsRemoved: 'step.rows_removed',
   boxedRowsDropped: 'step.boxed_rows_dropped',
+  // A box in a sort key is *placed*, never dropped — which is why this is its
+  // own code rather than the one above. Ordering and comparison are different
+  // questions about the same unreadable cell, and one sentence cannot be true
+  // of both.
+  boxedRowsLast: 'step.boxed_rows_last',
 })
 
 /** The enumeration `ui/graph-labels.js` checks itself against. */

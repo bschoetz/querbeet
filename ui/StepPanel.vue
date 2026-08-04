@@ -27,13 +27,14 @@
 import { computed, ref, shallowRef, watch } from 'vue'
 import { runStatus } from '@core/diagnostics/diagnostic.js'
 import { hasExecutor, stepKind } from '@core/steps/index.js'
-import { COLUMNS, FILTER, SOURCE } from '@core/graph/kinds.js'
+import { COLUMNS, FILTER, FIRST, SORT, SOURCE } from '@core/graph/kinds.js'
 import { WINDOW_SIZE, previewColumns } from '@core/view/row-window.js'
 import RowWindow from '@ui/RowWindow.vue'
 import { cellText, germanNumber } from '@ui/cell-text.js'
 import {
   SEVERITY,
   combineLabels,
+  directionLabels,
   graphText,
   kindLabel,
   operatorLabels,
@@ -109,6 +110,16 @@ const numberRefusals = shallowRef({})
  */
 const columnSearch = ref('')
 
+/**
+ * The First-N field's own refusal, the sibling of `numberRefusals` above and
+ * owned here for the same reason: `0`, `-1` and `2,5` are entries that have not
+ * finished, not configurations the model should be asked about.
+ *
+ * Declared here because the draft watcher below clears it, and that watcher is
+ * `immediate`.
+ */
+const countRefusal = shallowRef(false)
+
 const readDraft = () => {
   const kind = stepKind(props.step.kind)
   if (!kind) return null
@@ -118,6 +129,20 @@ const readDraft = () => {
       combine: config.combine ?? 'all',
       conditions: (config.conditions ?? []).map((c) => ({ ...c })),
     }
+  }
+  if (props.step.kind === SORT) {
+    // One row per stored key and no more: unlike the Columns list there is
+    // nothing to show for a column that is *not* a sort key, and an empty list
+    // is the identity rather than a state to be filled in.
+    return {
+      keys: (config.keys ?? []).map((key) => ({
+        column: key.column,
+        direction: key.direction ?? 'asc',
+      })),
+    }
+  }
+  if (props.step.kind === FIRST) {
+    return { count: config.count ?? null }
   }
   // Columns: one row per *input* column, so unchecking and rechecking is
   // symmetrical and the order controls have something to move. An empty stored
@@ -184,6 +209,7 @@ watch(
   () => {
     draft.value = readDraft()
     numberRefusals.value = {}
+    countRefusal.value = false
     // A search is about the list in front of the user; a different Step's list,
     // or the same one after its input changed, is a different list.
     columnSearch.value = ''
@@ -223,6 +249,22 @@ function configOf(state) {
           takesValue(c.op) ? { column: c.column, op: c.op, value: c.value } : { column: c.column, op: c.op },
         ),
     }
+  }
+  if (props.step.kind === SORT) {
+    // A key with no column is an edit that has not finished, and one of them
+    // withholds the **whole** config rather than being dropped from it: dropping
+    // it would emit a shorter key list, which is a different order and not the
+    // one the user is halfway through describing. An empty list, on the other
+    // hand, is a real setting — it is what "no sorting" means — so removing the
+    // last key is sent.
+    if (state.keys.some((key) => !key.column)) return null
+    return { keys: state.keys.map((key) => ({ column: key.column, direction: key.direction })) }
+  }
+  if (props.step.kind === FIRST) {
+    // An empty field is not a limit of nothing: `null` is the identity in
+    // `core/steps/first.js` — every row through — so emitting it while the user
+    // is between two numbers would silently lift the limit that is in force.
+    return state.count === null ? null : { count: state.count }
   }
   const columns = state.entries
     .filter((entry) => entry.selected)
@@ -415,6 +457,87 @@ function moveColumn(at, by) {
   commit(withEntries(entries))
 }
 
+// ------------------------------------------------------------- the Sort
+//
+// Two selects per key and nothing else. AD-30 forbids a formula surface, and
+// CAP-40 deliberately stopped a sort key at a column and a direction: a locale
+// switch, a numeric-collation flag or a custom null placement would each be a
+// third control whose effect is invisible in the preview.
+
+const withKeys = (keys) => ({ ...draft.value, keys })
+
+/** The input columns not already a sort key.
+ *
+ *  A second key on a column the Sort already orders by is refused by the model
+ *  (`step.sort_key_repeated`), so the form does not offer the gesture: a control
+ *  whose only outcome is a refusal is a control that should not be there. */
+const unusedColumns = computed(() => {
+  const used = new Set((draft.value?.keys ?? []).map((key) => key.column))
+  return columnNames.value.filter((name) => !used.has(name))
+})
+
+/**
+ * What one key's column select offers.
+ *
+ * The columns no *other* key has taken — plus **its own, always**, whatever that
+ * is. The second half is not tidiness: a `<select>` whose value matches no option
+ * falls back to showing the first one, so a key naming a column the input no
+ * longer has (an upstream rename, one Step away) put a different column on
+ * screen than the one the config held, and editing the direction beside it
+ * committed the invisible one. A stored column that is gone belongs on screen
+ * as itself — the Step already refuses by name at execution, and this is the
+ * control the user has to fix it in.
+ */
+const sortColumnOptions = (at) => {
+  const own = draft.value.keys[at]?.column
+  const used = new Set(draft.value.keys.map((key, i) => (i === at ? null : key.column)))
+  const offered = columnNames.value.filter((name) => !used.has(name))
+  if (own === undefined || own === null || own === '' || offered.includes(own)) return offered
+  return [own, ...offered]
+}
+
+const addSortKey = () => {
+  const column = unusedColumns.value[0]
+  if (column === undefined) return
+  commit(withKeys([...draft.value.keys, { column, direction: 'asc' }]))
+}
+
+const removeSortKey = (at) => commit(withKeys(draft.value.keys.filter((_, i) => i !== at)))
+
+const patchSortKey = (at, patch) =>
+  commit(withKeys(draft.value.keys.map((key, i) => (i === at ? { ...key, ...patch } : key))))
+
+// ------------------------------------------------------------- the First N
+//
+// One number field, and the two states a number field has that a config does
+// not: empty, and holding something that is not a count.
+
+/** The count the model is actually computing with, which is what decides how the
+ *  pending line reads: a freshly added Step lets every row through, while a
+ *  cleared field over a stored count leaves that count in force. Two different
+ *  facts, and a sentence covering both would be true of neither. */
+const storedCount = computed(() => props.step.config?.count ?? null)
+
+function setCount(raw) {
+  const text = String(raw).trim()
+  if (text === '') {
+    countRefusal.value = false
+    commit({ ...draft.value, count: null })
+    return
+  }
+  // No German number reading here, deliberately: a row count is a small whole
+  // number, `type="number"` already refuses a decimal comma, and `germanNumber`
+  // would read `1.000` as one thousand in a control the browser renders as
+  // `1000`.
+  const value = Number(text)
+  if (!Number.isInteger(value) || value < 1) {
+    countRefusal.value = true
+    return
+  }
+  countRefusal.value = false
+  commit({ ...draft.value, count: value })
+}
+
 // ------------------------------------------------------------- the preview
 //
 // The counts are the Step's **full** output (CAP-19) and are read off the handle
@@ -505,8 +628,11 @@ watch(
     <!-- An input with no columns. The controls below all name a column, so there
          is nothing for them to offer — and an enabled "Bedingung hinzufügen"
          that silently does nothing is worse than a sentence. -->
+    <!-- „Erste N" is the one kind whose form names no column, so an input
+         without columns is not a reason to withhold it: the count is still
+         meaningful over a table that has only rows. -->
     <p
-      v-else-if="configurable && !hasColumns"
+      v-else-if="configurable && !hasColumns && props.step.kind !== FIRST"
       data-testid="step-panel-no-columns"
       class="rounded bg-slate-50 px-2 py-1 text-xs text-slate-600"
     >
@@ -776,6 +902,162 @@ watch(
           ↓
         </button>
       </div>
+    </div>
+
+    <!-- ---------------------------------------------------- Sortieren -->
+    <div
+      v-else-if="props.step.kind === SORT && draft"
+      data-testid="step-config-sort"
+      class="flex flex-col gap-2"
+    >
+      <p class="text-xs text-slate-500">
+        Der erste Schlüssel entscheidet; bei Gleichstand der nächste. Bleibt es gleich, behalten
+        die Zeilen die Reihenfolge des Eingangs.
+      </p>
+      <!-- Where an empty and an unreadable cell land, said in the form rather
+           than reported afterwards: an empty cell is data the user can see in
+           the preview, so a diagnostic about it would be a warning about
+           nothing. The box *is* reported, below, because it is a value querbeet
+           could not read under a type the user confirmed. -->
+      <p
+        data-testid="sort-placement-note"
+        class="text-xs text-slate-500"
+      >
+        Leere Zellen und Werte, die unter dem bestätigten Typ nicht lesbar sind, werden nicht
+        verglichen — sie stehen in beiden Richtungen hinter den lesbaren Werten. Texte werden nach
+        deutscher Sortierung verglichen, „Ä“ also bei „A“ und nicht hinter „Z“.
+      </p>
+
+      <p
+        v-if="draft.keys.length === 0"
+        data-testid="sort-none"
+        class="text-xs text-slate-500"
+      >
+        Keine Sortierung — die Zeilen bleiben in der Reihenfolge des Eingangs.
+      </p>
+
+      <div
+        v-for="(key, at) in draft.keys"
+        :key="at"
+        data-testid="sort-key"
+        class="flex flex-wrap items-end gap-2 rounded border border-slate-100 p-2"
+      >
+        <label class="flex flex-col gap-1">
+          <span class="text-xs text-slate-500">Spalte</span>
+          <select
+            :value="key.column"
+            :aria-label="'Spalte der Sortierung ' + (at + 1)"
+            class="rounded border border-slate-200 px-2 py-1"
+            @change="patchSortKey(at, { column: $event.target.value })"
+          >
+            <option
+              v-for="name in sortColumnOptions(at)"
+              :key="name"
+              :value="name"
+            >
+              {{ name }}
+            </option>
+          </select>
+        </label>
+
+        <label class="flex flex-col gap-1">
+          <span class="text-xs text-slate-500">Richtung</span>
+          <select
+            :value="key.direction"
+            :aria-label="'Richtung der Sortierung ' + (at + 1)"
+            class="rounded border border-slate-200 px-2 py-1"
+            @change="patchSortKey(at, { direction: $event.target.value })"
+          >
+            <option
+              v-for="[code, text] in directionLabels()"
+              :key="code"
+              :value="code"
+            >
+              {{ text }}
+            </option>
+          </select>
+        </label>
+
+        <button
+          type="button"
+          :aria-label="'Sortierung entfernen: ' + (at + 1)"
+          class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-50"
+          @click="removeSortKey(at)"
+        >
+          Entfernen
+        </button>
+      </div>
+
+      <div>
+        <button
+          type="button"
+          :disabled="unusedColumns.length === 0"
+          class="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+          @click="addSortKey"
+        >
+          Sortierung hinzufügen
+        </button>
+      </div>
+
+      <!-- The disabled button's reason, beside it. Every column is already a
+           key, and a second key on one of them would only be refused. -->
+      <p
+        v-if="unusedColumns.length === 0"
+        data-testid="sort-columns-exhausted"
+        class="text-xs text-slate-500"
+      >
+        Jede Spalte des Eingangs ist bereits Sortierschlüssel — eine zweite Sortierung nach
+        derselben Spalte ändert nichts.
+      </p>
+    </div>
+
+    <!-- ------------------------------------------------------ Erste N -->
+    <div
+      v-else-if="props.step.kind === FIRST && draft"
+      data-testid="step-config-first"
+      class="flex flex-col gap-2"
+    >
+      <p class="text-xs text-slate-500">
+        Behält die ersten Zeilen in der Reihenfolge, die am Eingang liegt. „Die 10 neuesten“ ist
+        also ein Sortieren-Step davor und hier eine 10.
+      </p>
+
+      <label class="flex flex-col gap-1">
+        <span class="text-xs text-slate-500">Anzahl Zeilen</span>
+        <input
+          type="number"
+          min="1"
+          step="1"
+          :value="draft.count === null ? '' : draft.count"
+          aria-label="Anzahl Zeilen"
+          class="w-40 rounded border border-slate-200 px-2 py-1"
+          @change="setCount($event.target.value)"
+        >
+      </label>
+
+      <!-- role="status" so a rejected entry says so out loud, exactly as the
+           Filter's number field does: without it the field simply keeps a value
+           nothing is computing with. -->
+      <p
+        v-if="countRefusal"
+        role="status"
+        data-testid="first-count-refusal"
+        class="text-xs text-amber-700"
+      >
+        Das ist keine Anzahl — bitte eine ganze Zahl ab 1 eintragen. Die vorherige Einstellung
+        bleibt in Kraft.
+      </p>
+      <p
+        v-else-if="draft.count === null"
+        data-testid="first-count-pending"
+        class="text-xs text-slate-500"
+      >
+        {{
+          storedCount === null
+            ? 'Noch keine Anzahl — alle Zeilen bleiben stehen.'
+            : 'Ohne Anzahl ist diese Einstellung noch nicht fertig — die vorherige bleibt in Kraft.'
+        }}
+      </p>
     </div>
 
     <!-- ----------------------------------------------------- the result -->

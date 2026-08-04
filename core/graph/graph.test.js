@@ -66,13 +66,19 @@ describe('the kind catalogue', () => {
     expect(kindSpec('constructor')).toBeNull()
   })
 
-  it('names exactly the seven kinds the SPEC allows', () => {
+  it('names exactly the nine kinds the SPEC allows', () => {
+    // Seven until story 6d, which added CAP-40's two beside `columns` — the
+    // position is the SPEC's, where CAP-40 follows CAP-16 because it is the same
+    // promise about rows that CAP-16 makes about columns. The order is what the
+    // toolbar offers, so it is a visible fact rather than an internal one.
     expect(kindCodes()).toEqual([
       'source',
       'union',
       'join',
       'filter',
       'columns',
+      'sort',
+      'first',
       'computed',
       'aggregate',
     ])
