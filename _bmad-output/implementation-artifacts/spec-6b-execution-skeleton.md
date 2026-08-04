@@ -2,7 +2,7 @@
 title: 'Story 6b — Execution walking skeleton: Filter and Columns Steps, and the per-Step preview'
 type: 'feature'
 created: '2026-08-04'
-status: 'in-review'
+status: 'done'
 baseline_commit: '9c8f1f115c263a3cd268d9ca29f7a89b18d3ddc3'
 review_loop_iteration: 0
 context:
@@ -175,3 +175,85 @@ What this dissolves: `convertSource` stops having two meanings for `null`. With 
 - `npx vitest run --project ui` -- expected: green; `graphLabelGaps()` and `kindLabelGaps()` return `[]`
 - `npm run build && npm run assert` -- expected: one HTML file, structural gate green
 - `npm run verify` -- expected: lint, both Vitest projects, Playwright in Chromium and Firefox green
+
+## Suggested Review Order
+
+**The contract, before anything implements it**
+
+- The four-method `Table` is untouched; the engine grew exactly the two operations.
+  [`ports/index.js:92`](../../ports/index.js#L92)
+
+- Selection crosses outward as an id — the sentence story 5 wrote is amended here.
+  [`ports/index.js:204`](../../ports/index.js#L204)
+
+**Execution — the walking skeleton**
+
+- Entry point: the frontier walk, gate 1 in front of it, per-Step results out.
+  [`execute.js:144`](../../core/exec/execute.js#L144)
+
+- Dependency order with the `seen` set — a Step feeding two consumers runs once.
+  [`execute.js:107`](../../core/exec/execute.js#L107)
+
+- An executor throw becomes a diagnostic, not a blank Editor (review P2).
+  [`execute.js:241`](../../core/exec/execute.js#L241)
+
+- Registry with AD-4's signature; `executorGaps()` names the four kinds without one.
+  [`index.js:55`](../../core/steps/index.js#L55)
+
+**The two Step kinds — where a type disagreement is refused rather than coerced**
+
+- Filter reads the input schema and names both types; it never touches a cell.
+  [`filter.js:157`](../../core/steps/filter.js#L157)
+
+- Columns makes config order the output order (CAP-16).
+  [`columns.js:91`](../../core/steps/columns.js#L91)
+
+**The adapter — every hazard absorbed on this side (AD-19)**
+
+- A box matches no operator, `not_empty` included; the excluded rows come back as a count.
+  [`engine.js:514`](../../adapters/arquero/engine.js#L514)
+
+- Higher risk: ISO range validation. `2025-02-30` is refused, not rolled to 02.03. (review P1)
+  [`engine.js:272`](../../adapters/arquero/engine.js#L272)
+
+- Column sharing rather than copying — `~0 MB` per retained chain link.
+  [`engine.js:642`](../../adapters/arquero/engine.js#L642)
+
+**Uniqueness of a column name — the decision this story took**
+
+- The rule itself: `Betrag_2` from 2 upward, `col_3` by position, uniqueness pass last.
+  [`source-store.js:175`](../../core/exec/source-store.js#L175)
+
+- Applied on both commit paths, so the store is the one writer.
+  [`source-store.js:224`](../../core/exec/source-store.js#L224)
+
+- Boundary-crossing: `config` on a node, frozen, opaque to `core/graph/`.
+  [`graph.js:303`](../../core/graph/graph.js#L303)
+
+**The surfaces — CAP-15, CAP-16, CAP-19**
+
+- One cache, one recompute rule: data-affecting commands only, never a rename.
+  [`EditorPane.vue:84`](../../ui/EditorPane.vue#L84)
+
+- A run that computed nothing says so globally, not only inside a selected panel (review P11).
+  [`EditorPane.vue:398`](../../ui/EditorPane.vue#L398)
+
+- German config forms and the per-Step preview: counts, warnings, windowed rows.
+  [`StepPanel.vue:331`](../../ui/StepPanel.vue#L331)
+
+- The display projection — a date is `31.12.2025`, never a raw nanosecond `BigInt`.
+  [`cell-text.js:171`](../../ui/cell-text.js#L171)
+
+- Grouping dots must be positionally valid; a stray dot is refused, not read as `0` (review P16).
+  [`cell-text.js:222`](../../ui/cell-text.js#L222)
+
+- Last-selected wins, and an empty selection is `null` so the panel closes.
+  [`GraphCanvas.vue:90`](../../adapters/vueflow/GraphCanvas.vue#L90)
+
+**Peripherals**
+
+- The end-to-end trail: fixture → confirm → Filter + Columns → counts, warnings, refusals.
+  [`execution.spec.js:111`](../../tests/e2e/execution.spec.js#L111)
+
+- Every new code gets a German sentence; the gap tests stay `[]` (NFR-6).
+  [`graph-labels.js:209`](../../ui/graph-labels.js#L209)
