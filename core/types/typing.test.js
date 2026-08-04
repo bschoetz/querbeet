@@ -1896,7 +1896,7 @@ describe('piece 7 — month names', () => {
     // locale in scope writes `2 2026 Aug`. **Both of these are refused twice
     // over** — with three tokens a second month name always lands where the day
     // test or the four-digit year test looks — so deleting either rule from
-    // `readsAsMonthNameDate` leaves this case green, which was measured rather
+    // `monthNameDateParts` leaves this case green, which was measured rather
     // than assumed. The rules stay as the candidate's stated contract and the
     // cases stay as its behaviour; neither is evidence for the other.
     expect(detectColumn(['Mai Juni 2026', 'Mai Juli 2026']).type).toBe(TEXT)
@@ -2887,8 +2887,17 @@ describe('what an extractor hands back', () => {
   it('tells a clock position from a duration quantity', () => {
     expect(timeParts('14:30')).toMatchObject({ hour: 14, minute: 30, second: 0 })
     expect(timeParts('24:00')).toBeNull() // no day has that hour
-    expect(durationParts('25:00')).toEqual({ hours: 25, minutes: 0, seconds: 0 })
-    expect(durationParts('100:30:15')).toEqual({ hours: 100, minutes: 30, seconds: 15 })
+    expect(durationParts('25:00')).toEqual({ hours: 25n, minutes: 0, seconds: 0 })
+    expect(durationParts('100:30:15')).toEqual({ hours: 100n, minutes: 30, seconds: 15 })
+  })
+
+  it('holds a duration’s hours exactly, because the regex leaves them unbounded', () => {
+    // `CLOCK_DURATION`'s hours field is `\d+`, so `Number` on a long enough one
+    // rounds before anything downstream can widen it: 9007199254740993 hours
+    // would become …992 and be reported as fully readable. Minutes and seconds
+    // are two digits by construction and stay numbers.
+    expect(durationParts('9007199254740993:00').hours).toBe(9007199254740993n)
+    expect(Number(durationParts('9007199254740993:00').hours)).toBe(9007199254740992)
   })
 
   it('answers which of a pair’s two words a boolean is', () => {

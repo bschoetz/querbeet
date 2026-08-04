@@ -2,9 +2,9 @@
 title: 'Story 6a — The typed Table: engine adapter, conversion, and the values that did not read'
 type: 'feature'
 created: '2026-08-04'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: '1b5e4897ccc46454048b982d0576d361fb682606'
-review_loop_iteration: 0
+review_loop_iteration: 1
 context:
   - '_bmad-output/planning-artifacts/architecture/architecture-querbeet-2026-08-02/ARCHITECTURE-SPINE.md'
   - '_bmad-output/planning-artifacts/research/technical-performance-and-table-rendering-2026-08-01/digests/arquero-internals-r1-1.md'
@@ -108,6 +108,19 @@ context:
 ## Design Notes
 
 **Where the converted copy lives — decided against the measurement, closing the open architecture question.** AD-7 keeps bytes and the raw parsed table (six requirements read from them). D2's rule 1 — "drop the parsed row array once `aq.from()` has run", 110.8 vs 80.2 MB — targets an object this codebase never builds: the intermediate array of row objects. D2's own mechanics (`research.md:470-487`) show `aq.from` copies per column and shares values by reference; the 30.6 MB gap is row-*object* overhead, and the marginal cost of a table beside an existing row array is 8.0 MB. Resolution: **the registry stays exactly as AD-7 demands; the adapter builds engine columns directly from `entry.table.columns[i].cells` during conversion, so no row array ever exists to drop; the converted Table is Step zero's output, cached per Source outside the registry and outside reactivity, released on unconfirm or re-read.** Converted numeric/temporal columns are new allocations regardless (a `BigInt` is not the raw string) — the decisive property is that nothing ever holds a third copy. Budget from the measured envelope: ~80.2 MB per converted 100k×20 Source, 552.6 MB at five — plan from 550 MB.
+
+**What the conversion actually costs — measured 2026-08-04, against the budget above.** Every number this story quoted before it was built came from somewhere else: 30.6 MB of row-object overhead and the 8.0 MB marginal table from D2, 437–479 MB from R2, 58,843 bytes for `ColumnTable` from the build, +5 % for detection from the extractors. None of them is the conversion. So it was measured the same way the detection figure was — Mix A ("report-shaped"), the NFR-3 shape of 100,000 rows × 20 columns, best of three per run, four runs — through `convertSource` with the real Arquero adapter behind it, on a fixture whose every column settles (the two clock columns carry a chosen type, since detection can only ever report `time` against `duration` as an open question).
+
+| What | Measured |
+| --- | --- |
+| `convertSource` wall time, one Source | **548 / 555 / 545 / 549 ms** (best of three per run) |
+| Heap retained by the typed Table, beside the registry | **39.3 MB**, identical to a tenth of a megabyte across four runs |
+| Heap, one Source loaded **and** converted | 117.2 MB |
+| Heap, five Sources loaded and converted | **335.5 MB** |
+
+**The budget holds, with room.** The plan was "~80.2 MB per converted 100k × 20 Source, 552.6 MB at five — plan from 550 MB", and five Sources come to 335.5 MB. The typed Table's own marginal cost is 39.3 MB, under half the 80.2 MB the plan carried for it.
+
+**Two honest limits on those figures, stated rather than left for someone to discover.** The fixture draws each column's values from a handful of distinct strings, so the *registry* side is understated — 100,000 repeated cells cost pointer slots rather than distinct string payloads, where a real export's do not. The converted side has no such discount: a `BigInt` is allocated per cell whether or not two cells are equal, which is exactly the half this table is about. And the wall time is a synchronous main-thread half-second per Source, on the render path: it is not budgeted anywhere, it is not cancellable, and AD-9's cancellation is between Steps. That belongs to story 6b's scheduler rather than to this seam, and it has a ledger entry.
 
 **Why dispatch on `type`:** `format` is null for exactly the two types with distinct AD-21 units; a format-dispatched converter would crash on time and duration first.
 

@@ -81,6 +81,35 @@ class Unparsed {
 const unbox = (value) => (value instanceof Unparsed ? value.text : value)
 
 /**
+ * The one column name that is not a name — it is `Object.prototype`'s accessor,
+ * and `out[name] = value` against it is a **silent no-op** on any object that
+ * inherits from `Object.prototype`.
+ *
+ * Measured on this adapter before it was fixed: a column called `__proto__` was
+ * reported by `schema()`, answered by `column()`, and simply absent from every
+ * object `rows()` yielded — the row was one key short and nothing said so.
+ * Arquero's own row builder drops it too (it codegens an object literal), which
+ * is why `rows()` below reads the columns rather than the engine's row objects.
+ *
+ * A CSV header is whatever the exporter wrote, so this is a real name, not a
+ * hypothetical. `fromColumns` guards the same hazard one level up with
+ * `Object.create(null)`; here the row must keep `Object.prototype` — AD-5
+ * promises a *plain* object, and a consumer calling `hasOwnProperty` or
+ * `JSON.stringify` on it is entitled to the usual answers — so the key is
+ * written with `defineProperty` instead, which creates an own data property and
+ * leaves the prototype alone.
+ */
+const PROTO_KEY = '__proto__'
+
+const writeCell = (row, name, value) => {
+  if (name === PROTO_KEY) {
+    Object.defineProperty(row, name, { value, enumerable: true, writable: true, configurable: true })
+  } else {
+    row[name] = value
+  }
+}
+
+/**
  * The `Table` handle of AD-5 — `rows()`, `rowCount()`, `schema()`,
  * `column(name)`, and deliberately nothing else. Narrow on purpose: CAP-13's
  * column union, CAP-16's enumeration, CAP-21's Input Contract and CAP-26's
@@ -98,17 +127,39 @@ function handleFor(t, types) {
     names.map((name) => Object.freeze({ name, type: types.get(name) })),
   )
 
-  /** Plain frozen row objects, one at a time (AD-5) — this is an edge, and an
-   *  edge is where rows are allowed to exist at all. A generator rather than an
-   *  array so a preview reading fifty rows of a hundred thousand pays for fifty:
-   *  the engine's own `objects()` builds the whole thing unless it is handed a
-   *  limit, and a caller that forgot the limit would be a silent copy of the
-   *  dataset. Iterating the engine table (rather than indexing the columns) is
-   *  what keeps a filtered or ordered table honest. */
+  /**
+   * Plain frozen row objects, one at a time (AD-5) — this is an edge, and an
+   * edge is where rows are allowed to exist at all. A generator rather than an
+   * array so a preview reading fifty rows of a hundred thousand pays for fifty:
+   * the engine's own `objects()` builds the whole thing unless it is handed a
+   * limit, and a caller that forgot the limit would be a silent copy of the
+   * dataset.
+   *
+   * **Built from the columns rather than from the engine's own row objects**,
+   * for two reasons that arrived together. Arquero's row builder codegens an
+   * object literal, so a column called `__proto__` is missing from every row it
+   * makes and nothing says so — reading through it would put the defect one
+   * layer out of reach. And going through it allocated a second object per row
+   * on the one path AD-5 says is called for preview, export and the
+   * SessionStore.
+   *
+   * What that costs is honouring the view ourselves: a filtered or ordered table
+   * is walked through `indices()`, which materializes and caches a
+   * `Uint32Array` of the backing row count — so it is asked for **only** when
+   * there is a filter or an order to honour, and an ordinary table counts up
+   * instead and allocates nothing.
+   */
+  const columns = names.map((name) => t.column(name))
+
   function* rows() {
-    for (const row of t) {
+    const order = t.isFiltered() || t.isOrdered() ? t.indices() : null
+    const n = t.numRows()
+    for (let r = 0; r < n; r += 1) {
+      const at = order === null ? r : order[r]
       const out = {}
-      for (const name of names) out[name] = unbox(row[name])
+      for (let c = 0; c < names.length; c += 1) {
+        writeCell(out, names[c], unbox(columns[c].at(at)))
+      }
       yield Object.freeze(out)
     }
   }
@@ -160,18 +211,26 @@ export function createArqueroEngine() {
       // `constructor` — a CSV header is whatever the exporter wrote. On a plain
       // object the first would not become an own property at all and the second
       // would collide with something that was already there.
-      const data = Object.create(null)
-      const names = []
+      // **Every precondition first, then the mutation.** The boxing below writes
+      // into the caller's arrays in place, and a refusal raised halfway through
+      // would leave the caller holding columns that are partly boxed — which the
+      // port says it may not read, so it could neither use them nor recover
+      // them. Two passes is the price of a refusal that changes nothing.
       const types = new Map()
-
-      for (const { name, type, values, unparsed } of columns) {
+      for (const { name, type } of columns) {
         if (types.has(name)) {
           throw new TypeError(`a table cannot hold two columns called ${name}`)
         }
+        types.set(name, type)
+      }
+
+      const data = Object.create(null)
+      const names = []
+
+      for (const { name, values, unparsed } of columns) {
         for (const at of unparsed) values[at] = new Unparsed(values[at])
         data[name] = values
         names.push(name)
-        types.set(name, type)
       }
 
       // `names` explicitly rather than key enumeration order: a column called

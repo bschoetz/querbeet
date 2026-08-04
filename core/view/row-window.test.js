@@ -349,10 +349,17 @@ describe('marks projected alongside the rows', () => {
   const marksOf = (perColumn) => perColumn.map((rows) => (rows === null ? null : new Set(rows)))
 
   it('are empty where nothing is marked, so the common case allocates nothing', () => {
+    // Three ways of saying "nothing is marked", and all three have to reach the
+    // early return. The third is the one that matters — a Source where every
+    // value read still produces one entry per column, and only their contents
+    // say so. Without it the window builds and freezes an all-`false` boolean
+    // grid on every scroll event of a perfectly clean table.
     const t = table(['a', 'b'], 10)
 
     expect(buildWindow(t, 0, 0).marked).toEqual([])
     expect(sliceMarks(null, 2, 0, 10)).toEqual([])
+    expect(sliceMarks([null, null], 2, 0, 10)).toEqual([])
+    expect(buildWindow(t, 0, 0, [null, null]).marked).toEqual([])
   })
 
   it('are the same shape as the rows, cell for cell', () => {

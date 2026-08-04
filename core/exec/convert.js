@@ -110,10 +110,16 @@ const CELL = Object.freeze({
     ) *
       NANOS_PER_MILLI +
     BigInt(fractionNanos(fraction)),
+  // A clock position and a quantity, and the difference is the arithmetic. A
+  // `time` is bounded by its own reader — hours 00–23, so the whole sum is under
+  // 86,400 and a `Number` holds it exactly — while a `duration`'s hours field is
+  // an unbounded `\d+`. So the duration widens **first** and multiplies in
+  // `BigInt`: `BigInt(hours * 3600)` would round the product before it widened,
+  // which is the same defect one operation later.
   [TIME]: ({ hour, minute, second }) =>
     BigInt(hour * 3600 + minute * 60 + second) * NANOS_PER_SECOND,
   [DURATION]: ({ hours, minutes, seconds }) =>
-    BigInt(hours * 3600 + minutes * 60 + seconds) * NANOS_PER_SECOND,
+    (hours * 3600n + BigInt(minutes * 60 + seconds)) * NANOS_PER_SECOND,
   [BOOLEAN]: (parts) => parts.value,
 })
 

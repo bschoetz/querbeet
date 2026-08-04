@@ -6,7 +6,7 @@
 // core/exec/source-store.test.js, and mounting the pane against it would test
 // that file twice while testing this one less.
 
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { TYPES } from '@core/types/catalog.js'
@@ -1339,5 +1339,74 @@ describe('the unreadable values, marked in the preview', () => {
     // …and the preview is genuinely rendered, so the assertion above is about
     // the marks rather than about a component that drew nothing.
     expect(w.findAll('[data-testid="preview-row"]').length).toBe(10)
+  })
+})
+
+// -------------------------------------------- what a removed Source lets go of
+//
+// The Step-zero cache and the mark memo are plain `Map`s in a closure, keyed by
+// Source id, because a converted Table must never enter reactive state (AD-6).
+// That is also what makes them the one thing in this pane nothing else cleans up:
+// no entry ever arrives for a removed Source again, so `remove()` has to say so.
+//
+// Mutation-proven: deleting `stepZero.release(id)` and `markMemo.delete(id)` from
+// `remove()` left every unit and every e2e test green, while a removed Source's
+// converted Table stayed reachable from the closure for the life of the page.
+// This is the assertion that turns red when either line goes.
+
+describe('a Source removed lets go of its conversion', () => {
+  const AMOUNTS = ['1.234,56', '80,00', '12,50', '7,25', '0,99', '3,00', '45,10', '9,90', '100,00']
+
+  it('converts again when the same entry comes back, rather than answering from a stale cache', async () => {
+    const cells = [...AMOUNTS, 'abc']
+    const typed = detectColumn(cells)
+    const entry = source([{ ...column('Betrag'), ...typed }], {
+      table: { columns: [{ name: 'Betrag', domain: 'text', cells }], rowCount: cells.length },
+      typing: {
+        columns: [{ name: 'Betrag', annotation: '', chosen: null, ...typed }],
+        confirmed: true,
+      },
+    })
+
+    // The *same frozen entry* throughout. A fresh object would convert again on
+    // its own identity and prove nothing about the release.
+    let present = true
+    const engine = { calls: 0, fromColumns: () => ((engine.calls += 1), {}) }
+    const store = {
+      ...stubStore(entry),
+      list: () => (present ? [entry] : []),
+      removeSource: () => {
+        present = false
+      },
+      addSource: async () => {
+        present = true
+        return { source: entry, diagnostics: [] }
+      },
+    }
+
+    const w = await render(store, engine)
+    expect(engine.calls).toBe(1)
+    expect(w.findAll('[data-testid="preview-mark"]')).toHaveLength(1)
+
+    await w.find('[aria-label="Entfernen: daten"]').trigger('click')
+    await nextTick()
+    expect(w.findAll('[data-testid="source-card"]')).toHaveLength(0)
+
+    // Load it again. If either line in `remove()` is missing, the cached
+    // conversion (or the memoized marks in front of it) answers and the engine is
+    // never asked a second time.
+    const input = w.find('input[type="file"]')
+    Object.defineProperty(input.element, 'files', {
+      value: [{ name: 'daten.csv', arrayBuffer: async () => new ArrayBuffer(8) }],
+      configurable: true,
+      writable: true,
+    })
+    await input.trigger('change')
+    await flushPromises()
+    await nextTick()
+
+    expect(w.findAll('[data-testid="source-card"]')).toHaveLength(1)
+    expect(engine.calls).toBe(2)
+    expect(w.findAll('[data-testid="preview-mark"]')).toHaveLength(1)
   })
 })

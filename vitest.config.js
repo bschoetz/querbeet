@@ -57,7 +57,22 @@ export default defineConfig({
           environment: 'node',
           // adapters/ is included because an adapter is framework-free code
           // behind a port; only the built artefact needs Playwright (AD-27).
-          include: ['core/**/*.test.js', 'ports/**/*.test.js', 'adapters/**/*.test.js'],
+          //
+          // scripts/ is here for one file and for one reason: AD-18's gate is
+          // the *only* enforcement AD-17 has, and its reject path had no test at
+          // all — it was evidenced by prose about a manual probe, and an
+          // exception added to it turned out to excuse a real dynamic import
+          // standing beside acorn's error message. The pure scans behind the
+          // gate now live in `scripts/artifact-scan.mjs` and are asserted here.
+          // It widens the envelope's *directory* list, not its rule: this is
+          // node tooling with no DOM in it, which is what `environment: 'node'`
+          // asserts.
+          include: [
+            'core/**/*.test.js',
+            'ports/**/*.test.js',
+            'adapters/**/*.test.js',
+            'scripts/**/*.test.js',
+          ],
         },
       },
       {

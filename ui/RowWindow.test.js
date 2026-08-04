@@ -208,13 +208,17 @@ describe('a marked cell', () => {
     expect(marked(w).map((td) => td.text())).toEqual(['Nr-0-1', 'Nr-0-3'])
   })
 
-  it('carries its reason as a title, so the colour is not the only signal', async () => {
+  it('carries its reason as a title, and marks with more than a colour', async () => {
     const w = await render(pretendRows(3), {
       marks: [new Set([0]), null],
       markTitle: 'Unter dem bestätigten Typ nicht lesbar',
     })
 
     expect(marked(w)[0].attributes('title')).toBe('Unter dem bestätigten Typ nicht lesbar')
+    // `title` is a pointer affordance and is announced inconsistently, so the
+    // mark may not be colour plus a tooltip and nothing else — the underline is
+    // what a reader who cannot see the colour is left with.
+    expect(marked(w)[0].classes().join(' ')).toContain('underline')
     // …and an unmarked cell carries no stray title, which is what a binding
     // written without the condition would produce on every cell in the grid.
     const cells = w.findAll('[data-testid="preview-row"]')[0].findAll('td')

@@ -51,6 +51,12 @@ describe('building a table column-wise', () => {
   })
 
   it('holds a column whose name would collide with an object’s own machinery', () => {
+    // Measured before this was fixed, and the reason the assertion goes all the
+    // way to `rows()`: `schema()` reported the column and `column()` answered
+    // with its values while **every row object was silently one key short** —
+    // `out[name] = value` against `__proto__` is a no-op on anything inheriting
+    // from `Object.prototype`, and arquero's own row builder drops it too. A test
+    // that stopped at the first two assertions was shaped around the bug.
     const t = engine.fromColumns([
       column('__proto__', 'text', ['a', 'b']),
       column('constructor', 'text', ['c', 'd']),
@@ -58,6 +64,33 @@ describe('building a table column-wise', () => {
 
     expect(t.schema().map((c) => c.name)).toEqual(['__proto__', 'constructor'])
     expect([...t.column('__proto__')]).toEqual(['a', 'b'])
+
+    const rows = [...t.rows()]
+    expect(rows.map((r) => Object.keys(r))).toEqual([
+      ['__proto__', 'constructor'],
+      ['__proto__', 'constructor'],
+    ])
+    expect(Object.hasOwn(rows[0], '__proto__')).toBe(true)
+    expect(rows[0]['__proto__']).toBe('a')
+    expect(rows[1]['__proto__']).toBe('b')
+    // …and the row is still a plain object, which is what AD-5 promises: the
+    // key is written with `defineProperty` rather than by moving the prototype.
+    expect(Object.getPrototypeOf(rows[0])).toBe(Object.prototype)
+    // Round-trips through JSON as the key it is. The expectation is *parsed*
+    // rather than written as a literal, because `{ __proto__: 'a' }` in source
+    // sets the prototype instead of creating the key — the same trap one level
+    // out, and it caught this assertion on its first run.
+    expect(JSON.parse(JSON.stringify(rows[0]))).toEqual(
+      JSON.parse('{"__proto__":"a","constructor":"c"}'),
+    )
+  })
+
+  it('boxes a `__proto__` column’s failures like any other', () => {
+    // The two hazards meeting: the name that vanishes and the cell that is a box.
+    const t = engine.fromColumns([column('__proto__', 'number', [1.5, 'abc'], [1])])
+
+    expect([...t.column('__proto__')]).toEqual([1.5, 'abc'])
+    expect([...t.rows()].map((r) => r['__proto__'])).toEqual([1.5, 'abc'])
   })
 
   it('refuses two columns of one name rather than losing one of them', () => {

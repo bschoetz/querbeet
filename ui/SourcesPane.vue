@@ -162,21 +162,30 @@ const markMemo = new Map()
  * no marks. The columns are addressed by position, as everywhere in this pane,
  * and the conversion's map is keyed by name — a Source that repeats a name is not
  * converted at all, so the two cannot disagree here.
+ *
+ * **And `null` for a Source that converted cleanly, which is the common case.**
+ * An array of nothing but `null`s is not the same as no array: `buildWindow` sees
+ * an argument and builds one all-`false` boolean row per rendered row per column,
+ * freezes them, and does it again on every scroll event — for a Source where
+ * every value read. The distinction the geometry can act on is "is anything
+ * marked at all", so that question is answered here, once per entry, rather than
+ * fifty times a scroll.
  */
 function marksFor(entry) {
   const memo = markMemo.get(entry.id)
   if (memo !== undefined && memo.entry === entry) return memo.marks
 
   const conversion = stepZero.of(entry)
-  const marks =
+  const columns =
     conversion === null
       ? null
-      : Object.freeze(
-          entry.typing.columns.map((column) => {
-            const at = conversion.unparsed[column.name]
-            return at !== undefined && at.length > 0 ? new Set(at) : null
-          }),
-        )
+      : entry.typing.columns.map((column) => {
+          const at = conversion.unparsed[column.name]
+          return at !== undefined && at.length > 0 ? new Set(at) : null
+        })
+
+  const marks =
+    columns !== null && columns.some((set) => set !== null) ? Object.freeze(columns) : null
 
   markMemo.set(entry.id, { entry, marks })
   return marks

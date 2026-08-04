@@ -10,6 +10,7 @@
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { dynamicImportSites, quoteAround } from './artifact-scan.mjs'
 
 const DIST = 'dist'
 const failures = []
@@ -59,31 +60,19 @@ if (only && only.endsWith('.html')) {
 
   // A dynamic import in the output means a chunk that is not in this file.
   //
-  // ONE OCCURRENCE IS NOT ONE, AND IT IS NAMED RATHER THAN TOLERATED AS A COUNT.
-  // `acorn` ships inside Arquero — `Table` reaches it through `regroup.js` and
-  // the three verbs that file imports, so it is in the artefact whichever table
-  // class the engine adapter builds against — and one of acorn's own parse-error
-  // messages is the sentence below, which contains the characters `import(`
-  // inside a string literal. The bundle contains no dynamic import; this check
-  // is a text scan by design, independent of any browser, and a text scan cannot
-  // tell code from a sentence about code.
-  //
-  // The exception is pinned to that exact sentence rather than to a number, so
-  // it cannot cover anything else: a real `import(` anywhere in the file is one
-  // more occurrence than the sentences account for, and the assertion fails
-  // naming it. If acorn ever stops shipping the message, the exception matches
-  // nothing and nothing changes.
-  const ACORN_IMPORT_MESSAGE = 'Trailing comma is not allowed in import()'
-  const dynamicImports = [...html.matchAll(/\bimport\s*\(/g)].filter((m) => {
-    const from = Math.max(0, m.index - ACORN_IMPORT_MESSAGE.length)
-    return !html.slice(from, m.index + ACORN_IMPORT_MESSAGE.length).includes(ACORN_IMPORT_MESSAGE)
-  })
+  // ONE OCCURRENCE IS NOT ONE, AND IT IS PINNED TO ITS OWN OFFSET RATHER THAN TO
+  // A NEIGHBOURHOOD. acorn ships inside Arquero and one of its parse-error
+  // messages contains the characters `import(` inside a string literal; the scan
+  // excuses exactly that occurrence and nothing standing beside it. The reasoning
+  // and the measurement that forced it live in `artifact-scan.mjs`, which is
+  // where the tests for this reject path are.
+  const dynamicImports = dynamicImportSites(html)
   if (dynamicImports.length) {
     fail(
       'no dynamic import',
       `${dynamicImports.length} occurrence(s) of \`import(\` — a lazy chunk cannot be` +
         ' loaded from an opaque origin (AD-17).\n' +
-        `    First at byte ${dynamicImports[0].index}: …${html.slice(dynamicImports[0].index - 40, dynamicImports[0].index + 40)}…`,
+        `    First at byte ${dynamicImports[0]}: …${quoteAround(html, dynamicImports[0])}…`,
     )
   }
 

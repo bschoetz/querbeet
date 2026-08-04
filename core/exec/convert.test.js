@@ -19,7 +19,7 @@
 // table. `adapters/arquero/engine.test.js` is where the real one is exercised.
 
 import { describe, expect, it } from 'vitest'
-import { BOOLEAN, DATE, DURATION, NUMBER, TEXT, TIME } from '../types/catalog.js'
+import { BOOLEAN, DATE, DATETIME, DURATION, NUMBER, TEXT, TIME } from '../types/catalog.js'
 import { bestFormat, detectColumn, scoreColumn } from '../types/typing.js'
 import { convertSource, createStepZeroCache } from './convert.js'
 
@@ -166,6 +166,121 @@ describe('the count and the conversion agree', () => {
   })
 })
 
+// --------------------------------------- the canonical readers, by their values
+//
+// Every XLSX and Parquet `native:date` and `native:datetime` column converts
+// through these, and until this block existed **nothing observed what they
+// returned** — only how many values they read. Mutation-proven before it was
+// written: emitting `d.getUTCMonth()` without the `+ 1`, so every native datetime
+// landed a month early, left all 655 tests green; transposing day and month left
+// all 655 green. That is the shape a `parts !== null` suite has by construction —
+// the pair-agreement property drives `domain: TEXT` only, and a wrong *value*
+// still parses.
+//
+// So these assert the nanoseconds, derived here from the calendar fields rather
+// than from `Date.parse` of the same string the reader parses — a check that
+// re-runs the implementation is not one.
+describe('a natively typed column’s values', () => {
+  it('makes a canonical date UTC midnight, with the month where the month goes', () => {
+    const entry = confirmed([
+      {
+        name: 'Buchungstag',
+        domain: 'native:date',
+        cells: ['2025-12-31', 'kein Datum', '2026-03-01', '2024-02-29'],
+      },
+    ])
+
+    const { columns } = convert(entry)
+
+    expect(columns[0].type).toBe(DATE)
+    expect(valuesOf(columns, 'Buchungstag')).toEqual([
+      BigInt(Date.UTC(2025, 11, 31)) * 1_000_000n,
+      'kein Datum',
+      BigInt(Date.UTC(2026, 2, 1)) * 1_000_000n,
+      BigInt(Date.UTC(2024, 1, 29)) * 1_000_000n,
+    ])
+    expect(columns[0].unparsed).toEqual([1])
+  })
+
+  it('tells 1 March from 3 January, which a transposed reader could not', () => {
+    // The day and the month are both small and both plausible on 03-01, so a
+    // transposition is invisible in every count and in every "does it parse".
+    const { columns } = convert(
+      confirmed([{ name: 'Tag', domain: 'native:date', cells: ['2026-03-01'] }]),
+    )
+
+    expect(valuesOf(columns, 'Tag')[0]).toBe(BigInt(Date.UTC(2026, 2, 1)) * 1_000_000n)
+    expect(valuesOf(columns, 'Tag')[0]).not.toBe(BigInt(Date.UTC(2026, 0, 3)) * 1_000_000n)
+  })
+
+  it('makes a canonical datetime UTC epoch nanoseconds, fraction included', () => {
+    // `toISOString` is millisecond-resolution by construction, so the fraction is
+    // exactly three digits — and the `padStart(3, '0')` that writes it and the
+    // `padEnd(9, '0')` that widens it to nanoseconds have to agree. `.007` is the
+    // case that catches either of them dropping a zero: read as `7` it would be
+    // 700 milliseconds instead of 7.
+    const entry = confirmed([
+      {
+        name: 'Zeitpunkt',
+        domain: 'native:datetime',
+        cells: [
+          '2026-02-13T15:57:35.461Z',
+          '2026-02-13T15:57:35.007Z',
+          '2026-02-13T15:57:35.000Z',
+          'gestern',
+        ],
+      },
+    ])
+
+    const { columns } = convert(entry)
+    const second = BigInt(Date.UTC(2026, 1, 13, 15, 57, 35)) * 1_000_000n
+
+    expect(columns[0].type).toBe(DATETIME)
+    expect(valuesOf(columns, 'Zeitpunkt')).toEqual([
+      second + 461_000_000n,
+      second + 7_000_000n,
+      second,
+      'gestern',
+    ])
+    expect(columns[0].unparsed).toEqual([3])
+  })
+
+  it('reads a native datetime in the month it was written in', () => {
+    // The mutation that stayed green: `getUTCMonth()` without the `+ 1` puts
+    // every native timestamp a month early, and a whole year of reports with it.
+    const { columns } = convert(
+      confirmed([{ name: 'Zeitpunkt', domain: 'native:datetime', cells: ['2026-02-13T00:00:00.000Z'] }]),
+    )
+
+    expect(valuesOf(columns, 'Zeitpunkt')[0]).toBe(BigInt(Date.UTC(2026, 1, 13)) * 1_000_000n)
+    expect(valuesOf(columns, 'Zeitpunkt')[0]).not.toBe(BigInt(Date.UTC(2026, 0, 13)) * 1_000_000n)
+  })
+
+  it('crosses a year boundary in the right direction', () => {
+    // 1 January is where a month-off-by-one and a year-off-by-one look identical
+    // from inside a single value, so the two ends of the year are asserted
+    // together rather than one of them.
+    const { columns } = convert(
+      confirmed([
+        {
+          name: 'Zeitpunkt',
+          domain: 'native:datetime',
+          // The canonical form a reader writes is `toISOString()`, which always
+          // carries three fractional digits — `…T00:00:00Z` does not round-trip
+          // and is counted unreadable, which is story 4's rule and not this
+          // story's to relax.
+          cells: ['2026-01-01T00:00:00.000Z', '2025-12-31T23:59:59.000Z'],
+        },
+      ]),
+    )
+
+    expect(valuesOf(columns, 'Zeitpunkt')).toEqual([
+      BigInt(Date.UTC(2026, 0, 1)) * 1_000_000n,
+      BigInt(Date.UTC(2025, 11, 31, 23, 59, 59)) * 1_000_000n,
+    ])
+  })
+})
+
 describe('what a converted cell is', () => {
   it('reads a German number as the number in the field', () => {
     const { columns } = convert(
@@ -263,6 +378,25 @@ describe('what a converted cell is', () => {
       86_399_000_000_000n,
     ])
     expect(valuesOf(durations.columns, 'Dauer')[0]).toBe(90_000_000_000_000n)
+  })
+
+  it('holds a duration whose hours are past what a `Number` can count', () => {
+    // `CLOCK_DURATION` leaves the hours field unbounded, so the arithmetic has to
+    // be `BigInt` from the digits onward. Multiplying in `Number` first —
+    // `BigInt(hours * 3600)` — rounds the product before it widens, and the cell
+    // comes out a plausible wrong number with nothing to say so.
+    const hours = 9_007_199_254_740_993n
+    const { columns } = convert(
+      confirmed([{ name: 'Dauer', cells: [`${hours}:00`], chosen: { type: DURATION } }]),
+    )
+
+    expect(columns[0].unparsed).toEqual([])
+    expect(valuesOf(columns, 'Dauer')[0]).toBe(hours * 3600n * 1_000_000_000n)
+    // The same sum done the wrong way, named so the assertion above is not just
+    // a big number agreeing with itself.
+    expect(valuesOf(columns, 'Dauer')[0]).not.toBe(
+      BigInt(Number(hours) * 3600) * 1_000_000_000n,
+    )
   })
 
   it('makes a boolean a boolean, whichever pair the column spells it in', () => {

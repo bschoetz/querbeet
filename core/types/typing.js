@@ -53,7 +53,7 @@
 //      the same Mix A at the same shape, four paired runs in alternating order,
 //      best of three per run — **2.40/2.40/2.45/2.42 s before against
 //      2.52/2.52/2.54/2.54 s after**. Re-measured after review round 1 moved the
-//      four-digit year test to the front of `readsAsMonthNameDate`, which was
+//      four-digit year test to the front of `monthNameDateParts`, which was
 //      expected to buy back the three lowercasings an ordinary text value used
 //      to pay: **2.39/2.39/2.41/2.38 against 2.50/2.49/2.52/2.53, +4.9 %** — the
 //      same figure within the noise of two runs, so the reorder is a
@@ -343,7 +343,7 @@ export const normalizeMonthToken = (token) => token.toLocaleLowerCase('de-DE').r
  *
  * **The explicit `dayAt === -1` line is refused twice over, and it is kept as a
  * statement rather than deleted to reach coverage** — the same treatment two
- * branches in `readsAsMonthNameDate` got, and measured the same way. A standalone
+ * branches in `monthNameDateParts` got, and measured the same way. A standalone
  * formatter under these options emits exactly one part, the month, so there is
  * no `literal` anywhere in it to mistake for a trailer: strike the line and the
  * function still answers `null`, and the whole suite stays green. What is
@@ -1320,7 +1320,7 @@ function clockParts(text, form) {
  * numeric date part contains no space, so a well-formed value has exactly one
  * and the two rules pick the same character; a malformed value with two fails
  * under both, from opposite ends. So the suite cannot tell them apart — this is
- * the same honesty the two redundant branches in `readsAsMonthNameDate` get. The
+ * the same honesty the two redundant branches in `monthNameDateParts` get. The
  * narrow form is kept because it states *why* the split moves rather than
  * asserting that it always should, and the day the difference appears it will
  * appear as a wrong answer rather than a refusal: it takes one candidate with an
@@ -1380,15 +1380,26 @@ export const timeParts = (text) => clockParts(text, CLOCK_TIME)
 
 const readsAsTime = (text) => timeParts(text) !== null
 
-/** A duration — the same shape with the hours unbounded, `{ hours, minutes,
- *  seconds }` or `null`. Named in the plural because these are *quantities*
- *  rather than positions on a clock face: `25:00` is twenty-five hours, and
- *  there is no such hour of any day. */
+/**
+ * A duration — the same shape with the hours unbounded, `{ hours, minutes,
+ * seconds }` or `null`. Named in the plural because these are *quantities*
+ * rather than positions on a clock face: `25:00` is twenty-five hours, and there
+ * is no such hour of any day.
+ *
+ * **`hours` is a `BigInt` and the other two are not**, which looks inconsistent
+ * and is exactly the shape of the regex. `CLOCK_DURATION`'s hours field is an
+ * unbounded `\d+`, so `Number(m[1])` on a long enough one rounds *before*
+ * anything downstream can widen it — `9007199254740993:00` would become
+ * ...992 hours, a wrong number reported as fully readable. Minutes and seconds
+ * are two digits by construction and could not be anything else. AD-21's
+ * representation is a `BigInt` anyway, so the exact field arrives exact rather
+ * than being repaired after the loss.
+ */
 export function durationParts(text) {
   const m = CLOCK_DURATION.exec(text)
   if (m === null) return null
   return {
-    hours: Number(m[1]),
+    hours: BigInt(m[1]),
     minutes: Number(m[2]),
     seconds: m[3] === undefined ? 0 : Number(m[3]),
   }
@@ -2156,10 +2167,29 @@ const readerFor = (type, affix, present = null) =>
  * @returns {((text: string) => object|null) | null}
  */
 export function partsFor(cells, { type, format, missingTokens, domain }) {
-  const native = nativeTypeOf(domain)
-  if (native !== null) return CANONICAL[native] ?? null
-
+  // **`text` first, ahead of the declaration.** A `text` column has no reading
+  // whatever its domain claims, and the conversion has no cell arithmetic for one
+  // — so a native column confirmed as `text` reaching the canonical branch would
+  // come back with a reader and no way to use what it read, and the first value
+  // that parsed would take the conversion down instead of being left alone. It
+  // is unreachable today, and only because two rules two layers away happen to
+  // hold: the pane renders no type control for a native column and the store
+  // refuses the patch. Neither is this function's to rely on.
   if (type === TEXT) return null
+
+  // AD-20 — a natively typed column is read canonically. Keyed on the **type**
+  // rather than on the word the domain declares: the two agree by construction
+  // (`detectColumn` writes the declaration onto the record as the type), and
+  // keying on the declaration would let a disagreement hand back one type's
+  // reader for another type's arithmetic, which is a wrong value rather than a
+  // refusal. A native type with no canonical reader cannot exist —
+  // `canonicalTypeGaps()` asserts it — so reaching that is a programming error.
+  if (nativeTypeOf(domain) !== null) {
+    const reads = CANONICAL[type]
+    if (reads === undefined) throw new TypeError(`no canonical reading for a native ${type} column`)
+    return reads
+  }
+
   if (type === TIME) return timeParts
   if (type === DURATION) return durationParts
 

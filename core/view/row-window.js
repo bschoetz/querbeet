@@ -190,7 +190,13 @@ const NO_MARKS = Object.freeze([])
  * @returns {ReadonlyArray<ReadonlyArray<boolean>>} empty where nothing is marked
  */
 export function sliceMarks(marks, columnCount, start, end) {
-  if (!marks || columnCount === 0) return NO_MARKS
+  // An array of nothing but `null`s is the same answer as no array, and it is
+  // the *common* one — a Source where every value read. Without this line the
+  // window builds and freezes one all-`false` boolean row per rendered row on
+  // every scroll event, for a table with nothing to mark. The caller answers the
+  // question too, once per entry; this is the half that makes the early return
+  // true of its own argument rather than of its caller's discipline.
+  if (!marks || columnCount === 0 || marks.every((set) => set == null)) return NO_MARKS
 
   const from = count(start)
   const to = Math.max(from, count(end))

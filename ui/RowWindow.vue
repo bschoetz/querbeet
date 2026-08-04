@@ -59,9 +59,10 @@ const props = defineProps({
    *  is a render, not a search — `core/view` projects the window's marked state
    *  alongside its rows and the windowing arithmetic is untouched. */
   marks: { type: Array, default: null },
-  /** What a marked cell says on hover and to a screen reader. German lives in
-   *  `ui/` (AD-13), and the sentence belongs to whoever knows *why* the cell is
-   *  marked, which is not this component. */
+  /** What a marked cell says on hover. German lives in `ui/` (AD-13), and the
+   *  sentence belongs to whoever knows *why* the cell is marked, which is not
+   *  this component. It is rendered as `title`, which is a pointer affordance —
+   *  see the note at the cell for what that does and does not reach. */
   markTitle: { type: String, default: '' },
 })
 
@@ -189,10 +190,16 @@ watch(
               :style="{ height: ROW_HEIGHT_PX + 'px' }"
             >
               <!-- A marked cell keeps its original text and says why it stands
-                   out. The colour is not the whole signal: `title` carries the
-                   reason to a pointer and the same string is the accessible
-                   name, so a cell that is merely amber to one reader is a
-                   sentence to another. -->
+                   out: amber, a wavy underline, and the reason in `title`.
+                   **`title` is a pointer affordance and not much more, and
+                   claiming otherwise here would be claiming coverage the
+                   attribute does not give.** On a `<td>` it is exposed
+                   inconsistently — several common screen-reader configurations
+                   announce it not at all — and it is unreachable by keyboard and
+                   by touch. So the underline carries the mark for a reader who
+                   cannot see the colour, the text itself is unchanged for
+                   everyone, and non-visual exposure of the *reason* is deferred
+                   work rather than something this attribute quietly provides. -->
               <td
                 v-for="(cell, c) in row"
                 :key="c"
