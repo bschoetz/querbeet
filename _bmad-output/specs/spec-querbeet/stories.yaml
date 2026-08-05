@@ -7,8 +7,8 @@
 # is that 7c's threshold is a calibration and nothing built so far is slow
 # enough on the owner's machine to calibrate it against, while Join and
 # Aggregate are. The stale mark is carved out of 7c and shipped early because
-# stories 8 and 9 make the gap it closes progressively more visible. It has no
-# entry of its own yet and needs an id when it is cut.
+# stories 8 and 9 make the gap it closes progressively more visible. It is
+# story 9b, and it sits in list order between 9 and 10.
 - id: "1"
   title: CSV Sources — load, encoding, delimiter, damage detection
   description: >-
@@ -506,6 +506,29 @@
     Division by zero and boxed inputs yield a marked empty cell through the
     adapter's box handling — never a crash, never a silent zero (AD-22). No
     chunking for Aggregate (AD-9).
+- id: "9b"
+  title: The stale mark — a result that says which run it belongs to
+  description: >-
+    The half of CAP-38 that needs no threshold and no mode: a Preview or Result
+    that belongs to a previous run says so, so that nothing on screen looks
+    current by default while a run is walking.
+  invoke_dev_with: >-
+    Carved out of story 7c and pulled forward, because stories 8 and 9 grow the
+    window in which the panel lies from milliseconds into seconds — the
+    reasoning is on the 7c entry and in the two deferred-work entries story 7b's
+    review round 2 raised. The mechanism is already decided and half built: 7a
+    keeps a content key per node in a Map local to executeGraph and a result
+    carries `{ kind, table, rowCount, columnCount, diagnostics }` with no key,
+    so this story's one piece of core work is exposing a key per result. The
+    mark is then `resultKey !== currentKey`, which is the same comparison 7c
+    was designed around — build it here and 7c inherits it rather than the
+    reverse. 7b's `run: { id, startedAt, state }` on the execution return is
+    the other half of the identity and needs no change. Two constraints from
+    the epic: `core/` emits a code and `ui/` writes the German sentence
+    (AD-13), and a stale mark is a stated condition rather than a styling
+    convention — a greyed-out number that says nothing is not this story.
+    Sequenced before story 10 deliberately: the Result table is built there,
+    and giving it the mark from the start is cheaper than retrofitting one.
 - id: "10"
   title: Result table at design scale
   description: >-
