@@ -833,3 +833,210 @@ test('no raw core vocabulary reaches the screen while a Step is configured and p
   // core's own words.
   expect(shown).not.toMatch(/\bnot_empty\b/)
 })
+
+// ------------------------------------------------- the run the user can get out of
+//
+// **This is where story 7b's platform assumptions actually get tested.** The unit
+// envelopes drive an injected yield by hand and can say nothing about whether an
+// input event is delivered in the gap it opens; only an engine with an input queue
+// can, and only from `file://`, which is the origin this product runs at.
+//
+// Measured from the built artefact on 2026-08-05, both engines, before this case
+// was written (the spec's Ask First): 30 `MessageChannel` yields — one 30-Step
+// run's worth — cost 0.1–0.5 ms in Chromium and 0–1 ms in Firefox, so 0.003 ms per
+// yield against R4's 3.0 / 2 ms. The same 30 through `setTimeout(…, 0)` cost
+// 99.9–124.2 / 110–122 ms, which is the 4 ms clamp this design refuses, measured
+// here rather than cited. `SharedArrayBuffer` is `undefined` from `file://` in
+// both engines, exactly as AD-9 says.
+
+const BIG_ROWS = 500_000
+const amountAt = (i) => Number(AMOUNTS[i % 9].replace(/\./g, '').replace(',', '.'))
+const above = (limit) =>
+  Array.from({ length: BIG_ROWS }, (_, i) => amountAt(i)).filter((a) => a > limit).length
+const de = (n) => n.toLocaleString('de-DE')
+
+const BIG = csv(
+  'gross.csv',
+  ['Kunde;Betrag;Datum']
+    .concat(
+      Array.from(
+        { length: BIG_ROWS },
+        (_, i) => `${NAMES[i % 9]}-${i};${AMOUNTS[i % 9]};${DATES[i % 9]}`,
+      ),
+    )
+    .join('\n') + '\n',
+)
+
+const STEPS = 45
+
+const progress = (page) => page.getByTestId('editor-progress')
+const cancelRun = (page) => page.getByTestId('editor-cancel')
+
+/**
+ * The status band's outer box and the canvas's, read in one turn of the page's own
+ * event loop — and, with `takeCancel`, the cancel control focused in the same turn.
+ *
+ * **One call rather than three, because the run is racing it.** The band's height
+ * is the thing story 6b measured (405 px of canvas became 237 px when this region
+ * was allowed to grow) and happy-dom returns an all-zero rect, so this assertion
+ * can only live here — but every extra round trip while a run is walking is a
+ * chance for it to end first, which is the one way this case goes flaky.
+ */
+const geometry = (page, { takeCancel = false } = {}) =>
+  page.evaluate((take) => {
+    const box = (el) => {
+      const rect = el.getBoundingClientRect()
+      return { x: rect.x, y: rect.y, height: rect.height }
+    }
+    // The band is the fixed-height region the refusal, the status and the progress
+    // line all share; it has no testid of its own because nothing else needs one.
+    const band = document.querySelector('[data-testid="editor-refusal"]').parentElement
+    const view = document.querySelector('[data-testid="editor-canvas"]')
+    const cancel = take ? document.querySelector('[data-testid="editor-cancel"]') : null
+    const measured = { band: box(band), view: box(view), tag: cancel?.tagName ?? null }
+    cancel?.focus()
+    return measured
+  }, takeCancel)
+const cardIds = (page) =>
+  page
+    .locator('[data-testid="step-card"]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute('data-node')))
+const byId = (page, id) => page.locator(`[data-testid="step-card"][data-node="${id}"]`)
+const selectById = async (page, id) => {
+  await wrapper(page, id).evaluate((el) => el.focus())
+  await wrapper(page, id).click({ position: { x: 4, y: 4 } })
+  await expect(panel(page)).toBeVisible()
+}
+
+test('a long run says where it is, and stops between two Steps when it is told to', async ({
+  page,
+}) => {
+  // Well past the 30 s default, and it has to be: half a million rows to ingest,
+  // forty-five Steps to wire, and a run long enough to be interrupted. Measured
+  // 2026-08-05 at ~27 s (Chromium) and ~24 s (Firefox) end to end.
+  test.setTimeout(180_000)
+
+  await pick(page, BIG)
+  await confirm(page, 'gross')
+  await toEditor(page)
+
+  // Forty-five Steps. R4's shape is thirty, and thirty was tried first: Chromium
+  // passed, and Firefox passed once and failed once — the run finished between the
+  // control appearing and the pointer reaching it, so the German sentence never
+  // came. Forty-five is the same shape with margin. The margin is the honest price
+  // of asserting an interaction the product wins by design rather than by timing,
+  // and it is bought twice: with more Steps, and by taking the control from the
+  // keyboard, which is both cheaper to deliver and what AD-30 asks for anyway.
+  //
+  // They are added by id rather than by name: forty-five Steps of one kind share
+  // one accessible name, and the pane qualifies each with its own id precisely so
+  // they can still be told apart.
+  const chain = []
+  let upstream = null
+  for (let i = 0; i < STEPS; i += 1) {
+    const before = await cardIds(page)
+    await page.getByRole('button', { name: '+ Filter' }).click()
+    const after = await cardIds(page)
+    const id = after.find((each) => !before.includes(each))
+    chain.push(id)
+    await byId(page, id)
+      .getByLabel('Eingang 1', { exact: true })
+      .selectOption(upstream ?? (await idOf(page, 'Quelle: gross')))
+    upstream = id
+
+    if (i === 0) {
+      // The first Step carries the only condition in the chain, and it starts
+      // *narrow*: the identity Filters below it then cost almost nothing to wire
+      // up, and the edit at the end of this case widens it so that every one of
+      // them has half a million rows to walk instead of a ninth of them.
+      await selectById(page, id)
+      await panel(page).getByRole('button', { name: 'Bedingung hinzufügen' }).click()
+      await panel(page).getByLabel('Spalte der Bedingung 1').selectOption('Betrag')
+      await panel(page).getByLabel('Vergleich der Bedingung 1').selectOption('gt')
+      await enter(panel(page).getByLabel('Wert der Bedingung 1'), '100')
+    }
+  }
+  await byId(page, chain.at(-1))
+    .getByRole('button', { name: 'Als Ergebnis-Step setzen' })
+    .click()
+
+  await selectById(page, chain.at(-1))
+  await expect(panel(page).getByTestId('step-counts')).toHaveText(
+    `${de(above(100))} Zeilen, 3 Spalten`,
+  )
+
+  // **The geometry, measured before the run starts.** The status band's `h-20` is
+  // load-bearing rather than tidy: letting the region grow shrank the canvas from
+  // 405 px to 237 px over three commands in story 6b, which moves every Step on
+  // screen out from under the pointer aimed at it. The progress line and the cancel
+  // control live *inside* that band for exactly this reason, and nothing asserted
+  // it until now — happy-dom returns an all-zero rect, so this assertion can only
+  // exist here.
+  //
+  // 96 px and not 80: `h-20` is 5rem of *content* height, and this project omits
+  // Tailwind's preflight (the stack table says so), so nothing sets
+  // `box-sizing: border-box` and the `py-2` above and below is outside it. The
+  // number worth pinning is the one a user's canvas is displaced by, which is the
+  // outer box.
+  const idle = await geometry(page)
+  expect(Math.round(idle.band.height)).toBe(96) // h-20 + py-2, content-box
+
+  // The edit that starts the run this case is about: every Step in the chain
+  // recomputes, and each of them now walks half a million rows.
+  await selectById(page, chain[0])
+  await enter(panel(page).getByLabel('Wert der Bedingung 1'), '0')
+
+  // It outlives the 150 ms reveal delay, so it says where it is…
+  await expect(progress(page)).toContainText(`von ${STEPS + 1}`)
+
+  // …and offers a way out. It is a real `<button>`, so it is reachable and
+  // operable from the keyboard for free (AD-30, which forbids an interaction that
+  // exists only as a pointer gesture) — and taking it that way is also the
+  // cheapest possible delivery, which keeps this case about the run rather than
+  // about how long a headless engine takes to hit-test a moving band.
+  await expect(cancelRun(page)).toBeVisible()
+
+  // **The geometry and the control, in one turn of the page's own event loop.**
+  // Every round trip from here is a chance for the run to finish before the
+  // control is taken — a 45-Step chain over half a million rows walks in well
+  // under a second — so the measurements ride along with the focus rather than
+  // costing three calls of their own. That the call lands at all, while the walk
+  // is walking, is the message queue doing what this story bought it for.
+  const running = await geometry(page, { takeCancel: true })
+  expect(running.tag).toBe('BUTTON')
+  await expect(cancelRun(page)).toBeFocused()
+  await page.keyboard.press('Enter')
+
+  // …and the band it was given did not grow, so the canvas kept its size and its
+  // place. The distance between the two is measured in the same frame each time,
+  // so the page having scrolled in between cancels out; an absolute `y` would not,
+  // because selecting a Step scrolls the panel into view.
+  expect(Math.round(running.band.height)).toBe(96)
+  expect(Math.round(running.view.height)).toBe(Math.round(idle.view.height))
+  const gap = (at) => Math.round(at.view.y - at.band.y)
+  expect(gap(running)).toBe(gap(idle))
+
+  // The keypress was *delivered while the walk was still walking*, which is the
+  // whole reason the yield goes through the message queue rather than the microtask
+  // queue: a microtask yield drains before the engine processes input, so this
+  // sentence would never have appeared.
+  await expect(editorStatus(page)).toContainText('Der Lauf wurde abgebrochen')
+  // Arbeitsschritte and not Steps: the walk has one node per Step *and* one for
+  // the Quelle, so „Von 46 Steps" in front of a 45-Step chain would be the
+  // interface being wrong about the one number it reports.
+  await expect(editorStatus(page)).toContainText(
+    `Von ${STEPS + 1} Arbeitsschritten (Quellen mitgezählt)`,
+  )
+  await expect(progress(page)).toHaveCount(0)
+  await expect(cancelRun(page)).toHaveCount(0)
+
+  // **The assertion the story exists for.** Some of these Steps had already
+  // finished under the new condition when the run was stopped, and their answers
+  // are still not on screen: a partly computed graph presented as the current
+  // result is the failure this product is built to prevent. What the panel shows is
+  // the previous run's number, unchanged.
+  await selectById(page, chain.at(-1))
+  await expect(panel(page).getByTestId('step-counts')).toHaveText(
+    `${de(above(100))} Zeilen, 3 Spalten`,
+  )
+})

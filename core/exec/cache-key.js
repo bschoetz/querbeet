@@ -360,10 +360,11 @@ export function forgetRefusals() {
  *
  * `canonical` throwing is correct and is what the I/O matrix specifies: a silent
  * key collision would serve one Step's table as another's. What must not happen
- * is the throw *leaving the module that asked for a key*. Both callers sit on a
- * render path — `executeGraph` runs inside a `watch` in `ui/EditorPane.vue` and
- * `createStepZeroCache.of` inside `ui/SourcesPane.vue`'s template — so an escape
- * reaches the user as a blank pane, and it would break the frozen rule that a
+ * is the throw *leaving the module that asked for a key*. Both callers sit where
+ * an escape has no one to catch it — the walk is driven from `ui/EditorPane.vue`,
+ * synchronously before story 7b and through a promise nobody awaits since, and
+ * `createStepZeroCache.of` is called from `ui/SourcesPane.vue`'s template — so an
+ * escape costs the user the run or the pane, and it would break the frozen rule that a
  * cached run and an uncached run are indistinguishable except in time: without a
  * cache the graph runs, with one it throws.
  *
@@ -396,7 +397,7 @@ export function forgetRefusals() {
  * conditions the architecture's amended **Cross-cutting — logging** row states
  * (owner decision, 2026-08-05) — including the fourth, **once per distinct
  * message**, which is why `report` exists: `stepZeroKey` runs per Source per run
- * and `executeGraph` runs on every data-affecting command, so an un-deduplicated
+ * and a run starts on every data-affecting command, so an un-deduplicated
  * warning fires at keystroke frequency and buries the errors it sits among.
  * Round 1 argued the opposite and was overruled.
  *
@@ -414,8 +415,8 @@ export function keyOrNull(mint) {
 }
 
 /**
- * The same, for a key that comes back **through a door** — `executeGraph`'s
- * injected `sourceKey(id)` — and it contains *everything*.
+ * The same, for a key that comes back **through a door** — the `sourceKey(id)`
+ * injected into the walk — and it contains *everything*.
  *
  * **Two boundaries, because there are two kinds of caller** (review round 3;
  * rounds 1 and 2 conflated them, and the conflation was a real hole). Round 1
@@ -424,13 +425,14 @@ export function keyOrNull(mint) {
  * cannot both hold at one site: narrowing the door reopened round 1's crash for
  * every class except the one class it happened to be tested with. Probed
  * 2026-08-05 — an injected `sourceKey` throwing its own documented guard, or a
- * plain `Error`, escaped `executeGraph`.
+ * plain `Error`, escaped the walk.
  *
  * The distinction is **who wrote the code**, not what it threw. Inside this
  * repository a non-refusal is a programming error and must reach whoever can fix
- * it. A door is foreign code on a render path: `executeGraph` has no idea what is
- * behind it, cannot audit it, and its one caller is a Vue `watch` where an escape
- * is a blank Editor. So everything a door throws is a cache miss — the safe
+ * it. A door is foreign code from a pane: the walk has no idea what is behind it
+ * and cannot audit it, and an escape takes the whole run with it — a blank Editor
+ * before story 7b, a run that never publishes since. So everything a door throws
+ * is a cache miss — the safe
  * category the executor already has — and everything a door throws is reported,
  * including a bare object, which is what `messageOf` is for.
  *

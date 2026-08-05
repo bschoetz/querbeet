@@ -1,13 +1,35 @@
 // The frontier walk of execution (CAP-19, AD-29's first gate), with AD-8's
-// content-addressed cache threaded through it.
+// content-addressed cache threaded through it and AD-9's yield point cut into it.
 //
-// It is a *frontier walk*, not a scheduler. `contributingTo(graph, resultId)`
-// already existed and already answers which Steps a run has to touch; this file
-// walks that set in dependency order, converts each contributing Source through
-// story 6a's cache as Step zero, and asks each remaining Step's executor for a
-// table. What it still deliberately does not have is story 7b's and 7c's: no
-// cancellation, no progress, no yield point, no run identity, no mode switch and
-// no row threshold.
+// It is a *frontier walk*. `contributingTo(graph, resultId)` already existed and
+// already answers which Steps a run has to touch; this file walks that set in
+// dependency order, converts each contributing Source through story 6a's cache as
+// Step zero, and asks each remaining Step's executor for a table. What it still
+// deliberately does not have is story 7c's: no mode switch and no row threshold.
+//
+// ONE WALK, TWO DRIVERS, AND THE WALK IS A GENERATOR (story 7b).
+//
+//   `walkGraph` is the loop. It yields once per node, **before that node is
+//   touched at all**, and returns the assembled result. A yield placed anywhere
+//   else in the body would land between a Step's key and its store, and a run
+//   stopped there would leave a key in `keys` for a Step it never computed.
+//
+//   `executeGraph` drains it in a `while` and is the synchronous driver — the same
+//   function, with the same signature and the same return, that every caller and
+//   every test before this story described. It is what keeps the second driver
+//   honest: a difference between the two would show up here first.
+//
+//   `core/exec/scheduler.js` is the asynchronous driver. It drains the same
+//   generator one Step per turn of the macrotask queue, checks a cancellation flag
+//   at each yield and reports progress. AD-4 forbids a *Step* from being a
+//   generator or async; it says nothing about the loop around them, and that loop
+//   is precisely what AD-9 calls the scheduler.
+//
+// A RUN HAS AN IDENTITY (AD-25), AND EVERY RETURN CARRIES IT. `{ id, startedAt }`
+// is minted from the `Clock` port above everything, so a run refused at a gate
+// carries it too — a refusal is a run that happened, and a compliance artifact
+// that cannot say when it was refused is not one. The clock is a door like the
+// cache: absent, the identity is two `null`s and the walk is what it always was.
 //
 // THE CACHE ARRIVES AS A PARAMETER, WHICH IS WHY THIS FILE IS STILL PURE. Story
 // 6a's version of this comment said "nothing here holds state between calls",
@@ -51,6 +73,18 @@
 //   at neither end: the gate loop returns before any Step has a key, so a run
 //   that may not happen leaves no trace of itself to be served later.
 //
+//   AND THE GATE ASKS A PREDICATE, NOT A TABLE (story 7b, review round 1). Gate 1
+//   tested a Source's confirmation by asking for its table and comparing against
+//   `null`. In the pane that door is the *converting* one — 548–555 ms per
+//   contributing Source at design scale — so the gate loop, which runs above the
+//   walk and therefore above the first yield, paid every cold Step-zero
+//   conversion synchronously and uncancellably. That is the exact failure this
+//   story exists to remove, and it was shipped and reverted once. `sourceConfirmed`
+//   is the predicate door: it answers the question the gate actually has, the
+//   conversion happens at the Source's own node **inside** the walk between two
+//   yields like every other Step, and `sourceTable(id) === null` remains the
+//   fallback for every caller that passes no predicate.
+//
 // A per-Step failure, by contrast, is **not** whole-run: a Filter whose condition
 // disagrees with its column's type produces no table and says so, and each Step
 // downstream reports its missing input **by name**. That difference is the point
@@ -81,6 +115,11 @@ export const CODE = Object.freeze({
   inputFailed: 'exec.input_failed',
   stepThrew: 'exec.step_threw',
   runIncomplete: 'exec.run_incomplete',
+  // Minted here rather than in `core/exec/scheduler.js`, which is where it is
+  // emitted, because this is the table `ui/graph-labels.js` checks itself against
+  // (`EXEC_CODES` below). A code emitted from a file with no enumeration of its
+  // own would be a German sentence nothing can prove exists.
+  runCancelled: 'exec.run_cancelled',
 })
 
 /** The enumeration `ui/graph-labels.js` checks itself against. */
@@ -109,10 +148,61 @@ function readOnlyMap(map) {
   })
 }
 
-const NOTHING = readOnlyMap(new Map())
+/**
+ * The result map of a run that produced none — a refusal, a graph with no Result
+ * Step, a cancellation. Exported because `core/exec/scheduler.js` returns it for a
+ * cancelled run and a second empty projection would be a second answer to "what
+ * does a run with no results look like".
+ */
+export const EMPTY_RESULTS = readOnlyMap(new Map())
 
-const refused = (diagnostics) =>
-  Object.freeze({ ok: false, results: NOTHING, diagnostics: Object.freeze(diagnostics) })
+/**
+ * A run's identity, taken from the `Clock` port (AD-25).
+ *
+ * **The clock is a door, exactly as the cache is.** Without one the identity is
+ * two `null`s and the walk is byte-for-byte what it was before this story, which
+ * is what lets every test written against `executeGraph` stay honest. In the
+ * product `ui/EditorPane.vue` always passes one, because the composition root
+ * names one adapter and threads it (AD-1).
+ *
+ * Minted through a function rather than inline because there are two mint sites
+ * for one rule: the synchronous driver mints above its gate loop, and
+ * `core/exec/scheduler.js` mints before its first `next()` so it can hand the id
+ * back to its caller without awaiting anything.
+ *
+ * @param {import('../../ports/index.js').Clock|null} [clock]
+ * @returns {Readonly<{ id: string|null, startedAt: number|null }>}
+ */
+export function mintRun(clock = null) {
+  return Object.freeze({
+    id: clock === null ? null : clock.runId(),
+    startedAt: clock === null ? null : clock.now(),
+  })
+}
+
+/**
+ * The three states a run reports about itself.
+ *
+ * `refused` is a gate saying the run may not happen (AD-29); `cancelled` is a user
+ * saying it should stop (AD-9); `complete` is the walk having reached the end of
+ * its order — including the end of an empty order, which is what a graph with no
+ * Result Step has. **A `complete` run is not a successful one**: a Step that
+ * produced no table leaves `ok: true` and says so in its own diagnostics, and that
+ * distinction is older than this story.
+ */
+export const RUN_STATE = Object.freeze({
+  refused: 'refused',
+  complete: 'complete',
+  cancelled: 'cancelled',
+})
+
+const refused = (diagnostics, run) =>
+  Object.freeze({
+    ok: false,
+    results: EMPTY_RESULTS,
+    diagnostics: Object.freeze(diagnostics),
+    run: Object.freeze({ ...run, state: RUN_STATE.refused }),
+  })
 
 /**
  * The contributing Steps in dependency order — every input before its consumer.
@@ -147,47 +237,61 @@ function inDependencyOrder(nodes, frontier) {
 }
 
 /**
- * Run the Pipeline that ends at the Result Step.
+ * The walk itself, as a generator: **one Step per `yield`, and the `yield` comes
+ * first.**
  *
- * @param {object} run
- * @param {ReadonlyArray<object>} run.steps the graph store's frozen projection
- * @param {string|null} run.resultId which Step the run ends at
- * @param {import('../../ports/index.js').TableEngine} run.engine
- * @param {(id: string) => (object|null)} run.sourceTable Step zero's output for a
- *   Source node — the converted `Table`, or `null` while its typing is not
- *   confirmed. With column names made unique on ingest, `null` has exactly one
- *   meaning here, which is what lets gate 1 name the Source truthfully.
- * @param {{ get: (key: string) => (object|undefined),
- *           set: (key: string, entry: object) => unknown }} [run.cache]
- *   AD-8's cache (`createRunCache`), or nothing. Absent, every Step computes
- *   exactly as it did before this story existed.
- * @param {(id: string) => (string|null)} [run.sourceKey] what a Source node's
- *   Step-zero output *is*, as a key — `core/exec/convert.js`'s `stepZeroKey`,
- *   which is `stepKey('typing', typing, [sourceKey(entry)])` so that the two
- *   stores share one key scheme rather than two opinions about staleness.
- *   **`null` means "not keyable", and it is a supported answer**: it makes that
- *   Source and everything downstream of it uncacheable for the run, which is a
- *   miss rather than a wrong answer. Anything else would mean guessing a key for
- *   a Source whose bytes nobody digested, and two such guesses would collide.
- * @returns {{ ok: boolean,
- *            results: ReadonlyMap<string, { kind: string, table: object|null,
- *              rowCount: number|null, columnCount: number|null,
- *              diagnostics: ReadonlyArray<object> }>,
- *            diagnostics: ReadonlyArray<object> }}
+ * The value yielded is the progress of the run — `{ done, total, stepId }`, where
+ * `done` is how many Steps are finished and `stepId` names the one about to start,
+ * so `done + 1` of `total` is the position a person reads. `total` is the walk's
+ * own length and nothing derived: `order.length` is exactly how many Steps this
+ * run will touch.
+ *
+ * **Why the top of the loop body and nowhere else.** A driver that stops at a
+ * yield stops *between* Steps, which is what AD-9 asks for and what makes exit
+ * latency one Step. It also means the node whose descriptor was just yielded has
+ * had nothing done to it — no key computed, no cache read, no executor called — so
+ * a cancelled run leaves no key in `keys` for a Step it never ran and no entry in
+ * `results` for a Step that never produced one. Story 7a made this loop the place
+ * where content keys are minted and stored, so "somewhere in the body" would have
+ * been a real choice with a wrong answer.
+ *
+ * A generator rather than a second copy of the walk, because two copies would
+ * drift about dependency order, about the gates, or about what a result is — and
+ * the synchronous driver below is what every existing test describes.
+ *
+ * @param {object} run see `executeGraph`
+ * @param {Readonly<{ id: string|null, startedAt: number|null }>} [run.run] the
+ *   identity to stamp, for a driver that minted one before starting. Absent, it is
+ *   minted here from `run.clock`.
+ * @returns {Generator<Readonly<{ done: number, total: number, stepId: string }>,
+ *                     object, void>}
  */
-export function executeGraph({
+export function* walkGraph({
   steps,
   resultId,
   engine,
   sourceTable,
+  sourceConfirmed = null,
   cache = null,
   sourceKey = null,
+  clock = null,
+  run = null,
 }) {
+  // **Above everything, including the gates.** A refusal is a run that happened,
+  // and AD-25 says every run carries an id and a start time — so the identity is
+  // minted before the first thing that can return.
+  const identity = run ?? mintRun(clock)
+
   // No Result Step designated is not a refusal and carries no sentence of its
   // own: `graph.no_result` already says it, once, on the pane. A second sentence
   // here would say the same thing in a different place.
   if (!resultId || !findNode({ nodes: steps }, resultId)) {
-    return Object.freeze({ ok: true, results: NOTHING, diagnostics: Object.freeze([]) })
+    return Object.freeze({
+      ok: true,
+      results: EMPTY_RESULTS,
+      diagnostics: Object.freeze([]),
+      run: Object.freeze({ ...identity, state: RUN_STATE.complete }),
+    })
   }
 
   const graph = { nodes: steps, resultId }
@@ -199,10 +303,21 @@ export function executeGraph({
   // Both are collected in full rather than reported one at a time: a pipeline
   // with two unconfirmed Sources should name both, so the user makes one trip
   // through the Sources pane instead of two.
+  //
+  // **Through the predicate wherever there is one, and never through the table.**
+  // This loop runs above the walk, so everything it touches is paid before the
+  // run has yielded once; asking the converting door here made the first half
+  // second of a cold run uncancellable (see the file header). A caller that
+  // passes no predicate keeps the original test — that is what makes this an
+  // added door rather than a changed contract.
+  const confirmed =
+    typeof sourceConfirmed === 'function'
+      ? (id) => sourceConfirmed(id) === true
+      : (id) => sourceTable(id) !== null
   const blocking = []
   for (const node of order) {
     if (node.kind === SOURCE) {
-      if (sourceTable(node.id) === null) {
+      if (!confirmed(node.id)) {
         blocking.push(error(CODE.sourceUnconfirmed, { id: node.id }, { stepId: node.id }))
       }
     } else if (!stepKind(node.kind)) {
@@ -211,7 +326,7 @@ export function executeGraph({
       )
     }
   }
-  if (blocking.length > 0) return refused(blocking)
+  if (blocking.length > 0) return refused(blocking, identity)
 
   // --- the walk ----------------------------------------------------------
 
@@ -250,7 +365,25 @@ export function executeGraph({
    *  nothing anyway, since every chain starts at a Source. */
   const caching = cache !== null && typeof sourceKey === 'function'
 
-  for (const node of order) {
+  for (const [index, node] of order.entries()) {
+    // **The yield point (AD-9), and the cancellation-check point with it.** It is
+    // the first statement of the body, so a driver that stops here has stopped
+    // before this node was touched: nothing computed, no key minted, no entry
+    // stored. `index` is how many Steps are finished, which is what makes
+    // `done + 1 of total` the position a person reads.
+    //
+    // `order.entries()` rather than a counter, because the body `continue`s in
+    // four places and a counter incremented at the bottom would miss every one of
+    // them.
+    //
+    // **`kind` rides along, and it is not decoration.** The order contains Source
+    // nodes as well as Steps — Step zero is a node in the walk, which is the whole
+    // of what makes it cancellable — so a caller rendering „Rechnet Step 1 von 46"
+    // off `stepId` alone calls a Quelle a Step. Round 1 did exactly that. The kind
+    // is right here and costs nothing; resolving it afterwards against a
+    // projection that may have been re-read since would not be.
+    yield Object.freeze({ done: index, total: order.length, stepId: node.id, kind: node.kind })
+
     if (node.kind === SOURCE) {
       // A Source's key exists to be an *input* key and nothing else. Its table
       // is Step zero's, already cached by `createStepZeroCache` under this very
@@ -259,15 +392,23 @@ export function executeGraph({
       //
       // Through `keyFromDoor` and **not** through `keyOrNull`, and the two are
       // different on purpose (review round 3). `sourceKey` is a door: this file
-      // did not write what is behind it, cannot audit it, and its one caller is a
-      // Vue `watch`, so *whatever* it throws is a cache miss rather than a blank
-      // Editor. The `stepKey` call below is internal and keeps the narrow rule,
-      // so a caller bug in this repository still propagates to whoever can fix
-      // it. Rounds 1 and 2 pushed one site both ways and it could only be one.
+      // did not write what is behind it, cannot audit it, and it is called from a
+      // pane's own code, so *whatever* it throws is a cache miss rather than a
+      // broken run. The `stepKey` call below is internal and keeps the narrow
+      // rule, so a caller bug in this repository still propagates to whoever can
+      // fix it. Rounds 1 and 2 pushed one site both ways and it could only be one.
       if (caching) {
         const key = keyFromDoor(() => sourceKey(node.id))
         if (typeof key === 'string') keys.set(node.id, key)
       }
+      // **This is where a Source is converted**, one yield after the driver was
+      // last able to stop, which is the whole point of the predicate at the gate.
+      //
+      // A `null` here after the gate said `confirmed` means the two doors
+      // disagree, which is a caller bug rather than a state: the Source records no
+      // table and its consumers report `exec.input_failed` by name, exactly as they
+      // do for every other Step that produced nothing. It is deliberately not a
+      // second refusal — the gates ran, and a run cannot be refused halfway.
       record(node, sourceTable(node.id), [])
       continue
     }
@@ -312,8 +453,9 @@ export function executeGraph({
     // `canonical` refuses costs this Step its cache entry and costs the run
     // nothing. The frozen rule is that a cached run and an uncached run are
     // indistinguishable except in time, and a throw escaping here would be the
-    // loudest possible way to break it — `executeGraph` is called from a Vue
-    // `watch`, so it would reach the user as a blank Editor.
+    // loudest possible way to break it — the walk runs inside a promise the pane
+    // does not await, so an escape is a run that never publishes and a progress
+    // line with nothing behind it.
     const inputKeys = node.inputs.map((upstream) => keys.get(upstream))
     const key =
       caching && inputKeys.every((k) => typeof k === 'string')
@@ -350,9 +492,10 @@ export function executeGraph({
      * column no table has, `fromColumns` refuses two columns of one name, the
      * comparison refuses an operator outside a closed list — and each of them is
      * *supposed* to be unreachable. What makes the catch load-bearing rather
-     * than defensive is where the call sits: both callers of `executeGraph` are
-     * on a render path, so an invariant guard that escapes reaches the user as a
-     * blank Editor, which is worse than the state the guard exists to prevent.
+     * than defensive is where the call sits: the walk is driven from a pane, in
+     * the synchronous driver directly and in the scheduler through a promise
+     * nobody awaits, so an invariant guard that escapes takes the whole run with
+     * it — which is worse than the state the guard exists to prevent.
      * The Step is recorded as having produced nothing and the walk continues, so
      * the Steps downstream report their missing input exactly as they do for
      * every other reason a Step produces no table.
@@ -428,5 +571,74 @@ export function executeGraph({
       ...[...results.values()].flatMap((r) => r.diagnostics),
       ...whole,
     ]),
+    run: Object.freeze({ ...identity, state: RUN_STATE.complete }),
   })
+}
+
+/**
+ * Run the Pipeline that ends at the Result Step, synchronously.
+ *
+ * **The synchronous driver, and the reason it did not become the asynchronous
+ * one.** Every caller this function had before story 7b — `core/exec/execute.test.js`
+ * and, until 7b, `ui/EditorPane.vue` — describes a function that takes a graph and
+ * returns an answer. Turning that into a promise would have made every one of them
+ * a statement about scheduling instead of about execution, and there would have
+ * been nothing left that says what the walk *is* independently of when it runs.
+ * So the walk moved into a generator and this drained it, unchanged in signature,
+ * in behaviour and in what its tests can assert.
+ *
+ * **It has no production caller, and that is what it is for.** The pane starts a
+ * run through `core/exec/scheduler.js` now, so the only thing that calls this is
+ * a test — deliberately. It is the *parity surface*: the walk answered in one
+ * turn, with no yield, no clock and no cancellation between the question and the
+ * answer, which is what makes "the two drivers agree" a thing a test can assert
+ * rather than a thing a reader has to believe. Every case written against
+ * execution before this story goes on describing the walk itself, and a
+ * disagreement between the drivers shows up here first. Do not delete it as dead
+ * code; it is the control.
+ *
+ * @param {object} run
+ * @param {ReadonlyArray<object>} run.steps the graph store's frozen projection
+ * @param {string|null} run.resultId which Step the run ends at
+ * @param {import('../../ports/index.js').TableEngine} run.engine
+ * @param {(id: string) => (object|null)} run.sourceTable Step zero's output for a
+ *   Source node — the converted `Table`, or `null` while its typing is not
+ *   confirmed. With column names made unique on ingest, `null` has exactly one
+ *   meaning here, which is what lets gate 1 name the Source truthfully. **In the
+ *   product this is the converting door** (`createStepZeroCache.of`), so it is
+ *   called at the Source's node inside the walk and nowhere above it.
+ * @param {(id: string) => boolean} [run.sourceConfirmed] whether that Source's
+ *   typing is confirmed — the same question gate 1 asks, asked without
+ *   materialising a table. Absent, the gate falls back to `sourceTable(id) !==
+ *   null`, which is what every caller written before story 7b passes. A caller
+ *   supplying both owes them the same answer: a predicate that says `true` where
+ *   the table door then answers `null` produces a run whose Source has no table,
+ *   not a run that is refused.
+ * @param {{ get: (key: string) => (object|undefined),
+ *           set: (key: string, entry: object) => unknown }} [run.cache]
+ *   AD-8's cache (`createRunCache`), or nothing. Absent, every Step computes
+ *   exactly as it did before story 7a existed.
+ * @param {(id: string) => (string|null)} [run.sourceKey] what a Source node's
+ *   Step-zero output *is*, as a key — `core/exec/convert.js`'s `stepZeroKey`,
+ *   which is `stepKey('typing', typing, [sourceKey(entry)])` so that the two
+ *   stores share one key scheme rather than two opinions about staleness.
+ *   **`null` means "not keyable", and it is a supported answer**: it makes that
+ *   Source and everything downstream of it uncacheable for the run, which is a
+ *   miss rather than a wrong answer. Anything else would mean guessing a key for
+ *   a Source whose bytes nobody digested, and two such guesses would collide.
+ * @param {import('../../ports/index.js').Clock} [run.clock] AD-25's identity, and
+ *   a door like the two above: absent, `run.id` and `run.startedAt` are `null`.
+ * @returns {{ ok: boolean,
+ *            results: ReadonlyMap<string, { kind: string, table: object|null,
+ *              rowCount: number|null, columnCount: number|null,
+ *              diagnostics: ReadonlyArray<object> }>,
+ *            diagnostics: ReadonlyArray<object>,
+ *            run: Readonly<{ id: string|null, startedAt: number|null,
+ *                            state: 'refused'|'complete'|'cancelled' }> }}
+ */
+export function executeGraph(run) {
+  const walk = walkGraph(run)
+  let step = walk.next()
+  while (!step.done) step = walk.next()
+  return step.value
 }

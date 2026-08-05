@@ -81,6 +81,18 @@ const nf = (n) => Number(n).toLocaleString('de-DE')
 const inputs = (n) => (n === 1 ? '1 Eingang' : `${n} Eingänge`)
 const rows = (n) => (n === 1 ? '1 Zeile' : `${nf(n)} Zeilen`)
 
+/**
+ * How many things a run walks, in the dative — the case both sentences that use
+ * it need („Von 12 Arbeitsschritten", „von 1 Arbeitsschritt").
+ *
+ * **„Arbeitsschritt" rather than „Step", and it is a deliberate second word.** A
+ * run's order contains the contributing Quellen as well as the Steps, so counting
+ * them as Steps says a number the user cannot find in the Pipeline. The generic
+ * German word covers both and cannot be mistaken for the domain term the cards
+ * carry.
+ */
+const walkSteps = (n) => (n === 1 ? '1 Arbeitsschritt' : `${nf(n)} Arbeitsschritten`)
+
 /** `Eingang 1 und Eingang 2`, in German rather than as a comma-joined list. */
 const slotList = (slots) =>
   slots.length < 2
@@ -388,6 +400,34 @@ const GERMAN = Object.freeze(
         : `Der Lauf hat kein Ergebnis: ${v.steps} Steps konnten nicht gerechnet werden, ` +
           `beginnend mit ${step(nameOf, v.id)}. Die Gründe stehen in den Einstellungen des ` +
           `jeweiligen Steps.`,
+    // The cancellation (AD-9). Three things have to be in it, and each of them is
+    // a question a user would otherwise have to guess at: that the run stopped
+    // because they said so, how far it got, and — the one that decides whether
+    // cancelling is safe to press — that the numbers on screen are still the
+    // previous run's rather than a half-computed set. The finished work stays in
+    // the cache, so pressing it again costs nothing, and that is said too.
+    //
+    // **It counts Arbeitsschritte, not Steps, and the distinction is not
+    // pedantry.** The walk's `total` is the length of the dependency order, which
+    // contains the contributing *Quellen* as well as the Steps — Step zero is a
+    // node in the walk, which is precisely what makes it cancellable. A sentence
+    // reading „Von 46 Steps" in front of a Pipeline the user can count 45 Steps in
+    // is the interface being wrong about the one number it is reporting. Round 1
+    // shipped that, together with „Von 1 Steps" and a hard-coded „1", which is why
+    // all three branches and both plurals are pinned by cases now.
+    'exec.run_cancelled': (v) => {
+      const done =
+        v.done === 0
+          ? 'war noch keiner fertig gerechnet'
+          : v.done === 1
+            ? `war ${nf(v.done)} fertig gerechnet`
+            : `waren ${nf(v.done)} fertig gerechnet`
+      return (
+        `Der Lauf wurde abgebrochen. Von ${walkSteps(v.total)} (Quellen mitgezählt) ${done}. ` +
+        `Die fertigen Ergebnisse bleiben gespeichert — angezeigt wird weiterhin das Ergebnis ` +
+        `des vorherigen Laufs.`
+      )
+    },
   }),
 )
 
@@ -432,6 +472,30 @@ export const graphText = (diagnostic, nameOf = (id) => id) =>
   Object.hasOwn(GERMAN, diagnostic.code)
     ? GERMAN[diagnostic.code](diagnostic.values, nameOf)
     : 'Unbekannte Meldung aus dem Kern.'
+
+/**
+ * The line a run in flight puts on screen — „Rechnet Filter „Nur Große“ (4 von
+ * 46)“.
+ *
+ * Not a Diagnostic and therefore not in the map above: progress is a state, not
+ * something the core reported, and `graphLabelGaps()` has nothing to check it
+ * against. It lives here all the same, because German lives here.
+ *
+ * **It names the *kind* rather than calling everything a Step**, for the reason
+ * `exec.run_cancelled` above states: the walk contains Quellen, and „Rechnet Step
+ * 1 von 46: „gross““ for a Quelle is the interface being wrong about what it is
+ * doing. The kind comes from the walk itself (`core/exec/execute.js` yields it),
+ * so it describes the node the run is actually in front of rather than whatever a
+ * re-read projection says about that id now.
+ *
+ * The position is a position and carries no noun — `done` is how many are
+ * finished, so `done + 1` is the one being computed.
+ */
+export const progressText = (at, nameOf = (id) => id) => {
+  const label = kindLabel(at.kind)
+  const what = at.kind && label !== at.kind ? `${label} ` : ''
+  return `Rechnet ${what}${step(nameOf, at.stepId)} (${nf(at.done + 1)} von ${nf(at.total)})`
+}
 
 /**
  * Every code the Editor can put on screen that this file has no sentence for.

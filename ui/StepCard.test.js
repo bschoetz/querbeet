@@ -8,8 +8,9 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, expect, it } from 'vitest'
 import { createGraphStore } from '@core/graph/graph-store.js'
-import { error, warning } from '@core/diagnostics/diagnostic.js'
+import { error, info, warning } from '@core/diagnostics/diagnostic.js'
 import { CODE } from '@core/steps/index.js'
+import { CODE as EXEC_CODE } from '@core/exec/execute.js'
 import {
   directionLabelGaps,
   endLabelGaps,
@@ -17,6 +18,7 @@ import {
   graphText,
   kindLabelGaps,
   operatorLabelGaps,
+  progressText,
 } from '@ui/graph-labels.js'
 import StepCard from './StepCard.vue'
 
@@ -108,6 +110,76 @@ describe('the German maps', () => {
     const count = graphText(error(CODE.configInvalid, { field: 'count', value: '0' }))
     expect(count).toContain('ganze Zahl ab 1')
     expect(count).not.toContain('count')
+  })
+
+  // ------------------------------------------- what a cancelled run says (7b)
+  //
+  // Three branches, three cases. Round 1 wrote all three and asserted the text of
+  // one, which is how „Von 1 Steps" and a hard-coded „1" both shipped — and how a
+  // sentence that counts Quellen as Steps shipped with them.
+
+  it('says how far a cancelled run got, in all three of its branches', () => {
+    const said = (done, total) =>
+      graphText(info(EXEC_CODE.runCancelled, { done, total }))
+
+    // Nothing finished. „war noch keiner" and not „waren 0", which reads as a
+    // count of a thing that did not happen.
+    expect(said(0, 12)).toContain('Von 12 Arbeitsschritten (Quellen mitgezählt) war noch keiner')
+    // Exactly one, and the verb follows the number — the shape every count in this
+    // file has.
+    expect(said(1, 12)).toContain('war 1 fertig gerechnet')
+    // More than one, with the German thousands separator the rest of the file uses.
+    expect(said(1234, 5678)).toContain('waren 1.234 fertig gerechnet')
+    expect(said(1234, 5678)).toContain('Von 5.678 Arbeitsschritten')
+
+    // Every branch says the two things that decide whether cancelling is safe to
+    // press: the work is kept, and the screen is still the previous run's.
+    for (const text of [said(0, 12), said(1, 12), said(3, 12)]) {
+      expect(text).toContain('Der Lauf wurde abgebrochen')
+      expect(text).toContain('bleiben gespeichert')
+      expect(text).toContain('vorherigen Laufs')
+    }
+  })
+
+  it('counts a walk of one without putting a plural on it', () => {
+    // „Von 1 Steps war noch keiner gerechnet" is what round 1 rendered for the
+    // shortest run there is, which for a single Quelle is also the commonest one.
+    const one = graphText(info(EXEC_CODE.runCancelled, { done: 0, total: 1 }))
+
+    expect(one).toContain('Von 1 Arbeitsschritt ')
+    expect(one).not.toContain('1 Arbeitsschritten')
+  })
+
+  it('never calls the walk’s positions Steps, because Quellen are among them', () => {
+    // A 45-Step chain over one Source walks 46 nodes. „Von 46 Steps" in front of a
+    // Pipeline the user can count 45 Steps in is the interface being wrong about
+    // the one number it is reporting.
+    const said = graphText(info(EXEC_CODE.runCancelled, { done: 3, total: 46 }))
+
+    expect(said).not.toMatch(/\bSteps\b/)
+    expect(said).toContain('Quellen mitgezählt')
+  })
+
+  it('names the kind of the node a run is working on, rather than calling it a Step', () => {
+    // The same defect on the progress line: round 1 rendered „Rechnet Step 1 von
+    // 46: „gross““ for a Quelle. The kind comes from the walk itself.
+    const source = progressText(
+      { done: 0, total: 46, stepId: 'src:gross', kind: 'source' },
+      () => 'gross',
+    )
+    expect(source).toBe('Rechnet Quelle „gross“ (1 von 46)')
+
+    const filter = progressText(
+      { done: 3, total: 46, stepId: 's3', kind: 'filter' },
+      () => 'Nur Große',
+    )
+    expect(filter).toBe('Rechnet Filter „Nur Große“ (4 von 46)')
+
+    // A kind with no German word falls back to naming the node alone rather than
+    // to printing the core's code — the rule the whole of this file exists for.
+    expect(progressText({ done: 0, total: 2, stepId: 'x', kind: 'wat' }, () => 'X')).toBe(
+      'Rechnet „X“ (1 von 2)',
+    )
   })
 })
 

@@ -32,6 +32,20 @@ const props = defineProps({
   /** The `GraphView` implementation. `app/` is the only place that names one. */
   canvas: { type: [Object, Function], required: true },
   /**
+   * The `Clock` port (AD-25) and the `Yield` port (AD-9), forwarded to the Editor
+   * exactly as `engine` and `canvas` are.
+   *
+   * **Required, with no default factory, and that is the difference from
+   * `runCache` below.** `createRunCache` lives in `core/`, so this layer may build
+   * one; a clock and a message-queue yield are adapters and `ui/` may not name one
+   * (AD-1). A stand-in built here would also be the worse kind of default: a
+   * microtask yield passes every test in this repository and delivers no click,
+   * which is precisely the failure the real one exists to prevent. Missing them is
+   * therefore loud rather than silent.
+   */
+  clock: { type: Object, required: true },
+  yielder: { type: Object, required: true },
+  /**
    * AD-8's per-Step cache. **Owned here in the product** — `app/main.js` passes
    * nothing and the default factory below mints one per instance — and injectable
    * for exactly one reason: the withdrawal rule (AD-29) is a statement about what
@@ -147,6 +161,8 @@ const TABS = [
       :engine="props.engine"
       :step-zero="stepZero"
       :cache="props.runCache"
+      :clock="props.clock"
+      :yielder="props.yielder"
       class="mt-8"
     />
   </main>

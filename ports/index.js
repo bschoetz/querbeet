@@ -365,7 +365,38 @@
  * @typedef {object} Clock
  * AD-25 — a run has an identity and a start time, taken from here so AD-4's purity
  * holds. A compliance artifact that cannot say when it was produced is not one.
- * @property {() => number} now
+ *
+ * **Two members, and the second is here for the first's reason.** A start time is
+ * state outside the core; so is an id that has to be unique within a session,
+ * because the only ways to mint one are to remember something between calls or to
+ * read something from the platform. Both are what AD-4 keeps out of a pure core,
+ * and a run's id and its start time are one fact about one run — two ports would
+ * be an accident of implementation rather than a distinction.
+ *
+ * `runId()` is not `Math.random`: an adapter mints ids from something it counts
+ * itself, so a session's ids are reproducible in a test by counting the same way.
+ *
+ * @property {() => number} now   milliseconds since the epoch
+ * @property {() => string} runId a fresh identity for one execution
+ */
+
+/**
+ * @typedef {object} Yield
+ * AD-9 — cancellation is checked between Steps, and the check is only worth
+ * anything if the browser gets a turn in between: a click on the cancel control
+ * has to be **delivered** before the next Step starts. So `core/exec/scheduler.js`
+ * awaits this port once per Step, and which platform mechanism turns the message
+ * queue is named in an adapter and never in `core/` (AD-1, AD-2).
+ *
+ * **The contract is the macrotask queue and nothing less.** A microtask yield —
+ * `queueMicrotask`, a bare `Promise.resolve()` — drains before the engine
+ * processes input, so the click that was meant to stop the run arrives after it;
+ * that is not a yield for this purpose. `setTimeout` is a macrotask and is also
+ * not it: both engines clamp a timer to 4 ms once nesting reaches depth five, and
+ * at 30 Steps that is over 100 ms of pure clamp added to the worst case this port
+ * exists for.
+ *
+ * @property {() => Promise<void>} next  resolves on the next turn of the macrotask queue
  */
 
 export {}

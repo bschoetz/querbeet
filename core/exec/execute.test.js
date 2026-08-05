@@ -6,7 +6,7 @@
 // so no static import points from `core/` outward (AD-1).
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { CODE, executeGraph } from './execute.js'
+import { CODE, executeGraph, walkGraph } from './execute.js'
 import { createRunCache } from './cache.js'
 import { canonical, forgetRefusals, keyOrNull, sourceKey, stepKey } from './cache-key.js'
 import { createGraphStore } from '../graph/graph-store.js'
@@ -806,5 +806,321 @@ describe('the per-Step cache', () => {
     })
 
     expect(e.calls).toEqual({ filter: 2, selectColumns: 2 })
+  })
+})
+
+// ------------------------------------------------ one walk, two drivers (7b)
+//
+// The Step loop is a generator now and `executeGraph` drains it in a `while`. Two
+// things have to stay true or the split was not worth making: the synchronous
+// driver has to answer exactly what it answered before — which is what every case
+// above this line already asserts, unchanged — and the generator has to be
+// drainable one Step at a time by somebody else, which is what
+// `core/exec/scheduler.js` does and `core/exec/scheduler.test.js` pins.
+
+describe('the walk as a generator', () => {
+  it('yields once per contributing Step, before that Step is touched', () => {
+    const { graph, filter, columns } = chain()
+    const walk = walkGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => REPORT(),
+    })
+
+    const yielded = []
+    let step = walk.next()
+    while (!step.done) {
+      yielded.push(step.value)
+      step = walk.next()
+    }
+
+    // The kind rides along because the order contains Quellen as well as Steps,
+    // and a caller that renders „Step" off `stepId` alone is wrong about a third
+    // of what it names (story 7b, review round 1).
+    expect(yielded).toEqual([
+      { done: 0, total: 3, stepId: 'src:umsatz', kind: 'source' },
+      { done: 1, total: 3, stepId: filter, kind: 'filter' },
+      { done: 2, total: 3, stepId: columns, kind: 'columns' },
+    ])
+    expect(step.value.results.size).toBe(3)
+  })
+
+  it('leaves nothing behind for a Step it never reached', () => {
+    // **The trap story 7a set for this story, named in the spec's Code Map.** The
+    // loop mints and stores content keys as well as results, so a yield placed
+    // carelessly would land between a Step's key and its store — and a run stopped
+    // there would leave a key for a Step that never computed. The yield is the
+    // first statement of the body, so a walk closed at one has touched nothing.
+    const { graph, filter } = chain()
+    const cache = createRunCache()
+    const walk = walkGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => REPORT(),
+      cache,
+      sourceKey: () => 'k:src',
+    })
+
+    walk.next() // waiting in front of the Source
+    walk.next() // the Source is done; waiting in front of the Filter
+    const closed = walk.return(undefined)
+
+    expect(closed.done).toBe(true)
+    // A Source stores no entry of its own (its table is Step zero's), so an
+    // untouched Filter means an empty cache rather than a smaller one.
+    expect(cache.size()).toBe(0)
+
+    // …and the Filter is still computable, from scratch, by a run that finishes.
+    const out = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => REPORT(),
+      cache,
+      sourceKey: () => 'k:src',
+    })
+    expect(out.results.get(filter).table).not.toBeNull()
+  })
+
+  it('answers what the synchronous driver answers, node for node', () => {
+    const { graph } = chain()
+    const drained = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => REPORT(),
+    })
+
+    const walk = walkGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => REPORT(),
+    })
+    let step = walk.next()
+    while (!step.done) step = walk.next()
+
+    expect([...step.value.results.keys()]).toEqual([...drained.results.keys()])
+    expect(codesOf(step.value.diagnostics)).toEqual(codesOf(drained.diagnostics))
+    expect(step.value.run.state).toBe(drained.run.state)
+  })
+})
+
+describe('the gate’s door (story 7b, review round 1)', () => {
+  // **The defect this block exists for, and it shipped once.** Gate 1 asked
+  // `sourceTable(id) === null`, and in the pane that door *converts* — 548–555 ms
+  // per contributing Source at design scale. The gate loop runs above the walk, so
+  // the scheduler's first `next()` paid every cold conversion synchronously,
+  // uncancellable and unreported: the exact failure the story exists to remove,
+  // with two artifacts in the repo claiming the opposite. The predicate answers
+  // the question the gate actually has.
+
+  /** A `sourceTable` that counts, so "it was not called" is an assertion. */
+  const counting = (tables = new Map()) => {
+    const calls = []
+    return {
+      calls,
+      door: (id) => {
+        calls.push(id)
+        return tables.get(id) ?? null
+      },
+    }
+  }
+
+  it('refuses an unconfirmed Source without ever asking for a table', () => {
+    const { graph } = chain()
+    const table = counting()
+    const out = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: table.door,
+      sourceConfirmed: () => false,
+    })
+
+    expect(out.ok).toBe(false)
+    expect(codesOf(out.diagnostics)).toEqual([CODE.sourceUnconfirmed])
+    // Not once. A refused run converts nothing at all, which is what makes the
+    // refusal free as well as synchronous.
+    expect(table.calls).toEqual([])
+  })
+
+  it('asks for the table at the Source’s own node, and only there', () => {
+    // Which is what puts Step zero between two yields: the walk yields before this
+    // node, so a driver that stops there has not converted anything.
+    const { graph } = chain()
+    const table = counting(new Map([['src:umsatz', REPORT()]]))
+    const out = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: table.door,
+      sourceConfirmed: () => true,
+    })
+
+    expect(out.ok).toBe(true)
+    expect(table.calls).toEqual(['src:umsatz'])
+  })
+
+  it('keeps `sourceTable(id) === null` as the gate for a caller that passes no predicate', () => {
+    // Every caller and every test written before story 7b, and the reason this is
+    // an added door rather than a changed contract.
+    const { graph } = chain()
+    const refusedRun = run(graph)
+    const table = counting(new Map([['src:umsatz', REPORT()]]))
+    const admitted = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: table.door,
+    })
+
+    expect(codesOf(refusedRun.diagnostics)).toEqual([CODE.sourceUnconfirmed])
+    expect(admitted.ok).toBe(true)
+    // Twice with no predicate: once at the gate, once at the node. That is the
+    // cost the predicate removes, and it is here so that removing the predicate
+    // from the pane cannot pass unseen.
+    expect(table.calls).toEqual(['src:umsatz', 'src:umsatz'])
+  })
+
+  it('walks on when the two doors disagree, rather than refusing halfway', () => {
+    // A predicate that says `confirmed` while the table door answers `null` is a
+    // caller bug, not a state the store can produce. The Source records no table
+    // and its consumers report their missing input by name — the same treatment
+    // every other Step that produced nothing gets. A run cannot be refused after
+    // the gates have passed.
+    const { graph, filter } = chain()
+    const out = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => null,
+      sourceConfirmed: () => true,
+    })
+
+    expect(out.ok).toBe(true)
+    expect(codesOf(out.diagnostics)).not.toContain(CODE.sourceUnconfirmed)
+    expect(out.results.get('src:umsatz').table).toBeNull()
+    expect(codesOf(out.results.get(filter).diagnostics)).toEqual([CODE.inputFailed])
+  })
+})
+
+describe('the run identity (AD-25)', () => {
+  /** The `Clock` port, stopped. */
+  const testClock = (at = 1_712_000_000_000) => {
+    let minted = 0
+    return { now: () => at, runId: () => `run:${(minted += 1)}` }
+  }
+
+  it('stamps a completed run with the id and the start time the Clock minted', () => {
+    const { graph } = chain()
+    const out = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => REPORT(),
+      clock: testClock(),
+    })
+
+    expect(out.run).toEqual({
+      id: 'run:1',
+      startedAt: 1_712_000_000_000,
+      state: 'complete',
+    })
+  })
+
+  it('stamps a run refused at a gate too — a refusal is a run that happened', () => {
+    // AD-25 admits no exception, and the reason is FR-37's: a document that cannot
+    // say when a run was refused cannot be filed six months later either.
+    const { graph } = chain()
+    const out = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => null,
+      clock: testClock(1_712_000_000_500),
+    })
+
+    expect(out.ok).toBe(false)
+    expect(codesOf(out.diagnostics)).toEqual([CODE.sourceUnconfirmed])
+    expect(out.run).toEqual({
+      id: 'run:1',
+      startedAt: 1_712_000_000_500,
+      state: 'refused',
+    })
+  })
+
+  it('mints the identity above the gates, so a refusal costs one id and not none', () => {
+    const { graph } = chain()
+    const clock = testClock()
+    const refusedRun = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => null,
+      clock,
+    })
+    const completedRun = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => REPORT(),
+      clock,
+    })
+
+    expect(refusedRun.run.id).toBe('run:1')
+    expect(completedRun.run.id).toBe('run:2')
+  })
+
+  it('carries two nulls when no clock was passed — the clock is a door', () => {
+    // Which is what lets every case above this line, and every caller written
+    // before story 7b, stay exactly what it was.
+    const { graph } = chain()
+    const out = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => REPORT(),
+    })
+
+    expect(out.run).toEqual({ id: null, startedAt: null, state: 'complete' })
+  })
+
+  it('calls the clock exactly once per run, for each of its two members', () => {
+    // A run has *a* start time, not one per Step and not one per return path.
+    const { graph } = chain()
+    const calls = { now: 0, runId: 0 }
+    executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => REPORT(),
+      clock: {
+        now: () => (calls.now += 1),
+        runId: () => `run:${(calls.runId += 1)}`,
+      },
+    })
+
+    expect(calls).toEqual({ now: 1, runId: 1 })
+  })
+
+  it('reports `complete` for a graph with no Result Step, and still mints an identity', () => {
+    // Not a refusal: `graph.no_result` already says it, once, on the pane. It is a
+    // run that walked an empty order.
+    const graph = createGraphStore()
+    graph.syncSources([{ id: 'src:umsatz', name: 'Umsatz' }])
+    const out = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => REPORT(),
+      clock: testClock(),
+    })
+
+    expect(out.ok).toBe(true)
+    expect(out.results.size).toBe(0)
+    expect(out.run).toEqual({ id: 'run:1', startedAt: 1_712_000_000_000, state: 'complete' })
   })
 })
