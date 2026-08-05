@@ -1,5 +1,14 @@
 # Derived from .memlog.md by bmad-spec Story Breakdown, 2026-08-02.
 # Execution order is list order. Ids per assets/stories-schema.md.
+#
+# ONE EXCEPTION TO LIST ORDER, decided by the owner on 2026-08-05 after story
+# 7b shipped: 7c does not run next. The order is 8 -> 9 -> the stale mark ->
+# 10 -> 7c. The reasoning is recorded in full on the 7c entry; the short form
+# is that 7c's threshold is a calibration and nothing built so far is slow
+# enough on the owner's machine to calibrate it against, while Join and
+# Aggregate are. The stale mark is carved out of 7c and shipped early because
+# stories 8 and 9 make the gap it closes progressively more visible. It has no
+# entry of its own yet and needs an id when it is cut.
 - id: "1"
   title: CSV Sources — load, encoding, delimiter, damage detection
   description: >-
@@ -450,6 +459,23 @@
     one per result is this story's edit, not a free consequence, and it is the
     one place its "three things fall out for free" argument needs code. Line
     anchors in that draft predate 7a and have moved.
+    RESEQUENCED BY THE OWNER, 2026-08-05: this story runs after 8, 9 and 10,
+    not directly after 7b. The threshold is a calibration, and it cannot be
+    calibrated on a product whose every Step finishes in milliseconds — on the
+    owner's machine nothing built so far is slow enough to observe. Join and
+    Aggregate are the first kinds heavy enough to give it real numbers, and
+    AD-19's 28k source rows exploding to 2.69M join rows is exactly the shape
+    a per-Source row threshold says nothing about. Calibrating before story 8
+    would mean calibrating twice. Story 10 comes before it too, because a
+    threshold about what is safe to compute live wants the Result table that
+    displays the outcome to already exist.
+    THE COST OF THIS ORDER, ACCEPTED KNOWINGLY: 7b left the panel showing the
+    previous run's numbers with nothing saying so, and stories 8 and 9 turn
+    that window from milliseconds into seconds. The stale mark is therefore
+    pulled out of this story and shipped between 9 and 10 — it needs no
+    threshold and no mode, only a key exposed per result, and building it
+    before the Result table is cheaper than retrofitting it after. See the two
+    deferred-work entries raised by 7b's review round 2.
 - id: "8"
   title: Union and Join Steps
   description: >-
