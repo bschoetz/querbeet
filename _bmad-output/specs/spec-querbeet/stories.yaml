@@ -2,8 +2,8 @@
 # Execution order is list order. Ids per assets/stories-schema.md.
 #
 # ONE EXCEPTION TO LIST ORDER, decided by the owner on 2026-08-05 after story
-# 7b shipped: 7c does not run next. The order is 8 -> 9 -> the stale mark ->
-# 10 -> 7c. The reasoning is recorded in full on the 7c entry; the short form
+# 7b shipped: 7c does not run next. The order is 8a-8d -> 9 -> 9.5 -> 10 ->
+# 7c. The reasoning is recorded in full on the 7c entry; the short form
 # is that 7c's threshold is a calibration and nothing built so far is slow
 # enough on the owner's machine to calibrate it against, while Join and
 # Aggregate are. The stale mark is carved out of 7c and shipped early because
@@ -486,18 +486,70 @@
     threshold and no mode, only a key exposed per result, and building it
     before the Result table is cheaper than retrofitting it after. See the two
     deferred-work entries raised by 7b's review round 2.
-- id: "8"
-  title: Union and Join Steps
+- id: "8a"
+  title: Union — column mapping declared before the Step runs
   description: >-
-    CAP-13, CAP-14: union with explicit column mapping where partial columns
-    are listed before the Step runs, and join reporting unmatched left rows,
-    row-count growth with its factor, explicit null-key handling and the
-    duplicate audit.
+    CAP-13: union two or more tables, matching columns by name where names
+    agree and letting the user map the rest explicitly. Columns present in only
+    some inputs are listed before the Step runs, each to be mapped, kept padded
+    with nulls, or dropped — never dropped silently. Output row count equals
+    the sum of the inputs.
   invoke_dev_with: >-
-    The adapter reports null-key counts and refuses the sentinel fix —
-    measured at 28k source rows exploding to 2.69M join rows (AD-19). Union
-    computes an explicit column union first. Row-range chunking is forbidden
-    for Union, Join and Aggregate (AD-9).
+    The graph layer is already built: core/graph/kinds.js declares Union with
+    minInputs 2 and maxInputs Infinity, slots and positional connect work, and
+    executorGaps() names Union as a gap. What is missing is a TableEngine port
+    member (the port has five today and none of them combines tables), the
+    adapter verb behind it, the kind file in core/steps/, and the configuration
+    form.
+    THIS STORY PAYS A COST THE ONE AFTER IT INHERITS. It is the product's first
+    configuration form for a Step with more than one input. ui/StepPanel.vue
+    takes a singular `inputSchema` prop and ui/EditorPane.vue says so in the
+    file — "both configurable kinds take exactly one input; stories 8 and 9 own
+    what a two-input config asks of this". Widening that seam is 8a's, and 8b
+    should find it done.
+    DO NOT ASSUME ARQUERO'S PUBLIC VERB IS USABLE. Every one of the adapter's
+    four existing verbs is hand-built from `create` and `BitSet` rather than
+    wrapping the public method, each for a reason recorded above it: `filter()`
+    runs its argument through the expression parser and even the permitted
+    `escape()` route builds one row object per row; `select({from: to})`
+    resolves its mapping through object key enumeration order, so a column
+    named `1` or `07` sorts itself to the front; `orderby()` was measured
+    producing a different wrong order per browser around a boxed cell. AD-19
+    says the adapter absorbs its own hazards, so check what `union`/`concat`
+    does with querbeet's boxed cells and its BigInt temporals before calling
+    it. The class question is settled and must not be reopened: the adapter is
+    on ColumnTable, re-decided with the owner on 2026-08-04 with the byte
+    measurement in front of him, and the reasoning is in the file header.
+    CLOSE A LEDGER ENTRY WHILE HERE: a Union's slot count has no ceiling
+    (`maxInputs: Infinity`), so `graph.max_inputs` can never fire for the one
+    kind that can grow — forty presses give a forty-row card, and the German
+    would read "nimmt höchstens Infinity Eingänge" if it ever did fire.
+    Row-range chunking is forbidden for Union (AD-9).
+- id: "8b"
+  title: Join — keys, join type, unmatched rows and the growth factor
+  description: >-
+    CAP-14's ordinary case: join two tables on one or more key columns matched
+    pairwise, with the join type a per-Step setting defaulting to left. After
+    execution the Step reports how many left rows found no match, and warns
+    with the factor when the output row count exceeds the input row count
+    because duplicate keys produced extra rows.
+  invoke_dev_with: >-
+    Null-key handling is 8c's and the duplicate audit is 8d's. This story is
+    the join that works, with nulls handled by whatever single behaviour 8c
+    will later make settable — state which one it is rather than leaving it
+    implied.
+    The same adapter caution as 8a applies to `join`/`join_left`: check it
+    against boxed cells and BigInt temporals rather than assuming the method
+    does the right thing, and note that a boxed value is querbeet's own wrapper
+    object, so a join matching keys by identity would silently match nothing.
+    CLOSE A LEDGER ENTRY WHILE HERE, and it is this story's by name: removing
+    an input slot shifts the connections below it without a word — measured
+    2026-08-03, a Union at ['src:a', null, 'src:b'] loses slot 1 and the edge
+    becomes src:b->s1#1. Positional slots make shifting the only sensible
+    semantics, but a Join's two slots are *named* (Links, Rechts), so the same
+    shift swaps what the user reads as meaning. The ledger says to take it with
+    the story that owns a Join's configuration; that is this one.
+    Row-range chunking is forbidden for Join (AD-9).
     OWNER TASK, carried from story 7b: 7b's scheduler — progress line, cancel
     control, the 150 ms reveal delay, and a cancelled run keeping the previous
     results on screen — could not be checked by hand, because every Step the
@@ -506,6 +558,44 @@
     appear on real data. When this story ships, run 7b's manual checks against
     a Join: does the progress line name the right Step, does the cancel button
     stop it, and do the previous run's numbers stay on screen afterwards.
+- id: "8c"
+  title: Null keys in a join — an explicit setting and the quadratic warning
+  description: >-
+    CAP-14's hazard half: null handling in key columns becomes an explicit
+    documented Step setting — either nulls never match, or nulls match nulls —
+    stored in the Recipe, with the default stated in the UI rather than
+    implied. The Step warns when both inputs carry nulls in the key column.
+  invoke_dev_with: >-
+    This is a design decision before it is an implementation, and the
+    measurement is why it earns its own story. From measured-constraints.md:
+    sentinel substitution before joining costs 30.8 ms at 100k rows and a
+    custom predicate collapses the engine to an O(n·m) loop join projected at
+    ~3.7 s — so sentinels are the affordable fix, but only against a lookup
+    whose keys are unique. When both sides carry nulls in the key column, which
+    a graph makes easy because two branches of one Source inherit its nulls,
+    every sentinel row matches every sentinel row: 28,000 source rows produced
+    2,687,670 join rows, and at 100,000 the tab crashed. Null keys silently
+    drop rows and the sentinel silently multiplies them, and multiplying is
+    worse. Three remedies are on the table and the story must choose and record
+    one: exclude sentinel rows from the join and re-attach them afterwards,
+    give each side a distinct sentinel so they cannot match, or refuse the
+    join. The both-sides warning is a product requirement in its own right, not
+    only an implementation detail.
+- id: "8d"
+  title: The duplicate audit — how many rows each duplicated key produced
+  description: >-
+    CAP-14's optional half: a per-Step switch that reports how many key values
+    occurred more than once on each side and how many output rows each
+    duplicated key produced, so duplication is known precisely rather than
+    inferred from a total.
+  invoke_dev_with: >-
+    Off by default and stated as costing time on large inputs, which is why it
+    is the last slice — a join is complete and useful without it, and 8b
+    already warns with the growth factor. One clause of CAP-14 reaches past
+    this story: the run status records whether the audit was on, and the run
+    status is CAP-34 and story 12. Either carry the fact locally on the Step
+    and let story 12 aggregate it, or say plainly in the spec that the clause
+    waits — do not let its absence read as satisfied.
 - id: "9"
   title: Computed column and Aggregate Steps
   description: >-
