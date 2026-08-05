@@ -7,9 +7,10 @@
 // canvas below is handed a body per node as a scoped slot precisely so no German
 // word has to cross into `adapters/`.
 
-import { computed, nextTick, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, shallowRef, watch } from 'vue'
 import { stepZeroKey } from '@core/exec/convert.js'
-import { executeGraph } from '@core/exec/execute.js'
+import { RUN_STATE } from '@core/exec/execute.js'
+import { startRun } from '@core/exec/scheduler.js'
 import { CODE } from '@core/graph/graph.js'
 import StepCard from '@ui/StepCard.vue'
 import StepPanel from '@ui/StepPanel.vue'
@@ -35,6 +36,16 @@ const props = defineProps({
    *  every Step computes exactly as it did before story 7a, which is what lets a
    *  test that is about something else say nothing about caching. */
   cache: { type: Object, default: null },
+  /** The `Clock` port (AD-25). Required and **without a default**, unlike the
+   *  cache above: a clock is an adapter, `ui/` may not name one (AD-1), and a
+   *  stand-in minted here would be a second answer to "when did this run start"
+   *  that no test could tell from the real one. */
+  clock: { type: Object, required: true },
+  /** The `Yield` port (AD-9) — one turn of the macrotask queue per Step. Required
+   *  for the clock's reason, and for one more: a default that resolved on the
+   *  microtask queue would look like a yield, pass every test, and deliver no
+   *  click. */
+  yielder: { type: Object, required: true },
 })
 
 // shallowRef and an explicit refresh, the shape `ui/SourcesPane.vue` set: the
@@ -83,17 +94,17 @@ const run = (result, { quiet = false } = {}) => {
  * `removeInputSlot` are absent too, and that is not an omission: a slot may only
  * be removed while it is empty, so neither changes which tables reach a Step.
  *
- * **The rule is unchanged by story 7a and that is deliberate.** The cache made
- * `recompute()` cheap where nothing changed; it did not make it free, and which
- * commands are worth running it after is a question about the *command*, not
- * about the cache. A rename still recomputes nothing because a rename changes no
- * number on screen — the cache would now answer every Step of that run from a
- * hit, but the walk, the gates and the projection swap are still work with no
- * result. Cancellation and the mode switch are still 7b's and 7c's.
+ * **The rule is unchanged by stories 7a and 7b, and that is deliberate.** The
+ * cache made a run cheap where nothing changed; it did not make it free, and 7b
+ * changed when a run *yields*, never when one *starts*. Which commands are worth
+ * starting one after is a question about the *command*, and a rename still starts
+ * nothing because a rename changes no number on screen — the cache would now
+ * answer every Step of that run from a hit, but the walk, the gates and the
+ * projection swap are still work with no result. The mode switch is 7c's.
  */
 const runData = (result, options) => {
   const outcome = run(result, options)
-  recompute()
+  startExecution()
   return outcome
 }
 
@@ -144,10 +155,18 @@ const orphanIds = computed(
 //
 // AD-6: the run holds `Table` handles, so it lives in a `shallowRef` swapped
 // wholesale and never in a `ref`, a `reactive` or a `computed` return value.
-// `executeGraph` is pure and synchronous — it takes the frozen projection, the
-// engine and a way to ask Step zero for a Source, and it returns one frozen
-// value.
-const execution = shallowRef({ ok: true, results: new Map(), diagnostics: [] })
+//
+// **What this holds is the last run that was allowed to publish**, which as of
+// story 7b is not the same as the last run that was started. A run the user
+// cancelled, and a run superseded by an edit, both resolve and neither lands here:
+// the pane goes on showing the previous execution rather than a set of Steps of
+// which some are new and some are old with nothing saying which.
+const execution = shallowRef({
+  ok: true,
+  results: new Map(),
+  diagnostics: [],
+  run: { id: null, startedAt: null, state: RUN_STATE.complete },
+})
 
 const sourceEntries = computed(() => new Map(props.sources.map((s) => [s.id, s])))
 
@@ -177,16 +196,143 @@ const sourceTable = (id) => props.stepZero.of(sourceEntries.value.get(id))?.tabl
  */
 const keyOfSource = (id) => stepZeroKey(sourceEntries.value.get(id))
 
-function recompute() {
-  execution.value = executeGraph({
+/**
+ * How long a run has to last before the pane says anything about it, in
+ * milliseconds.
+ *
+ * **The number sits inside a measured gap rather than being borrowed from a rule
+ * of thumb.** A cached last-Step edit costs 24.1 ms (Chromium) / 54 ms (Firefox);
+ * a full 100k pipeline costs 263 / 446 ms. Any delay between those two shows the
+ * slow case and hides the fast one, and 150 ms is in the middle of it. Below the
+ * delay the status band is untouched and cannot flicker; above it the progress
+ * line and the cancel control appear together.
+ *
+ * It is read from the injected clock at a yield, so it needs no timer of its own
+ * and no second scheduling mechanism — which is also why a test can move it by
+ * moving the clock.
+ */
+const REVEAL_AFTER_MS = 150
+
+/**
+ * `{ done, total, stepId }` for a run that has outlived the reveal delay, or
+ * `null`. A `shallowRef` swapped wholesale, never mutated in place — the
+ * discipline `ui/SourcesPane.vue`'s `parsing` ref set and the one AD-6 asks of
+ * anything the executor hands out.
+ */
+const progress = shallowRef(null)
+
+/** What the *run* said about itself rather than about a Step: today exactly the
+ *  cancellation. Held apart from `execution`, because a cancelled run must not
+ *  become what the pane is showing and its sentence must still be read. */
+const runNotice = shallowRef([])
+
+/**
+ * The run in flight, and the generation that decides who may publish.
+ *
+ * Neither is reactive and neither needs to be: the handle carries no data a
+ * template reads, and the counter is read only by the callbacks that close over
+ * their own copy of it.
+ *
+ * **Why a generation as well as a cancellation.** `startExecution` is reached from
+ * nine places and awaited by none, so an edit during a run means two runs exist.
+ * Cancelling the older one is the strong half of the rule and costs nothing here,
+ * because cancellation is already built — but a cancel only takes effect at the
+ * *next* Step, so the superseded run can still resolve after the new one started.
+ * The generation is what drops it. It is the rule `core/exec/source-store.js`'s
+ * parse chain and `adapters/vueflow/GraphCanvas.vue`'s post-unmount guard already
+ * use, in the one shape that covers both.
+ */
+let inFlight = null
+let generation = 0
+
+/**
+ * Start a run.
+ *
+ * **Not called `run`**, and that is not a style choice: `run` is taken, four
+ * functions up, by the *command* runner that publishes a refusal and refreshes the
+ * projection. Two things called the same word in one file, one of them being the
+ * thing this story is about, is how a reader ends up reasoning about the wrong
+ * one.
+ */
+function startExecution() {
+  // The one in flight is superseded, and superseding it means stopping it: only
+  // the newest run may publish, and a run that has been told to stop cannot spend
+  // another Step's worth of the main thread on an answer nobody will read.
+  inFlight?.cancel()
+
+  const mine = (generation += 1)
+  progress.value = null
+  runNotice.value = []
+
+  const handle = startRun({
     steps: projection.value.steps,
     resultId: projection.value.resultId,
     engine: props.engine,
     sourceTable,
     cache: props.cache,
     sourceKey: keyOfSource,
+    clock: props.clock,
+    yieldNow: () => props.yielder.next(),
+    onProgress: (at) => {
+      if (mine !== generation) return
+      // The reveal delay, read from the clock at a yield. `startedAt` is the run's
+      // own, so a run that was superseded and restarted does not inherit the
+      // elapsed time of the one before it.
+      if (props.clock.now() - handle.startedAt >= REVEAL_AFTER_MS) progress.value = at
+    },
   })
+  inFlight = handle
+
+  handle.completed.then(
+    (outcome) => {
+      // A superseded run, or one that resolved after the pane was unmounted: it
+      // publishes nothing at all. Its Steps are in the cache and cost the run that
+      // replaced it nothing.
+      if (mine !== generation) return
+      inFlight = null
+      progress.value = null
+      if (outcome.run.state === RUN_STATE.cancelled) {
+        // The previous execution stays on screen. A partly computed graph presented
+        // as the current result — some Steps new, some old, nothing saying which —
+        // is the failure this product exists to prevent.
+        runNotice.value = outcome.diagnostics
+        return
+      }
+      execution.value = outcome
+    },
+    (thrown) => {
+      // **A run that throws must not leave a progress line running forever.**
+      // Before this story the same throw came out of `executeGraph` inside a Vue
+      // `watch` and reached the console through the framework's error handler; now
+      // it arrives as a rejected promise, and the one thing that genuinely changed
+      // is that there is a band on screen saying a run is in progress. So the band
+      // is cleared and the throw is rethrown rather than swallowed — a programming
+      // error nobody can see is worse than one that shows up in a console, and
+      // `core/exec/execute.js` already catches everything a *Step* can do.
+      if (mine === generation) {
+        inFlight = null
+        progress.value = null
+      }
+      throw thrown
+    },
+  )
 }
+
+/** The cancel control's command. It is a request, not a stop: the run ends at its
+ *  next cancellation check, which is at most one Step away (AD-9). */
+const cancelExecution = () => inFlight?.cancel()
+
+// The Editor is `v-if` in `ui/App.vue`, so a view switch is a genuine unmount. A
+// run still walking would go on spending the main thread and then publish into a
+// component that is gone — `adapters/vueflow/GraphCanvas.vue` guards the same
+// shape for a landed pass. The generation bump is the second half: the cancel
+// takes effect at the next Step, and until then nothing this run resolves with may
+// be published.
+onBeforeUnmount(() => {
+  generation += 1
+  inFlight?.cancel()
+  inFlight = null
+})
 
 /** What the *run* said about a Step, as opposed to what the graph did. */
 const resultFor = (id) => execution.value.results.get(id) ?? null
@@ -231,6 +377,11 @@ const status = computed(() => [
   ...(execution.value.ok
     ? execution.value.diagnostics.filter((d) => d.stepId === undefined)
     : execution.value.diagnostics),
+  // A cancelled run publishes no results and is therefore not `execution` — but it
+  // still has one thing to say, and this is the region for what a run says about
+  // itself rather than about a Step. It is last so the sentence about what just
+  // happened sits below the state that was already on screen.
+  ...runNotice.value,
 ])
 
 // ------------------------------------------------------------- the canvas
@@ -367,7 +518,7 @@ const onMove = (id, x, y) => fromCanvas(props.graph.moveStep(id, x, y))
 
 const fromCanvasData = (result) => {
   const outcome = fromCanvas(result)
-  recompute()
+  startExecution()
   return outcome
 }
 
@@ -404,7 +555,7 @@ watch(
     // `syncSources` is data-affecting twice over: a Source may have appeared or
     // vanished, and — because this list is re-projected whenever the Source store
     // commits — a typing may just have been confirmed, which is what opens gate 1.
-    recompute()
+    startExecution()
   },
   { immediate: true },
 )
@@ -439,6 +590,40 @@ watch(
          sentence appeared is a canvas the user cannot aim at. So the space is
          reserved once and the region scrolls inside it. -->
     <div class="h-20 shrink-0 overflow-auto py-2">
+      <!-- **The run's own line, and it is inside the reserved band rather than
+           above it.** The height is measured and load-bearing (see below), so a
+           progress line that appeared *outside* it would move the canvas every
+           time a run outlived 150 ms — which is every run worth showing progress
+           for. It renders at all only past that delay, so a cached edit of a few
+           tens of milliseconds leaves the band untouched and nothing flickers.
+
+           The cancel control is a real `<button>`, which is keyboard-reachable
+           for free (AD-30). There is deliberately no shortcut: `adapters/vueflow/
+           GraphCanvas.vue:290-299` measured why a document-level key handler is
+           wrong here, and a scoped one would have to name an element that the
+           control already is. -->
+      <div
+        v-if="progress"
+        class="flex items-center justify-between gap-2 pb-1"
+      >
+        <p
+          role="status"
+          data-testid="editor-progress"
+          class="truncate text-xs text-slate-500"
+        >
+          Rechnet Step {{ progress.done + 1 }} von {{ progress.total }}:
+          „{{ nameOf(progress.stepId) }}“
+        </p>
+        <button
+          type="button"
+          data-testid="editor-cancel"
+          class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-50"
+          @click="cancelExecution"
+        >
+          Lauf abbrechen
+        </button>
+      </div>
+
       <!-- role="status" so a refused command says so out loud. Without it,
            pressing a button that refuses appears to do nothing at all to a screen
            reader, which is the one case where it does the most. -->
