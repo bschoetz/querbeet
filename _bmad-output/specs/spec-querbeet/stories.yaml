@@ -462,6 +462,14 @@
     measured at 28k source rows exploding to 2.69M join rows (AD-19). Union
     computes an explicit column union first. Row-range chunking is forbidden
     for Union, Join and Aggregate (AD-9).
+    OWNER TASK, carried from story 7b: 7b's scheduler — progress line, cancel
+    control, the 150 ms reveal delay, and a cancelled run keeping the previous
+    results on screen — could not be checked by hand, because every Step the
+    product has today finishes faster than the owner's machine can show the
+    affordance. A Join is the first Step kind heavy enough to make the band
+    appear on real data. When this story ships, run 7b's manual checks against
+    a Join: does the progress line name the right Step, does the cancel button
+    stop it, and do the previous run's numbers stay on screen afterwards.
 - id: "9"
   title: Computed column and Aggregate Steps
   description: >-
