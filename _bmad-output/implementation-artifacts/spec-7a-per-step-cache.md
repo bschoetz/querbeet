@@ -2,7 +2,7 @@
 title: 'Story 7a — The per-Step cache: content-addressed, diagnostics replayed, bounded'
 type: 'feature'
 created: '2026-08-04'
-status: 'in-review'
+status: 'done'
 review_loop_iteration: 3
 baseline_commit: 'b812172e92d10366207a1871bd6ba05cf1fc9634'
 context:
@@ -286,3 +286,100 @@ The same table shows what the story is for from the other side: a repeat run ove
 
 - ~~Confirm the digest figure in the built artefact from `file://` in **both** Chromium and Firefox~~ — **partly done 2026-08-04, and the limit is recorded in the Design Notes.** 43.6 ms (Chromium) / 47.0 ms (Firefox) at 20 MB against Node's 25.0 ms, so 1.7–1.9× and under the "roughly double" threshold; all three engines return the same 32 hex characters **for the loop as injected into the loaded page**. It was injected rather than driven through `addSource`, because the digest is one call inside an ingest that is already awaiting a reader and timing the whole ingest would have reported the reader. So the *timing* claim is confirmed and the *agreement* claim covers the injected copy rather than the bundled, minified `digestBytes` — corrected in review round 2, and the residue is in the ledger.
 - ~~Measure retained bytes per retained row at design scale and check the 15,000,000-row bound against it~~ — **done 2026-08-04, recorded in the Design Notes; the owner resolved the Ask First on 2026-08-05 and the bound stays at 15,000,000.** 2.1 MB (30 Filters) and 59.3 MB (30 First Steps) for the full 15.0 million retained rows. This does **not** disagree with R4's 180 MB — an earlier wording said it disagreed "materially and in the safe direction", which was an apples-to-oranges reading corrected in review round 2. Both Step kinds that exist today share their input's columns and retain only a mask or a row index, so both figures measure sharing rather than the materialization R4 describes. The measurement that would actually test the bound needs Aggregate or Join (stories 8 and 9) and is scheduled in the ledger.
+
+## Suggested Review Order
+
+**What a key is — start here**
+
+- The whole design in one file: prefix-free typed encoding, sorted keys, refusal over collision.
+  [`cache-key.js:212`](../../core/exec/cache-key.js#L212)
+
+- The base case. A Source id is never in a key (AD-8); bytes plus how they were read are.
+  [`cache-key.js:269`](../../core/exec/cache-key.js#L269)
+
+- The recursive case, and the chain: a change upstream changes every key downstream.
+  [`cache-key.js:292`](../../core/exec/cache-key.js#L292)
+
+- FNV-1a-128 in four lanes. Why not `crypto.subtle` is measured in the Design Notes, not argued.
+  [`cache-key.js:77`](../../core/exec/cache-key.js#L77)
+
+- The digest is taken once per ingest, where bytes arrive — never per run.
+  [`source-store.js:576`](../../core/exec/source-store.js#L576)
+
+**Two trust boundaries, which rounds 2 and 3 spent most of their time on**
+
+- A refusal is tagged, not `instanceof`: module identity would rethrow onto a render path.
+  [`cache-key.js:147`](../../core/exec/cache-key.js#L147)
+
+- Internal calls: only a `canonical` refusal is contained, so a caller bug still propagates.
+  [`cache-key.js:406`](../../core/exec/cache-key.js#L406)
+
+- A door is foreign code on a render path, so everything it throws is contained.
+  [`cache-key.js:440`](../../core/exec/cache-key.js#L440)
+
+- The door in use — the one line that keeps a blank Editor off the screen.
+  [`execute.js:268`](../../core/exec/execute.js#L268)
+
+**The walk, where keys meet the run**
+
+- Caching is on only with somewhere to put an entry and a way to key the Sources.
+  [`execute.js:251`](../../core/exec/execute.js#L251)
+
+- Key the **resolved** config: `null` and the kind's default are the same Step.
+  [`execute.js:318`](../../core/exec/execute.js#L318)
+
+- A hit replays the recorded object unchanged — same frozen diagnostics, same `stepId` stamps.
+  [`execute.js:324`](../../core/exec/execute.js#L324)
+
+- Stored only when a table exists, however the Step failed to produce one.
+  [`execute.js:404`](../../core/exec/execute.js#L404)
+
+**Bounds, and why rows alone were not one**
+
+- Rows: the frozen rule, and where 15,000,000 comes from.
+  [`cache.js:30`](../../core/exec/cache.js#L30)
+
+- Entries: a zero-row entry is invisible to a row bound and still occupies a slot.
+  [`cache.js:66`](../../core/exec/cache.js#L66)
+
+- `||`, not `&&` — whichever ceiling is exceeded is exceeded.
+  [`cache.js:151`](../../core/exec/cache.js#L151)
+
+**One key scheme across both stores**
+
+- Step zero re-keyed from entry identity to content, so the two stores cannot disagree.
+  [`convert.js:257`](../../core/exec/convert.js#L257)
+
+- The store around it: `{ of, release, size }` and the release-on-unconfirm rule, unchanged.
+  [`convert.js:279`](../../core/exec/convert.js#L279)
+
+**Ownership and withdrawal in the UI**
+
+- The default factory *is* the product's cache — `app/main.js` passes no prop.
+  [`App.vue:51`](../../ui/App.vue#L51)
+
+- Both panes: the Editor reads and writes, the Sources pane only ever clears.
+  [`App.vue:138`](../../ui/App.vue#L138)
+
+- AD-29: every command that withdraws a confirmation withdraws the tables built from it.
+  [`SourcesPane.vue:749`](../../ui/SourcesPane.vue#L749)
+
+- The Source key the run uses, derived in `core/` rather than assembled in the pane.
+  [`EditorPane.vue:178`](../../ui/EditorPane.vue#L178)
+
+**Peripherals**
+
+- The `console` register is a real gate — `globalThis` does not walk around it.
+  [`eslint.config.js:206`](../../eslint.config.js#L206)
+
+- Mount the way `app/main.js` mounts: the case that closes a hole three rounds kept reopening.
+  [`App.test.js:151`](../../ui/App.test.js#L151)
+
+- The door tested with five throw classes, not only the one the containment already covered.
+  [`execute.test.js:682`](../../core/exec/execute.test.js#L682)
+
+- The I/O matrix as cases, `countingEngine()` for every "computed nothing" assertion.
+  [`execute.test.js:442`](../../core/exec/execute.test.js#L442)
+
+- Crossover property plus the pinned constants, so a changed ceiling cannot pass unseen.
+  [`cache.test.js:169`](../../core/exec/cache.test.js#L169)
