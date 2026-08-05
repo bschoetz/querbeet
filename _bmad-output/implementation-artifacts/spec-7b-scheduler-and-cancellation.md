@@ -2,7 +2,7 @@
 title: 'Story 7b — The scheduler: cancellation between Steps, progress, and a run with an identity'
 type: 'feature'
 created: '2026-08-04'
-status: 'in-progress'
+status: 'in-review'
 baseline_commit: '5002d2a'
 review_loop_iteration: 1
 context:
@@ -184,7 +184,7 @@ context:
 *KEEP — round 1 got these right and re-derivation must not lose them:*
 
 - **The yield is the first statement of the loop body**, before the node's key is minted and before its entry is stored, driven by `order.entries()` because the body `continue`s in four places. That is the deliberate choice epic 7's context warns about, and it was made correctly.
-- **The Ask First is resolved and must not be re-litigated blindly.** Measured over `dist/index.html` from `file://`, 30 yields: `MessageChannel` 0.1–0.5 ms in Chromium (0.003 ms/yield) and 0–1 ms in Firefox; `setTimeout(…, 0)` 99.9–124.2 ms (3.33 ms/yield) and 110–122 ms (3.67 ms/yield). Two orders of magnitude below R4's 3.0/2 ms. `SharedArrayBuffer` is `undefined` from `file://` in both engines. Record these again rather than re-deriving them.
+- **The Ask First is resolved and must not be re-litigated blindly.** ~~Measured over `dist/index.html` from `file://`, 30 yields: `MessageChannel` 0.1–0.5 ms in Chromium (0.003 ms/yield) and 0–1 ms in Firefox; `setTimeout(…, 0)` 99.9–124.2 ms (3.33 ms/yield) and 110–122 ms (3.67 ms/yield). Two orders of magnitude below R4's 3.0/2 ms. `SharedArrayBuffer` is `undefined` from `file://` in both engines. Record these again rather than re-deriving them.~~ — **superseded 2026-08-05: the Design Notes table is the current figures, taken this round rather than copied.** The conclusion is unchanged (the same two orders of magnitude, and `SharedArrayBuffer` still `undefined` in both) and the instruction was the wrong one: these numbers are cheap to take and a copied measurement is how a stale claim survives a rewrite. **Do not re-import the figures in this bullet** — read the Design Notes, or measure again.
 - **The clock and the yielder are required props with no default factory**, because a `ui/`-built microtask stand-in would pass every test and deliver no click. This is 7a's "a production default no test exercises can be deleted" lesson answered in the opposite direction, and deliberately.
 - The pane's three-part discipline: cancel the in-flight run before starting another, a generation guard so only the newest publishes, and cancel on unmount.
 - **Every mechanism was probed by mutation** — removing the cancellation check, the generation guard, the unmount cancel, the reveal delay or the cancelled-run guard, or moving the yield to the bottom of the loop body, each turned a test red. Keep that standard.

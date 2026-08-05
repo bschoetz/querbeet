@@ -288,6 +288,13 @@ export function createStepZeroCache(engine) {
     /** The conversion of `entry`, computed once per distinct Source content. */
     of(entry) {
       if (!entry) return null
+      // **The release on the way out, and who drives it now.** Until story 7b this
+      // branch was reached for every contributing Source on every run, because
+      // execution's gate 1 tested a Source's confirmation by asking for its table.
+      // The gate asks a predicate instead now (it converts nothing, which is the
+      // point), so what drives this release is `ui/SourcesPane.vue` rendering the
+      // Source it withdrew, plus `ui/App.vue`'s explicit `release` on removal. A
+      // pane that stops asking for marks would be the thing that breaks it.
       if (entry.typing?.confirmed !== true) {
         release(entry.id)
         return null

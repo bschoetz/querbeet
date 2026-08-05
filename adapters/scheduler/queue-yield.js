@@ -58,19 +58,37 @@ export function createQueueYield() {
   /**
    * One turn of the macrotask queue.
    *
-   * **After `dispose` it resolves immediately, and the immediacy is the lesser
-   * evil.** A closed port delivers nothing, so posting on one would hand back a
-   * promise that never settles: a scheduler awaiting it never reaches another
-   * cancellation check and its `completed` never resolves — the run hangs, holding
-   * whatever it holds, and the caller's progress line stays on screen forever.
-   * Story 7b shipped that once, with a test asserting the hang as though it were
-   * the contract. A resolved promise costs a disposed yielder's last run the gap
-   * it was yielding for, which is a run that is being torn down anyway; a
-   * suspended one costs the caller a state it cannot leave.
+   * **After `dispose` it refuses, and refusing is the only one of the three
+   * answers that is true.** A closed port delivers nothing, so there are exactly
+   * three things this can do once the pair is gone, and two of them are lies:
+   *
+   *   *Suspend* — post on the closed port and hand back a promise that never
+   *   settles. The scheduler then never reaches another cancellation check and
+   *   its `completed` never resolves: the run hangs holding every table it has
+   *   computed, with a progress line on screen for the life of the page. Story 7b
+   *   shipped this once, with a test asserting the hang as though it were the
+   *   contract.
+   *
+   *   *Resolve on the microtask queue* — `Promise.resolve()`. It looks like a fix
+   *   and it is the same failure the port exists to prevent: `ports/index.js`
+   *   says in as many words that a microtask is **not** a yield here, because it
+   *   drains before the engine processes input. A run drained that way walks its
+   *   whole remaining graph with no turn in between, which is a blocked page and
+   *   a cancel control nobody can reach. The round-1 patch asked for "resolve,
+   *   not suspend" and this satisfied the letter of it.
+   *
+   *   *Refuse* — reject, which is what this does. A yielder that can no longer
+   *   yield is not a slower yielder, and the scheduler can act on it: it closes
+   *   the walk and rejects `completed`, so the run ends rather than hanging or
+   *   blocking. Whoever disposed the channel is tearing the host down anyway.
    */
   const next = () =>
     disposed
-      ? Promise.resolve()
+      ? Promise.reject(
+          Object.assign(new Error('queue-yield: the channel was disposed'), {
+            name: 'YieldDisposed',
+          }),
+        )
       : new Promise((resolve) => {
           waiting.push(resolve)
           channel.port2.postMessage(0)
@@ -79,12 +97,18 @@ export function createQueueYield() {
   /**
    * Close the pair.
    *
-   * **Everything still waiting is resolved first, and that is deliberate**, for
-   * the reason `next` states above: a closed port delivers nothing, so anything
-   * left in `waiting` would suspend its caller for good. Resolving lets the run
-   * reach its next cancellation check, which is the one place it can end cleanly.
-   * Nothing in the product disposes today; a test that creates a channel per case
-   * does, and so would a host that tears one down.
+   * **Nothing in the product calls this**, and it is not dead code: one pair is
+   * created in `app/main.js` and lives as long as the page, so the product has
+   * nothing to tear down. What has is a *test* that builds a pair per case —
+   * `adapters/scheduler/queue-yield.test.js` — and a future host that owns the app
+   * rather than being it. Both need the ports closed; neither should have to
+   * discover what happens to the yields in flight when they are.
+   *
+   * **Everything still waiting is resolved first**, and that is the one place a
+   * resolution is honest: those yields were already posted on a live channel, so
+   * releasing them lets a run in flight reach its next cancellation check — the
+   * one place it can end cleanly. It is the *next* request, made after the channel
+   * is gone, that is refused rather than answered.
    */
   const dispose = () => {
     disposed = true

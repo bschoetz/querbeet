@@ -730,11 +730,19 @@ describe('the run, in flight', () => {
     // The kind, not the word „Step": the walk's second node is a Filter, and its
     // first is a Quelle. The sentence itself is `ui/StepCard.test.js`'s.
     expect(progressLine(w).text()).toBe('Rechnet Filter „Nur Große“ (2 von 3)')
-    expect(progressLine(w).attributes('role')).toBe('status')
+    // **Not a live region**, and the announcement is a sibling that says the same
+    // state once: this line's text changes once per node, so announcing it would
+    // mean 46 interruptions over a 46-node walk and would bury the sentence that
+    // says the run ended.
+    expect(progressLine(w).attributes('role')).toBeUndefined()
+    const announced = w.find('[data-testid="editor-running"]')
+    expect(announced.attributes('role')).toBe('status')
+    expect(announced.text()).toContain('Der Lauf rechnet noch')
     // A real focusable element, not a div with a handler (AD-30).
     expect(cancelButton(w).element.tagName).toBe('BUTTON')
     expect(cancelButton(w).text()).toBe('Lauf abbrechen')
-    expect(filter).toBeTruthy()
+    // The Step the walk is in front of is the one the line names.
+    expect(w.vm.$props.graph.get(filter).name).toBe('Nur Große')
   })
 
   it('stops the walk, says so in German, and keeps the previous run on screen', async () => {
@@ -766,9 +774,12 @@ describe('the run, in flight', () => {
     // The walk stopped before the Step it was in front of.
     expect(engine.calls.selectColumns).toBe(1)
     expect(statusText(w)).toContain('Der Lauf wurde abgebrochen')
-    // Three positions in the walk, of which one is the Quelle — so the sentence
-    // counts Arbeitsschritte and says that Quellen are among them.
-    expect(statusText(w)).toContain('Von 3 Arbeitsschritten (Quellen mitgezählt) waren 2')
+    // Three nodes in the walk, of which one is the Quelle — so the sentence counts
+    // Arbeitsschritte, says that Quellen are among them, and says the count is the
+    // work this result needs rather than a total of anything on the canvas.
+    expect(statusText(w)).toContain(
+      'Für das Ergebnis sind 3 Arbeitsschritte nötig (Quellen mitgezählt); davon waren 2',
+    )
     // …and what the panel shows is still the first run's answer, not a blank and
     // not a partial set.
     expect(await shownFor(w, columns)).toMatchObject({ rowCount: 1 })
@@ -902,14 +913,98 @@ describe('the run, in flight', () => {
     await yielder.release()
     expect(engine.calls).toMatchObject({ filter: 1, selectColumns: 0 })
 
+    expect(statusText(w)).toContain('Der Lauf wurde abgebrochen')
+
     // The same run asked for again — a re-projection of the same graph.
     w.findComponent(StubCanvas).vm.$emit('select', filter)
     await nextTick()
     w.findComponent(StepPanel).vm.$emit('configure', { combine: 'all', conditions: [] })
     await yielder.release(4)
+    await nextTick()
 
     // The Filter is served from the entry the cancelled run left behind.
     expect(engine.calls).toMatchObject({ filter: 1, selectColumns: 1 })
+
+    // **And the cancellation sentence went with the run it was about.** It says
+    // „angezeigt wird weiterhin das Ergebnis des vorherigen Laufs", which stops
+    // being true the moment a later run publishes — a sentence that outlived its
+    // run would be false about exactly the thing it exists to make trustworthy.
+    // Deleting the `runNotice` reset in `startExecution` leaves it standing.
+    expect(statusText(w)).not.toContain('abgebrochen')
+  })
+
+  it('takes the progress line and the cancel control away when a run simply finishes', async () => {
+    // Not the cancelled path — the ordinary one. A run that outlives the reveal
+    // delay and then completes has to clear the band it opened, or the pane is
+    // left claiming a run is walking, with an inert cancel button beside the claim.
+    // Moving the clear into the cancelled branch leaves every other case green.
+    const { graph, columns } = wired()
+    const clock = testClock()
+    const yielder = handYield()
+    const engine = countingEngine()
+    const w = paneWith(graph, { engine, yielder, clock })
+
+    await flushPromises()
+    clock.at = 200
+    await yielder.release(2) // Source and Filter done, Columns waiting
+    await nextTick()
+    expect(progressLine(w).exists()).toBe(true)
+    expect(cancelButton(w).exists()).toBe(true)
+
+    await yielder.release()
+    await nextTick()
+
+    expect(progressLine(w).exists()).toBe(false)
+    expect(cancelButton(w).exists()).toBe(false)
+    expect(w.find('[data-testid="editor-running"]').exists()).toBe(false)
+    // …and it published, which is what makes this a completed run rather than one
+    // that vanished.
+    expect(await shownFor(w, columns)).toMatchObject({ rowCount: 1 })
+  })
+
+  it('leaves the keyboard somewhere when the control it was on is removed', async () => {
+    // **Pressing the cancel button destroys the cancel button**, every time, by
+    // construction: the run ends and `v-if="progress"` takes the row out of the
+    // document. Focus then falls to `<body>` and the next Tab starts the page from
+    // the top — for the one user AD-30 makes the control a real `<button>` for.
+    // The band takes it instead, which is also where the sentence about what just
+    // happened renders.
+    const { graph } = wired()
+    const clock = testClock()
+    const yielder = handYield()
+    const w = mount(EditorPane, {
+      attachTo: document.body, // focus needs a document to be in
+      props: {
+        graph,
+        sources: [entry()],
+        canvas: StubCanvas,
+        engine: countingEngine(),
+        stepZero: { of: (e) => (e ? { table: handle(100) } : null) },
+        clock,
+        yielder,
+      },
+    })
+
+    await flushPromises()
+    clock.at = 200
+    await yielder.release()
+    await nextTick()
+
+    const button = cancelButton(w).element
+    button.focus()
+    expect(document.activeElement).toBe(button)
+
+    await cancelButton(w).trigger('click')
+    await yielder.release()
+    await nextTick()
+    await nextTick() // the focus is restored after the row is gone
+
+    expect(cancelButton(w).exists()).toBe(false)
+    expect(document.activeElement).not.toBe(document.body)
+    expect(document.activeElement.className).toContain('h-20')
+    // The band holds the sentence, so a reader that follows focus is on it.
+    expect(document.activeElement.textContent).toContain('Der Lauf wurde abgebrochen')
+    w.unmount()
   })
 
   it('converts no Source before the run has yielded once', async () => {
@@ -967,12 +1062,17 @@ describe('the run, in flight', () => {
 
   it('leaves nothing claiming to be in flight when a door throws on the way in', async () => {
     // `startRun` runs the gates synchronously, and they call a door this pane
-    // supplies — so it can throw before there is a handle to hold. Round 1 cleared
-    // `inFlight` only in the promise callbacks, so a failed start left the previous
-    // run's handle standing behind the cancel control. That state is not
-    // observable from outside the pane (the band is cleared at the top of every
-    // start), which is why what this case pins is the consequence that is: a pane
-    // that failed to start a run must not be wedged, and must not be claiming one.
+    // supplies — so it can throw before there is a handle to hold.
+    //
+    // **What this case does and does not pin, stated because the round-2 patch
+    // asked for exactly that.** It pins that a failed start leaves the pane usable
+    // and does not swallow the throw. It does **not** pin the `inFlight = null`
+    // that sits above the `try`: with the band already cleared two lines earlier,
+    // a stale handle is unreachable from the template, every reader of `inFlight`
+    // tolerates one, and deleting the line leaves this suite green. That is a
+    // property of the design rather than a hole in the case — `inFlight` means
+    // "the run that may still publish", and keeping the name true is the whole
+    // reason the line is there. Nobody should read this case as covering it.
     const { graph } = wired()
     const yielder = handYield()
     const engine = countingEngine()

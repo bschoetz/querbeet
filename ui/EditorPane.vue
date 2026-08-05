@@ -205,6 +205,18 @@ const sourceTable = (id) => props.stepZero.of(sourceEntries.value.get(id))?.tabl
  *
  * An entry the store does not have answers `false`, which is what a Source node
  * with no Source behind it should be: refused by name rather than walked into.
+ *
+ * **One side effect went with the call that was removed, and it is worth knowing
+ * about.** `createStepZeroCache.of` releases an unconfirmed Source's conversion as
+ * it answers `null` for it, so while gate 1 asked for a table, every run of every
+ * graph drove that release for every contributing Source. It no longer does — this
+ * predicate touches the cache at all only if the Source *is* confirmed, at its own
+ * node in the walk. Nothing regressed: `ui/SourcesPane.vue` calls `of` from its
+ * render path for every Source it draws, so a withdrawal still releases on the
+ * next render of the pane where the withdrawal happens, and `ui/App.vue` releases
+ * on removal outright. It is written down because the coupling was real and was
+ * dropped silently, and because a future pane that stops rendering marks would be
+ * the one to notice.
  */
 const sourceConfirmed = (id) => sourceEntries.value.get(id)?.typing?.confirmed === true
 
@@ -240,12 +252,51 @@ const keyOfSource = (id) => stepZeroKey(sourceEntries.value.get(id))
 const REVEAL_AFTER_MS = 150
 
 /**
- * `{ done, total, stepId }` for a run that has outlived the reveal delay, or
+ * `{ done, total, stepId, kind }` for a run that has outlived the reveal delay, or
  * `null`. A `shallowRef` swapped wholesale, never mutated in place — the
  * discipline `ui/SourcesPane.vue`'s `parsing` ref set and the one AD-6 asks of
  * anything the executor hands out.
  */
 const progress = shallowRef(null)
+
+/**
+ * The band, and the cancel control inside it, as elements.
+ *
+ * The pane touches the DOM in exactly two places and this is the second (the
+ * first is `bringPanelIntoView`). Both are about where the user *is* rather than
+ * about state, which is why neither goes through the model.
+ */
+const bandEl = shallowRef(null)
+const cancelEl = shallowRef(null)
+
+/**
+ * Take the run's line and its cancel control off the band — and put the keyboard
+ * back somewhere it can be, if it was standing on the control.
+ *
+ * The two belong in one function because the second is only ever needed as a
+ * consequence of the first, and every place that clears the band owes it.
+ *
+ * **A run ends by removing the button the user is standing on.** `v-if="progress"`
+ * takes the cancel control out of the document the moment the run resolves —
+ * which for a keyboard user is *always* the moment they pressed it — and focus
+ * falls to `<body>`, where the next Tab starts the page again from the top. AD-30
+ * is why the control is a real `<button>` in the first place; keeping the place
+ * that button held is the same rule's other half.
+ *
+ * The band is where focus goes, because the band is where the answer is: the
+ * cancellation sentence renders in it, so a screen reader that follows focus
+ * lands on what just happened rather than on nothing. It is `tabindex="-1"`, so it
+ * takes focus programmatically and never appears in the tab order.
+ */
+const clearProgress = () => {
+  const doc = bandEl.value?.ownerDocument
+  const held = Boolean(doc) && cancelEl.value !== null && doc.activeElement === cancelEl.value
+  progress.value = null
+  // Read before the clear and acted on after the render, in that order: the test
+  // is about the element that is on its way out, and the focus has to land on one
+  // that is on its way in.
+  if (held) nextTick(() => bandEl.value?.focus?.())
+}
 
 /** What the *run* said about itself rather than about a Step: today exactly the
  *  cancellation. Held apart from `execution`, because a cancelled run must not
@@ -287,15 +338,21 @@ function startExecution() {
   inFlight?.cancel()
 
   const mine = (generation += 1)
-  progress.value = null
+  clearProgress()
+  // **The previous run's notice goes with it.** „Der Lauf wurde abgebrochen …
+  // angezeigt wird weiterhin das Ergebnis des vorherigen Laufs" is a sentence
+  // about what is on screen, so leaving it standing while a new run publishes new
+  // numbers would make it false about exactly the thing it exists to make
+  // trustworthy.
   runNotice.value = []
 
   // **Cleared before the start rather than after it**, because `startRun` can
-  // throw: the gates run inside it, synchronously, and they call a door this pane
-  // supplies. If it throws, the assignment below never happens and the handle that
-  // survives is the one that was just cancelled — a dead run behind a cancel
-  // control that does nothing. Clearing first makes the failed start leave no
-  // handle at all, which is the truthful state.
+  // throw: the gates run inside it, synchronously, and the assignment below never
+  // happens, so the handle that survives is the one that was just cancelled. It is
+  // an invariant rather than a visible defect — `inFlight` means "the run that may
+  // still publish", every reader of it tolerates a stale handle, and the band was
+  // cleared two lines up so no control is pointing at it. Clearing keeps the name
+  // true, which is what the next reader will assume.
   inFlight = null
 
   let handle
@@ -319,6 +376,14 @@ function startExecution() {
         // The reveal delay, read from the clock at a yield. `startedAt` is the
         // run's own, so a run that was superseded and restarted does not inherit
         // the elapsed time of the one before it.
+        //
+        // **`startedAt === null` is tested rather than subtracted.** A run started
+        // without a clock has no start time, and `now() - null` is `now()` — a
+        // number well past any delay, so every such run would reveal its progress
+        // line on its first report. Unreachable from this pane (the clock is a
+        // required prop) and one prop default away from being reachable, which is
+        // the kind of trap worth closing where it sits rather than documenting.
+        if (run.startedAt === null) return
         if (props.clock.now() - run.startedAt >= REVEAL_AFTER_MS) progress.value = at
       },
     })
@@ -326,7 +391,7 @@ function startExecution() {
     // Nothing is in flight and nothing may say otherwise. The throw goes on — it
     // is a programming error in a door, and swallowing it here would leave a pane
     // that quietly stops executing.
-    progress.value = null
+    clearProgress()
     throw thrown
   }
   inFlight = handle
@@ -338,7 +403,7 @@ function startExecution() {
       // replaced it nothing.
       if (mine !== generation) return
       inFlight = null
-      progress.value = null
+      clearProgress()
       if (outcome.run.state === RUN_STATE.cancelled) {
         // The previous execution stays on screen. A partly computed graph presented
         // as the current result — some Steps new, some old, nothing saying which —
@@ -369,7 +434,7 @@ function startExecution() {
       // claim a run is walking when none is.
       if (mine === generation) {
         inFlight = null
-        progress.value = null
+        clearProgress()
       }
       throw thrown
     },
@@ -647,7 +712,11 @@ watch(
          user was looking at outside the pane. A canvas that resizes because a
          sentence appeared is a canvas the user cannot aim at. So the space is
          reserved once and the region scrolls inside it. -->
-    <div class="h-20 shrink-0 overflow-auto py-2">
+    <div
+      ref="bandEl"
+      tabindex="-1"
+      class="h-20 shrink-0 overflow-auto py-2 focus:outline-none"
+    >
       <!-- **The run's own line, and it is inside the reserved band rather than
            above it.** The height is measured and load-bearing (see below), so a
            progress line that appeared *outside* it would move the canvas every
@@ -659,19 +728,37 @@ watch(
            for free (AD-30). There is deliberately no shortcut: `adapters/vueflow/
            GraphCanvas.vue:290-299` measured why a document-level key handler is
            wrong here, and a scoped one would have to name an element that the
-           control already is. -->
+           control already is. The band itself is `tabindex="-1"` so that focus has
+           somewhere to land when that button is removed — which happens on every
+           activation, since pressing it ends the run.
+
+           **What a screen reader hears during a run, decided rather than
+           inherited.** The line below is *not* a live region: its text changes
+           once per node, so `role="status"` on it announced „Rechnet …" 46 times
+           over a 46-node walk, burying every other thing the band had to say. What
+           is announced instead is the *state*, once: a run is going, and it can be
+           stopped. It is visually hidden because the line beside it already says
+           the same thing on screen with more detail than is worth speaking.
+
+           The **end** of a run is heard a different way, and deliberately: the
+           band takes focus when the control the user was on is removed (see
+           `clearProgress`), and the band contains the sentence about what
+           happened. The status paragraphs below have never been a live region —
+           they carry the graph's own marks, which arrive in response to a command
+           the user just issued — and making them one for the sake of the
+           cancellation would announce a great deal else besides. -->
       <div
         v-if="progress"
         class="flex items-center justify-between gap-2 pb-1"
       >
         <p
-          role="status"
           data-testid="editor-progress"
           class="truncate text-xs text-slate-500"
         >
           {{ progressText(progress, nameOf) }}
         </p>
         <button
+          ref="cancelEl"
           type="button"
           data-testid="editor-cancel"
           class="shrink-0 rounded border border-slate-300 px-2 py-0.5 text-xs text-slate-700 hover:bg-slate-50"
@@ -680,6 +767,14 @@ watch(
           Lauf abbrechen
         </button>
       </div>
+      <p
+        v-if="progress"
+        role="status"
+        data-testid="editor-running"
+        class="sr-only"
+      >
+        Der Lauf rechnet noch. Er lässt sich mit „Lauf abbrechen“ stoppen.
+      </p>
 
       <!-- role="status" so a refused command says so out loud. Without it,
            pressing a button that refuses appears to do nothing at all to a screen

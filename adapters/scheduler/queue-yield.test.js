@@ -89,24 +89,27 @@ describe('the yield', () => {
     }
   })
 
-  it('resolves rather than suspends when it is asked for a yield after disposal', async () => {
-    // **A disposed yielder must not be able to hang a run.** Posting on a closed
-    // port delivers nothing, so the promise round 1 handed back here never settled:
-    // a scheduler awaiting it never reached another cancellation check, its
-    // `completed` never resolved, and the caller's progress line stayed on screen
-    // for the life of the page. Resolving costs that last run the gap it was
-    // yielding for — a run being torn down anyway — and it is the lesser evil by a
-    // long way.
+  it('refuses a yield asked for after disposal, rather than hanging or faking one', async () => {
+    // **Three answers, two of them lies** (see the adapter). Suspending hangs the
+    // run that asked — the promise round 1 handed back here never settled, and a
+    // test asserted the hang as though it were the contract. Resolving on the
+    // microtask queue is the failure this port exists to prevent: a run drained
+    // that way walks its whole remaining graph with no engine turn between Steps.
+    // Refusing is the one answer that is true, and it is the one the scheduler can
+    // act on.
     const yielder = createQueueYield()
     await yielder.next()
     yielder.dispose()
 
-    const raced = await Promise.race([
-      yielder.next().then(() => 'resolved'),
+    const settled = await Promise.race([
+      yielder.next().then(
+        () => 'resolved',
+        (refusal) => `refused: ${refusal.name}`,
+      ),
       new Promise((resolve) => setTimeout(() => resolve('hung'), 20)),
     ])
 
-    expect(raced).toBe('resolved')
+    expect(settled).toBe('refused: YieldDisposed')
   })
 
   it('lets go of everything still waiting when it is disposed', async () => {

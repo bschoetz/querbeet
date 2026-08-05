@@ -985,6 +985,35 @@ describe('the gate’s door (story 7b, review round 1)', () => {
     expect(table.calls).toEqual(['src:umsatz', 'src:umsatz'])
   })
 
+  it('records a conversion that throws as a diagnostic, and the walk carries on', () => {
+    // Step zero is a Step (AD-7), so the frozen matrix's rule holds for it: a
+    // throw is a diagnostic, never a cancellation and never a run that ends. The
+    // door can throw for reasons that have nothing to do with the typing — the
+    // engine refusing a column shape, a reader's invariant guard — and until the
+    // gate stopped asking for a table, the throw came out of the gate loop
+    // synchronously. Out of the walk it would reject the scheduler's `completed`,
+    // which reaches the user as an edit that silently did nothing.
+    const { graph, filter } = chain()
+    const out = executeGraph({
+      steps: graph.list(),
+      resultId: graph.resultId(),
+      engine,
+      sourceTable: () => {
+        throw new Error('an invariant guard nothing was supposed to reach')
+      },
+      sourceConfirmed: () => true,
+    })
+
+    expect(out.run.state).toBe('complete')
+    expect(codesOf(out.results.get('src:umsatz').diagnostics)).toEqual([CODE.stepThrew])
+    // The kind travels with it, so the German says „Quelle" rather than „Step".
+    expect(out.results.get('src:umsatz').diagnostics[0].values).toEqual({
+      id: 'src:umsatz',
+      kind: 'source',
+    })
+    expect(codesOf(out.results.get(filter).diagnostics)).toEqual([CODE.inputFailed])
+  })
+
   it('walks on when the two doors disagree, rather than refusing halfway', () => {
     // A predicate that says `confirmed` while the table door answers `null` is a
     // caller bug, not a state the store can produce. The Source records no table

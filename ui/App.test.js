@@ -120,19 +120,6 @@ const wired = async () => {
 }
 
 /**
- * Mount `App`.
- *
- * **With no `runCache` unless a case asks for one**, which is the difference
- * round 3 turned on. `app/main.js` passes no such prop, so App's own default
- * factory is the only thing that gives the shipped artefact a cache — and a
- * helper that defaulted the argument meant every case injected and none
- * exercised that expression. Mutating the default to `null`, or to a cache too
- * small to hold the graph, left the whole suite green.
- *
- * A case that needs to *read* `size()` still has to hold the cache, and passes
- * one. The engine is the observation everywhere else.
- */
-/**
  * The `Clock` and the `Yield` of story 7b (AD-25, AD-9).
  *
  * **These *are* passed by every case, and that is not the hole round 3 closed.**
@@ -152,6 +139,19 @@ const testClock = () => {
 }
 const instantYield = () => ({ next: () => Promise.resolve() })
 
+/**
+ * Mount `App`.
+ *
+ * **With no `runCache` unless a case asks for one**, which is the difference
+ * round 3 turned on. `app/main.js` passes no such prop, so App's own default
+ * factory is the only thing that gives the shipped artefact a cache — and a
+ * helper that defaulted the argument meant every case injected and none
+ * exercised that expression. Mutating the default to `null`, or to a cache too
+ * small to hold the graph, left the whole suite green.
+ *
+ * A case that needs to *read* `size()` still has to hold the cache, and passes
+ * one. The engine is the observation everywhere else.
+ */
 const render = async (store, graph, engine, runCache) => {
   const props = {
     buildVersion: 'test',

@@ -409,7 +409,28 @@ export function* walkGraph({
       // table and its consumers report `exec.input_failed` by name, exactly as they
       // do for every other Step that produced nothing. It is deliberately not a
       // second refusal — the gates ran, and a run cannot be refused halfway.
-      record(node, sourceTable(node.id), [])
+      //
+      // **And it is inside a `try`, on the same terms as every other node.** The
+      // frozen matrix's rule is that a throw is a diagnostic and never a
+      // cancellation, and Step zero is a Step by AD-7's own sentence.
+      // `convertSource` can throw for reasons that have nothing to do with an
+      // unconfirmed typing — the engine refusing a column shape, a reader's
+      // invariant guard — and before this story such a throw left `executeGraph`
+      // synchronously. It cannot now: the walk is drained from a promise nobody
+      // awaits, so an escape would reach the user as an edit that silently did
+      // nothing. Recorded on the Source's own node, in the same shape and under
+      // the same code a Step's throw is recorded in (the sentence names the kind,
+      // so it reads „Quelle" rather than „Step"), and the walk carries on.
+      let table
+      try {
+        table = sourceTable(node.id)
+      } catch {
+        record(node, null, [
+          error(CODE.stepThrew, { id: node.id, kind: node.kind }, { stepId: node.id }),
+        ])
+        continue
+      }
+      record(node, table, [])
       continue
     }
 
@@ -597,6 +618,16 @@ export function* walkGraph({
  * disagreement between the drivers shows up here first. Do not delete it as dead
  * code; it is the control.
  *
+ * **`ok` is not "it worked", and a caller that reads it as though it were will
+ * get a cancellation wrong.** `ok` answers one question — was the run *refused*
+ * at a gate (AD-29) — and it has meant that since story 6b: a run that walked to
+ * the end with every Step failing is `ok: true` and says so in its diagnostics.
+ * Story 7b adds a second way to be `ok: true` with nothing in `results`: a run
+ * the user cancelled. `run.state` is the three-way answer — `refused`,
+ * `cancelled`, `complete` — and it is what a caller deciding whether to *publish*
+ * a result has to branch on. `ui/EditorPane.vue` tests `run.state` before it
+ * assigns, for exactly this reason.
+ *
  * @param {object} run
  * @param {ReadonlyArray<object>} run.steps the graph store's frozen projection
  * @param {string|null} run.resultId which Step the run ends at
@@ -635,6 +666,9 @@ export function* walkGraph({
  *            diagnostics: ReadonlyArray<object>,
  *            run: Readonly<{ id: string|null, startedAt: number|null,
  *                            state: 'refused'|'complete'|'cancelled' }> }}
+ *   `ok` is `false` only for a refusal (see above); `run.state` is the answer to
+ *   "what happened to this run", and `results` is empty for two of its three
+ *   values.
  */
 export function executeGraph(run) {
   const walk = walkGraph(run)

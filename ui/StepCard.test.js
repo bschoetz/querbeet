@@ -124,13 +124,16 @@ describe('the German maps', () => {
 
     // Nothing finished. „war noch keiner" and not „waren 0", which reads as a
     // count of a thing that did not happen.
-    expect(said(0, 12)).toContain('Von 12 Arbeitsschritten (Quellen mitgezählt) war noch keiner')
+    expect(said(0, 12)).toContain(
+      'Für das Ergebnis sind 12 Arbeitsschritte nötig (Quellen mitgezählt); ' +
+        'davon war noch keiner fertig gerechnet',
+    )
     // Exactly one, and the verb follows the number — the shape every count in this
     // file has.
     expect(said(1, 12)).toContain('war 1 fertig gerechnet')
     // More than one, with the German thousands separator the rest of the file uses.
     expect(said(1234, 5678)).toContain('waren 1.234 fertig gerechnet')
-    expect(said(1234, 5678)).toContain('Von 5.678 Arbeitsschritten')
+    expect(said(1234, 5678)).toContain('sind 5.678 Arbeitsschritte nötig')
 
     // Every branch says the two things that decide whether cancelling is safe to
     // press: the work is kept, and the screen is still the previous run's.
@@ -146,16 +149,19 @@ describe('the German maps', () => {
     // shortest run there is, which for a single Quelle is also the commonest one.
     const one = graphText(info(EXEC_CODE.runCancelled, { done: 0, total: 1 }))
 
-    expect(one).toContain('Von 1 Arbeitsschritt ')
-    expect(one).not.toContain('1 Arbeitsschritten')
+    expect(one).toContain('ist 1 Arbeitsschritt nötig')
+    expect(one).not.toContain('Arbeitsschritte nötig')
   })
 
-  it('never calls the walk’s positions Steps, because Quellen are among them', () => {
-    // A 45-Step chain over one Source walks 46 nodes. „Von 46 Steps" in front of a
-    // Pipeline the user can count 45 Steps in is the interface being wrong about
-    // the one number it is reporting.
-    const said = graphText(info(EXEC_CODE.runCancelled, { done: 3, total: 46 }))
+  it('says what the number counts, since it is neither the Pipeline nor anything on screen', () => {
+    // `total` is the walk's own length — the *contributing* nodes, Quellen among
+    // them. A Pipeline of 45 Steps of which 11 feed the Result reports 11, so both
+    // „Von 46 Steps" (round 1) and „Von 11 Arbeitsschritten" (round 2) hand the
+    // user a number with nowhere to check it. The sentence names the work this
+    // result needs instead.
+    const said = graphText(info(EXEC_CODE.runCancelled, { done: 3, total: 11 }))
 
+    expect(said).toContain('Für das Ergebnis sind 11 Arbeitsschritte nötig')
     expect(said).not.toMatch(/\bSteps\b/)
     expect(said).toContain('Quellen mitgezählt')
   })

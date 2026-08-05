@@ -468,6 +468,29 @@ describe('what cancellation is not', () => {
     })
   })
 
+  it('is not what a refusing yield produces — the run ends instead of walking on', async () => {
+    // A `Yield` that can no longer yield is not a slower yield: draining past it
+    // would walk the rest of the graph with no engine turn between Steps, which is
+    // the blocked page this port exists to prevent. So the refusal reaches
+    // `completed` as a rejection and the walk is closed where it stands — it is
+    // deliberately *not* reported as a cancellation, which is a thing the user
+    // asked for.
+    const { graph } = chain()
+    const engine = countingEngine()
+    let asked = 0
+    const yielder = {
+      next: () => {
+        asked += 1
+        return asked > 1 ? Promise.reject(new Error('the channel was disposed')) : settle()
+      },
+    }
+    const handle = start(graph, { confirmed: confirmedReport(), yielder, engine })
+
+    await expect(handle.completed).rejects.toThrow('the channel was disposed')
+    // The Source was done before the refusal; nothing after it ran.
+    expect(engine.calls).toEqual({ filter: 0, selectColumns: 0 })
+  })
+
   it('costs no yield at all for a graph with no Result Step', async () => {
     const graph = createGraphStore()
     graph.syncSources([{ id: 'src:umsatz', name: 'Umsatz' }])

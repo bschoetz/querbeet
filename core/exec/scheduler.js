@@ -69,6 +69,17 @@ import { CODE, EMPTY_RESULTS, mintRun, RUN_STATE, walkGraph } from './execute.js
  *                      cancel: () => void, completed: Promise<object> }>}
  *   `id` and `startedAt` are available **synchronously**, because a caller that
  *   holds two runs has to be able to tell them apart before either finishes.
+ *   **Both are `null` when no clock was passed** — the clock is a door, exactly
+ *   as the cache is — so a caller timing a run against `startedAt` has to test it
+ *   rather than subtract it: `now() - null` is `now()`, which is every elapsed
+ *   test's worst possible wrong answer.
+ *
+ *   `completed` resolves with the walk's return value, whose `ok` says only
+ *   whether the run was *refused* (see `executeGraph`); **a cancelled run resolves
+ *   `ok: true` with no results at all**, so `run.state` is what a caller deciding
+ *   whether to publish must read. It *rejects* for two reasons and neither is a
+ *   run outcome: a programming error escaping the walk, and a `Yield` that refused
+ *   to yield.
  */
 export function startRun({ clock = null, yieldNow, onProgress = null, ...graph }) {
   const identity = mintRun(clock)
@@ -100,7 +111,23 @@ export function startRun({ clock = null, yieldNow, onProgress = null, ...graph }
   const drain = async () => {
     while (!step.done) {
       if (onProgress !== null) onProgress(step.value, identity)
-      await yieldNow()
+      // **A yield that refuses ends the run rather than being walked past.** The
+      // `Yield` port promises a turn of the macrotask queue; a port that can no
+      // longer give one — `adapters/scheduler/queue-yield.js` after `dispose`, a
+      // host tearing its channel down — has to say so, because the two
+      // alternatives are worse. Suspending for good would hang the run holding
+      // every table it has computed, and resolving anyway would drain the rest of
+      // the graph with no engine turn between Steps, which is the blocking run
+      // this whole port exists to prevent. So the rejection propagates to
+      // `completed`, and the generator is closed first: the walk must not be left
+      // suspended mid-graph with its `results` reachable from a promise nobody
+      // will resume.
+      try {
+        await yieldNow()
+      } catch (refused) {
+        walk.return(undefined)
+        throw refused
+      }
       // **Between two Steps.** The engine has had a turn, so a click on the cancel
       // control has been delivered and the flag it set is this read.
       if (cancelled) {

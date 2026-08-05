@@ -82,16 +82,22 @@ const inputs = (n) => (n === 1 ? '1 Eingang' : `${n} Eingänge`)
 const rows = (n) => (n === 1 ? '1 Zeile' : `${nf(n)} Zeilen`)
 
 /**
- * How many things a run walks, in the dative — the case both sentences that use
- * it need („Von 12 Arbeitsschritten", „von 1 Arbeitsschritt").
+ * How much work a run has, with its verb — „ist 1 Arbeitsschritt", „sind 12
+ * Arbeitsschritte".
  *
  * **„Arbeitsschritt" rather than „Step", and it is a deliberate second word.** A
- * run's order contains the contributing Quellen as well as the Steps, so counting
- * them as Steps says a number the user cannot find in the Pipeline. The generic
- * German word covers both and cannot be mistaken for the domain term the cards
- * carry.
+ * run's order contains the contributing Quellen as well as the Steps, so calling
+ * the count a number of Steps says something the user cannot verify.
+ *
+ * **And the count is the run's own, not the Pipeline's**, which is the half the
+ * first version of this left out: `total` is `order.length`, and the order is the
+ * *contributing* subset — what `contributingTo` says feeds the Result. A Pipeline
+ * of 45 Steps of which 11 reach the Result reports 11, so a sentence reading „Von
+ * 11 Arbeitsschritten" in front of 45 cards is a number with nowhere to be
+ * checked. The sentence therefore says what the number is *for* — the work this
+ * result needs — rather than presenting it as a total of anything on screen.
  */
-const walkSteps = (n) => (n === 1 ? '1 Arbeitsschritt' : `${nf(n)} Arbeitsschritten`)
+const workNeeded = (n) => (n === 1 ? 'ist 1 Arbeitsschritt' : `sind ${nf(n)} Arbeitsschritte`)
 
 /** `Eingang 1 und Eingang 2`, in German rather than as a comma-joined list. */
 const slotList = (slots) =>
@@ -407,14 +413,15 @@ const GERMAN = Object.freeze(
     // previous run's rather than a half-computed set. The finished work stays in
     // the cache, so pressing it again costs nothing, and that is said too.
     //
-    // **It counts Arbeitsschritte, not Steps, and the distinction is not
-    // pedantry.** The walk's `total` is the length of the dependency order, which
-    // contains the contributing *Quellen* as well as the Steps — Step zero is a
-    // node in the walk, which is precisely what makes it cancellable. A sentence
-    // reading „Von 46 Steps" in front of a Pipeline the user can count 45 Steps in
-    // is the interface being wrong about the one number it is reporting. Round 1
-    // shipped that, together with „Von 1 Steps" and a hard-coded „1", which is why
-    // all three branches and both plurals are pinned by cases now.
+    // **The count says what it counts, and that took two goes.** `total` is the
+    // length of the walk's dependency order: the *contributing* nodes, Quellen
+    // included, because Step zero is a node in the walk and that is precisely what
+    // makes it cancellable. It is therefore neither the number of Steps in the
+    // Pipeline nor a number the user can count on the canvas — round 1 shipped
+    // „Von 46 Steps" (wrong about Quellen, and with „Von 1 Steps" and a hard-coded
+    // „1" beside it), and round 2's „Von 11 Arbeitsschritten (Quellen mitgezählt)"
+    // was still a total of nothing findable. So the sentence names the work *this
+    // result needs* rather than a total of anything on screen.
     'exec.run_cancelled': (v) => {
       const done =
         v.done === 0
@@ -423,9 +430,9 @@ const GERMAN = Object.freeze(
             ? `war ${nf(v.done)} fertig gerechnet`
             : `waren ${nf(v.done)} fertig gerechnet`
       return (
-        `Der Lauf wurde abgebrochen. Von ${walkSteps(v.total)} (Quellen mitgezählt) ${done}. ` +
-        `Die fertigen Ergebnisse bleiben gespeichert — angezeigt wird weiterhin das Ergebnis ` +
-        `des vorherigen Laufs.`
+        `Der Lauf wurde abgebrochen. Für das Ergebnis ${workNeeded(v.total)} nötig ` +
+        `(Quellen mitgezählt); davon ${done}. Die fertigen Ergebnisse bleiben gespeichert — ` +
+        `angezeigt wird weiterhin das Ergebnis des vorherigen Laufs.`
       )
     },
   }),
@@ -484,12 +491,21 @@ export const graphText = (diagnostic, nameOf = (id) => id) =>
  * **It names the *kind* rather than calling everything a Step**, for the reason
  * `exec.run_cancelled` above states: the walk contains Quellen, and „Rechnet Step
  * 1 von 46: „gross““ for a Quelle is the interface being wrong about what it is
- * doing. The kind comes from the walk itself (`core/exec/execute.js` yields it),
- * so it describes the node the run is actually in front of rather than whatever a
- * re-read projection says about that id now.
+ * doing.
+ *
+ * **The two halves come from two places, and a reader should know which.** The
+ * kind and the position are the walk's — `core/exec/execute.js` yields them, so
+ * they describe the node the run is actually in front of. The *name* is not: it is
+ * resolved through `nameOf` against the graph the pane is rendering right now, the
+ * same way every sentence in this file resolves one, so a Step renamed mid-run
+ * reports its new name. That is the behaviour the file wants (a name frozen into a
+ * message goes stale), and it is worth saying because the mixture is not obvious.
  *
  * The position is a position and carries no noun — `done` is how many are
- * finished, so `done + 1` is the one being computed.
+ * finished, so `done + 1` is the one being computed — and `total` is the run's own
+ * length, which is the contributing subset rather than the size of the Pipeline.
+ * A transient line naming the node it is working on can carry that; the
+ * cancellation sentence, which is read after the fact, spells it out instead.
  */
 export const progressText = (at, nameOf = (id) => id) => {
   const label = kindLabel(at.kind)

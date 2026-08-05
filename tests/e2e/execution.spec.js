@@ -843,11 +843,19 @@ test('no raw core vocabulary reaches the screen while a Step is configured and p
 //
 // Measured from the built artefact on 2026-08-05, both engines, before this case
 // was written (the spec's Ask First): 30 `MessageChannel` yields — one 30-Step
-// run's worth — cost 0.1–0.5 ms in Chromium and 0–1 ms in Firefox, so 0.003 ms per
+// run's worth — cost 0–0.2 ms in Chromium and 0–1 ms in Firefox, under 0.01 ms per
 // yield against R4's 3.0 / 2 ms. The same 30 through `setTimeout(…, 0)` cost
-// 99.9–124.2 / 110–122 ms, which is the 4 ms clamp this design refuses, measured
+// 96.3–96.8 / 104–105 ms, which is the 4 ms clamp this design refuses, measured
 // here rather than cited. `SharedArrayBuffer` is `undefined` from `file://` in
-// both engines, exactly as AD-9 says.
+// both engines while `typeof Atomics` is `'object'` in both — AD-9's trap, which
+// is why neither is a feature check anything here relies on.
+//
+// These are the figures in the spec's Design Notes and they are the ones taken
+// this round. An earlier draft of this header carried the reverted attempt's
+// numbers (0.1–0.5 ms, 99.9–124.2 / 110–122 ms) while the spec carried these,
+// which left two files in the repo disagreeing about one measurement. Same two
+// orders of magnitude, different day — and a stale copy is how a false claim gets
+// re-imported.
 
 const BIG_ROWS = 500_000
 const amountAt = (i) => Number(AMOUNTS[i % 9].replace(/\./g, '').replace(',', '.'))
@@ -1023,10 +1031,15 @@ test('a long run says where it is, and stops between two Steps when it is told t
   await expect(editorStatus(page)).toContainText('Der Lauf wurde abgebrochen')
   // Arbeitsschritte and not Steps: the walk has one node per Step *and* one for
   // the Quelle, so „Von 46 Steps" in front of a 45-Step chain would be the
-  // interface being wrong about the one number it reports.
+  // interface being wrong about the one number it reports. It also says what the
+  // number is — the work this result needs — because it is the *contributing*
+  // count and a Pipeline can hold Steps that are not in it.
   await expect(editorStatus(page)).toContainText(
-    `Von ${STEPS + 1} Arbeitsschritten (Quellen mitgezählt)`,
+    `Für das Ergebnis sind ${STEPS + 1} Arbeitsschritte nötig (Quellen mitgezählt)`,
   )
+  // The keyboard did not lose its place when the button it was on was removed by
+  // its own activation (AD-30's other half).
+  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('BODY')
   await expect(progress(page)).toHaveCount(0)
   await expect(cancelRun(page)).toHaveCount(0)
 
