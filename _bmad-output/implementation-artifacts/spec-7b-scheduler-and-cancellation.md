@@ -2,7 +2,7 @@
 title: 'Story 7b — The scheduler: cancellation between Steps, progress, and a run with an identity'
 type: 'feature'
 created: '2026-08-04'
-status: 'in-review'
+status: 'done'
 baseline_commit: '5002d2a'
 review_loop_iteration: 1
 context:
@@ -253,3 +253,70 @@ Taken again this round rather than inherited from the reverted attempt, which me
 
 - ~~From the built artefact over `file://` in **both** Chromium and Firefox: confirm `MessageChannel` posts and that the per-yield cost over a real 30-Step graph is in the neighbourhood of R4's 3.0 / 2 ms~~ — **done 2026-08-05, re-measured this round rather than inherited; the table is in the Design Notes.** 30 yields cost 0–0.2 ms (Chromium) / 0–1 ms (Firefox) against 96.3–96.8 / 104–105 ms for the same 30 through `setTimeout(…, 0)`. Under 0.01 ms per yield against R4's 3.0 / 2 ms, so the HALT condition is not met and nothing is re-litigated. `SharedArrayBuffer` is `undefined` from `file://` in both engines while `typeof Atomics` is `'object'` in both.
 - ~~Confirm by hand that cancelling a long run leaves the panel showing the previous run's numbers, not a blank and not a partial set~~ — **automated instead, and it is stronger that way.** `tests/e2e/execution.spec.js` builds a 45-Step chain over 500,000 rows, widens the first Step's condition so every Step recomputes, takes the cancel control from the keyboard while the walk is walking, and asserts the German sentence, that the Result Step still reports the *previous* run's row count, and that the status band is still 96 px with the canvas neither resized nor displaced. Run six times across both engines while writing it, green each time.
+
+## Suggested Review Order
+
+**The one walk, and the two drivers over it**
+
+- Start here: the loop became a generator and this is its yield point, before the node is touched
+  [`execute.js:385`](../../core/exec/execute.js#L385)
+- The asynchronous driver — one Step per macrotask turn, the cancellation flag read at each yield
+  [`scheduler.js:111`](../../core/exec/scheduler.js#L111)
+- The synchronous driver, unchanged in signature and now the parity surface with no production caller
+  [`execute.js:673`](../../core/exec/execute.js#L673)
+
+**The fix review round 1 was reverted for**
+
+- The gate tests confirmation through a predicate and never through the converting door
+  [`execute.js:313`](../../core/exec/execute.js#L313)
+- What the pane supplies it from — the same field `convertSource` checks before converting
+  [`EditorPane.vue:221`](../../ui/EditorPane.vue#L221)
+- Step zero converts here instead, one yield in, where a cancel can still stop it — and inside a `try`
+  [`execute.js:412`](../../core/exec/execute.js#L412)
+
+**A run with an identity (AD-25)**
+
+- Minted above the gates, so a refused run carries one too
+  [`execute.js:176`](../../core/exec/execute.js#L176)
+- The three states a run can end in
+  [`execute.js:193`](../../core/exec/execute.js#L193)
+- A cancelled run resolves with no results and one diagnostic — never a partial graph
+  [`scheduler.js:97`](../../core/exec/scheduler.js#L97)
+
+**The platform, named only in adapters (AD-1, AD-2)**
+
+- The message-queue yield, and why a disposed one refuses rather than resolving or hanging
+  [`queue-yield.js:85`](../../adapters/scheduler/queue-yield.js#L85)
+- The clock and its id mint — counted, not drawn
+  [`clock.js:49`](../../adapters/clock/clock.js#L49)
+- Both ports declared before either implementation
+  [`index.js:384`](../../ports/index.js#L384)
+- Constructed once, in the composition root
+  [`main.js:45`](../../app/main.js#L45)
+
+**The pane: nine call sites become starts**
+
+- The start, the supersession and the generation guard that lets only the newest publish
+  [`EditorPane.vue:334`](../../ui/EditorPane.vue#L334)
+- A view switch is a real unmount, so a run in flight is cancelled rather than left to publish
+  [`EditorPane.vue:454`](../../ui/EditorPane.vue#L454)
+- The cancel control is a request, not a stop — the run ends at its next check
+  [`EditorPane.vue:446`](../../ui/EditorPane.vue#L446)
+- Progress line and cancel button inside the measured `h-20` band
+  [`EditorPane.vue:755`](../../ui/EditorPane.vue#L755)
+
+**German**
+
+- The cancellation sentence, and what its count is actually counting
+  [`graph-labels.js:437`](../../ui/graph-labels.js#L437)
+
+**Tests**
+
+- The three cases that pin the round-1 defect: nothing converts before the first yield
+  [`scheduler.test.js:246`](../../core/exec/scheduler.test.js#L246)
+- The matrix as cases, driven by a hand-released yield rather than by timers
+  [`scheduler.test.js:298`](../../core/exec/scheduler.test.js#L298)
+- The pane's half — supersession, unmount, reveal delay, the band cleared on both outcomes
+  [`EditorPane.test.js:620`](../../ui/EditorPane.test.js#L620)
+- The only place the platform assumptions are actually tested: `file://`, both engines
+  [`execution.spec.js:844`](../../tests/e2e/execution.spec.js#L844)
