@@ -8,7 +8,17 @@
 # enough on the owner's machine to calibrate it against, while Join and
 # Aggregate are. The stale mark is carved out of 7c and shipped early because
 # stories 8 and 9 make the gap it closes progressively more visible. It is
-# story 9b, and it sits in list order between 9 and 10.
+# story 9.5, and it sits in list order between 9 and 10.
+#
+# THE DOT IN "9.5" IS DELIBERATE — do not "fix" it to 9b or 9-5. The owner
+# named it, and the reason is that story 9 is very likely to be split later,
+# the way 4, 6 and 7 all were: a letter suffix would then collide with the
+# 9a/9b those splits would want. A dash form is impossible outright, because
+# the schema's prefix-free rule forbids "9" and "9-5" from coexisting. The dot
+# is a knowing deviation from the schema's letters-digits-dashes rule
+# (.claude/skills/bmad-spec/assets/stories-schema.md), which exists so an id
+# survives being used as a filename prefix — a dot does that fine, unlike the
+# "/" and "*" that rule was written against.
 - id: "1"
   title: CSV Sources — load, encoding, delimiter, damage detection
   description: >-
@@ -506,7 +516,7 @@
     Division by zero and boxed inputs yield a marked empty cell through the
     adapter's box handling — never a crash, never a silent zero (AD-22). No
     chunking for Aggregate (AD-9).
-- id: "9b"
+- id: "9.5"
   title: The stale mark — a result that says which run it belongs to
   description: >-
     The half of CAP-38 that needs no threshold and no mode: a Preview or Result
