@@ -10,9 +10,21 @@ Epic 7 turns epic 6's walking skeleton into the real execution owner: a content-
 
 ## Stories
 
-- Story 7a: The per-Step cache — content-addressed, diagnostics replayed, bounded
+- Story 7a: The per-Step cache — content-addressed, diagnostics replayed, bounded — **DONE 2026-08-05**
 - Story 7b: The scheduler — cancellation between Steps, progress, and a run with an identity
 - Story 7c: The two execution modes — a stated threshold, a visible mode, and a stale mark
+
+### What 7a actually shipped, for 7b and 7c to plan against
+
+Both remaining specs were drafted before 7a landed. **Every `core/exec/execute.js` line anchor in them has moved**, and the file's signature now reads `executeGraph({ steps, resultId, engine, sourceTable, cache, sourceKey })`. Five things are not derivable from the story text:
+
+- **`key(source)` takes the encoding too** — `hash(byteDigest + parseConfig + encoding)`. AD-8 names only `parseConfig`, but `entry.encoding` is a separate frozen field in this codebase, so a key without it serves a UTF-8 parse for a Latin-1 one. AD-8's line below is left as written; this is the codebase's reading of it.
+- **A result does not carry its key.** `results` holds `{ kind, table, rowCount, columnCount, diagnostics }` and the content keys live in a `Map` local to `executeGraph`. **7c's stale mark depends on exposing one per result** — the design is right and the keys exist, but it is an edit rather than a free consequence.
+- **Two ceilings, not one.** 15,000,000 retained rows *and* 1,000 entries, evicting while either is exceeded. A zero-row entry costs nothing against a row bound and still occupies a slot, so rows alone bound nothing.
+- **Two containment mechanisms, because there are two trust boundaries.** `keyOrNull` contains only a `CanonicalRefusal` so an internal caller bug still propagates; `keyFromDoor` contains everything an injected callback throws, because a door is foreign code on a render path. A yield point added by 7b sits inside the loop that computes keys — between a Step's key and its store — so pick it deliberately.
+- **AD-29 is honoured by clearing the whole cache.** A content-keyed store has no Source id to release by, so every command committing `confirmed: false` clears it. Coarse, and correct because an eviction is a miss.
+
+One rule outside the epic changed with it: **`core/` may name `console`**, in `core/exec/cache-key.js` alone, under the amended *Cross-cutting — logging* row of `ARCHITECTURE-SPINE.md`. Adding a second file is an amendment to that row, and `no-console` plus a `no-restricted-syntax` selector now enforce it.
 
 ## Requirements & Constraints
 
@@ -27,7 +39,7 @@ Epic 7 turns epic 6's walking skeleton into the real execution owner: a content-
 
 ## Technical Decisions
 
-- **AD-8 — the cache is content-addressed.** `key(step) = hash(canonical(config) + key(inputs))`, base case `key(source) = hash(byteDigest + parseConfig)`. **A Source id alone is never a key**, because an encoding, delimiter, header-row, flattening or damage decision re-parses without changing the id. **An entry stores the table and its diagnostics together and a hit replays them.** The cache is bounded by total retained rows with least-recently-used eviction; **eviction is a cache miss, never a wrong answer.**
+- **AD-8 — the cache is content-addressed.** `key(step) = hash(canonical(config) + key(inputs))`, base case `key(source) = hash(byteDigest + parseConfig)` — **shipped as `byteDigest + parseConfig + encoding`, see "What 7a actually shipped" above.** **A Source id alone is never a key**, because an encoding, delimiter, header-row, flattening or damage decision re-parses without changing the id. **An entry stores the table and its diagnostics together and a hit replays them.** The cache is bounded by total retained rows with least-recently-used eviction; **eviction is a cache miss, never a wrong answer.**
 - **The cache key needs a canonical form of a config** — fixed key order, one serializer. The Recipe file (story 14) shares that same serializer by convention; whichever story builds it first, there must not be two.
 - **AD-9 — cancellation is between Steps, through the message queue.** There is no shared cancellation flag on this platform: `SharedArrayBuffer` is hidden from `file://` in both engines, `typeof Atomics` reports the opposite of the truth, and the documented `WebAssembly.Memory({shared: true})` escape hatch yields a buffer neither engine will post. Cancel latency through the queue is 3.0 / 2 ms at ~5 ms chunks. **Exit latency is one Step, not one chunk.**
 - **Row-range chunking inside a Step is permitted only for row-independent kinds** — Filter, Columns, Computed Column, typing — and is **forbidden for Aggregate, Join and Union**, where a partial view computes partial groups, misses cross-chunk matches and recomputes a per-chunk column union. Anything chunked here must therefore be per-kind, because stories 8 and 9 add the forbidden kinds.

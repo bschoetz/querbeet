@@ -383,19 +383,29 @@
 - id: "7a"
   title: The per-Step cache — content-addressed, diagnostics replayed, bounded
   description: >-
-    CAP-38's first third: a cache keyed on what a Step is rather than on which
-    Step it is, whose entries hold the table and its diagnostics together, so a
-    hit replays the warnings instead of letting a repeat run look clean.
+    DONE 2026-08-05 — CAP-38's first third. A cache keyed on what a Step is
+    rather than on which Step it is, whose entries hold the table and its
+    diagnostics together, so a hit replays the warnings instead of letting a
+    repeat run look clean. Measured on the shape the research named: 30 chained
+    Steps over 500,000 rows cost 0.8–1.4 ms warm against 484–3,097 ms cold.
   invoke_dev_with: >-
-    key(step) = hash(canonical(config) + key(inputs)) and key(source) =
-    hash(byteDigest + parseConfig) — never the Source id, or a corrected
-    delimiter returns a stale table under an unchanged key (AD-8). The
-    canonical serializer is shared with the Recipe file (story 14); whichever
-    story writes it first, there must not be two. Bound by retained rows with
-    least-recently-used eviction — an eviction is a miss, never a wrong answer.
-    Measured: the last Step of a 30-Step graph costs 24.1/54 ms cached against
-    496.4/1394 ms recomputed, and holding all 30 intermediates costs 180 MB at
-    half a million rows.
+    Shipped. The spec is
+    _bmad-output/implementation-artifacts/spec-7a-per-step-cache.md and it
+    carries three review rounds, two owner decisions and a Suggested Review
+    Order. What later stories inherit, none of it guessable from the story text:
+    key(source) is hash(byteDigest + parseConfig + ENCODING) — AD-8 named only
+    parseConfig, and in this codebase encoding is a separate frozen field, so a
+    key without it serves a UTF-8 parse for a Latin-1 one. The serializer story
+    14 shares is core/exec/cache-key.js; it refuses anything it cannot encode
+    deterministically (undefined, NaN, Infinity, BigInt, Date, class instances)
+    rather than minting a colliding key, and CanonicalRefusal is tagged by name
+    rather than by instanceof so a second module copy cannot defeat it. The
+    cache has TWO ceilings — 15,000,000 retained rows and 1,000 entries —
+    because a zero-row entry is invisible to a row bound and still occupies a
+    slot. AD-29 is honoured by clearing the whole run cache from every command
+    that commits confirmed:false; a content-keyed store has no Source id to
+    release by. core/ may now name console, in core/exec/cache-key.js alone,
+    under the amended Cross-cutting — logging row of the architecture spine.
 - id: "7b"
   title: The scheduler — cancellation between Steps, progress, and a run with an identity
   description: >-
@@ -411,7 +421,14 @@
     the scheduler around them. Run id and start time come from the Clock port
     (AD-25). Progress costs about 2.6 %, so granularity is not where to save.
     Step zero belongs on this path — its measured 548–555 ms currently run
-    inside a render function, uncancellable (deferred-work.md).
+    inside a render function, uncancellable (deferred-work.md). Story 7a has
+    shipped, so this story's spec must be re-planned against the current
+    core/exec/execute.js: every line anchor in it predates 7a and has moved, and
+    the signature now carries `cache` and a `sourceKey` door. The for-head that
+    is meant to become the yield point is the same loop that computes keys, so
+    a yield lands between a Step's key and its store — pick the point
+    deliberately. Cancellation loses nothing precisely because 7a's cache holds
+    every completed Step, which is why the cache came first.
 - id: "7c"
   title: The two execution modes — a stated threshold, a visible mode, and a stale mark
   description: >-
@@ -425,7 +442,14 @@
     its data rather than of the Recipe. This story replaces 6b's interim rule —
     recompute after every data-affecting change — and it is where gate 2 gets
     its seam: the Pre-flight Check is story 15's, so render its absence
-    honestly rather than letting it read as checked.
+    honestly rather than letting it read as checked. **One thing this story's
+    draft spec assumes that story 7a did not ship:** the stale mark is designed
+    as `resultKey !== currentKey`, and 7a keeps its content keys in a Map local
+    to executeGraph — a result carries `{ kind, table, rowCount, columnCount,
+    diagnostics }` and no key. The design is right and the keys exist; exposing
+    one per result is this story's edit, not a free consequence, and it is the
+    one place its "three things fall out for free" argument needs code. Line
+    anchors in that draft predate 7a and have moved.
 - id: "8"
   title: Union and Join Steps
   description: >-
