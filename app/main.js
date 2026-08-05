@@ -14,8 +14,6 @@ import { csvReader } from '@adapters/csv/csv-reader.js'
 import { xlsxReader } from '@adapters/xlsx/xlsx-reader.js'
 import { parquetReader } from '@adapters/parquet/parquet-reader.js'
 import { createArqueroEngine } from '@adapters/arquero/engine.js'
-import { createClock } from '@adapters/clock/clock.js'
-import { createQueueYield } from '@adapters/scheduler/queue-yield.js'
 import GraphCanvas from '@adapters/vueflow/GraphCanvas.vue'
 
 // Substituted by vite.config.js at compile time: the package version, the commit
@@ -39,17 +37,6 @@ const graph = createGraphStore()
 // exists, or that a temporal value is a `BigInt` (AD-19, AD-21, AD-22).
 const engine = createArqueroEngine()
 
-// The `Clock` port's implementation (AD-25). **One instance, and the count
-// matters**: the run-id counter lives in the adapter's closure, so a second clock
-// would hand out an id this one has already given away.
-const clock = createClock()
-
-// The `Yield` port's implementation (AD-9) — one `MessageChannel` pair, created
-// here and reused for every Step of every run. This is the only place in the tree
-// that names a message queue; `core/exec/scheduler.js` awaits it as a parameter,
-// which is what keeps AD-2's browser-free core browser-free.
-const yielder = createQueueYield()
-
 // The `GraphView` port's implementation, named here and nowhere else (AD-1).
 // `ui/EditorPane.vue` receives it as a prop and knows nothing about Vue Flow.
 createApp(App, {
@@ -58,6 +45,4 @@ createApp(App, {
   graph,
   engine,
   canvas: GraphCanvas,
-  clock,
-  yielder,
 }).mount('#app')

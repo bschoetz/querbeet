@@ -132,36 +132,8 @@ const wired = async () => {
  * A case that needs to *read* `size()` still has to hold the cache, and passes
  * one. The engine is the observation everywhere else.
  */
-/**
- * The `Clock` and the `Yield` of story 7b (AD-25, AD-9).
- *
- * **These *are* passed by every case, and that is not the hole round 3 closed.**
- * `runCache` has a default factory in `App.vue` because `createRunCache` lives in
- * `core/` and this layer may build one; a clock and a message queue are adapters,
- * which `ui/` may not name at all (AD-1), so both are required props with no
- * default and a missing one is a `TypeError` on the first run rather than a
- * quietly degraded product. What proves they are wired all the way from
- * `app/main.js` is `tests/e2e/execution.spec.js`, in the built artefact.
- *
- * The yield resolves on the microtask queue so `flushPromises()` drains a whole
- * run; the macrotask contract is `adapters/scheduler/queue-yield.test.js`'s.
- */
-const testClock = () => {
-  let minted = 0
-  return { now: () => 0, runId: () => `run:${(minted += 1)}` }
-}
-const instantYield = () => ({ next: () => Promise.resolve() })
-
 const render = async (store, graph, engine, runCache) => {
-  const props = {
-    buildVersion: 'test',
-    store,
-    graph,
-    engine,
-    canvas: StubCanvas,
-    clock: testClock(),
-    yielder: instantYield(),
-  }
+  const props = { buildVersion: 'test', store, graph, engine, canvas: StubCanvas }
   if (runCache !== undefined) props.runCache = runCache
   const w = mount(App, { props })
   await flushPromises()
@@ -173,10 +145,6 @@ const tab = (w, label) => w.findAll('nav button').find((b) => b.text() === label
 const show = async (w, label) => {
   await tab(w, label).trigger('click')
   await nextTick()
-  // The Editor starts a run the moment it mounts, and a run is asynchronous as of
-  // story 7b. `flushPromises()` is a macrotask, so with the microtask yield above
-  // it drains the whole walk — what the case reads afterwards is a finished run.
-  await flushPromises()
 }
 
 describe('the caches App owns', () => {

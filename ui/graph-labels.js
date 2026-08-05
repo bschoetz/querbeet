@@ -388,24 +388,6 @@ const GERMAN = Object.freeze(
         : `Der Lauf hat kein Ergebnis: ${v.steps} Steps konnten nicht gerechnet werden, ` +
           `beginnend mit ${step(nameOf, v.id)}. Die Gründe stehen in den Einstellungen des ` +
           `jeweiligen Steps.`,
-    // The cancellation (AD-9). Three things have to be in it, and each of them is
-    // a question a user would otherwise have to guess at: that the run stopped
-    // because they said so, how far it got, and — the one that decides whether
-    // cancelling is safe to press — that the numbers on screen are still the
-    // previous run's rather than a half-computed set. The finished Steps stay in
-    // the cache, so pressing it again costs nothing, and that is said too.
-    'exec.run_cancelled': (v) => {
-      const done =
-        v.done === 0
-          ? 'war noch keiner gerechnet'
-          : v.done === 1
-            ? 'war 1 fertig gerechnet'
-            : `waren ${nf(v.done)} fertig gerechnet`
-      return (
-        `Der Lauf wurde abgebrochen. Von ${nf(v.total)} Steps ${done}. Die fertigen Steps ` +
-        `bleiben gespeichert — angezeigt wird weiterhin das Ergebnis des vorherigen Laufs.`
-      )
-    },
   }),
 )
 
